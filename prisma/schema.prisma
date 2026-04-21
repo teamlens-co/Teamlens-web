@@ -1,0 +1,136 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  MANAGER
+  EMPLOYEE
+}
+
+enum UserStatus {
+  ACTIVE
+  INVITED
+  DISABLED
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+enum AgentTokenStatus {
+  ACTIVE
+  REVOKED
+}
+
+model ActivityLog {
+  id         Int      @id @default(autoincrement())
+  userId     String   @map("user_id")
+  sessionId  String?  @map("session_id")
+  mouseMoves Int      @map("mouse_moves")
+  keyPresses Int      @map("key_presses")
+  isActive   Boolean  @default(false) @map("is_active")
+  capturedAt DateTime? @map("captured_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("activity_logs")
+}
+
+model WorkSession {
+  id         String   @id
+  userId     String   @map("user_id")
+  clockInAt  DateTime @map("clock_in_at")
+  clockOutAt DateTime? @map("clock_out_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("work_sessions")
+}
+
+model Organization {
+  id          String       @id @default(cuid())
+  name        String
+  slug        String       @unique
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  users       User[]
+  invites     InviteToken[]
+  agentTokens AgentToken[]
+
+  @@map("organizations")
+}
+
+model User {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  fullName       String       @map("full_name")
+  email          String       @unique
+  passwordHash   String       @map("password_hash")
+  role           UserRole
+  status         UserStatus   @default(ACTIVE)
+  invitedById    String?      @map("invited_by_id")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  invitedBy      User?        @relation("UserInvites", fields: [invitedById], references: [id])
+  invitedUsers   User[]       @relation("UserInvites")
+  invitesCreated InviteToken[] @relation("InvitedBy")
+  agentTokens    AgentToken[]
+
+  @@map("users")
+}
+
+model InviteToken {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  invitedById    String       @map("invited_by_id")
+  email          String
+  role           UserRole     @default(EMPLOYEE)
+  token          String       @unique
+  status         InviteStatus @default(PENDING)
+  expiresAt      DateTime     @map("expires_at")
+  acceptedAt     DateTime?    @map("accepted_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  invitedBy      User         @relation("InvitedBy", fields: [invitedById], references: [id])
+
+  @@index([organizationId, email])
+  @@map("invite_tokens")
+}
+
+model AgentToken {
+  id             String           @id @default(cuid())
+  organizationId String           @map("organization_id")
+  userId         String           @map("user_id")
+  tokenHash      String           @unique @map("token_hash")
+  label          String?
+  status         AgentTokenStatus @default(ACTIVE)
+  expiresAt      DateTime         @map("expires_at")
+  revokedAt      DateTime?        @map("revoked_at")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  organization   Organization     @relation(fields: [organizationId], references: [id])
+  user           User             @relation(fields: [userId], references: [id])
+
+  @@index([userId, status])
+  @@map("agent_tokens")
+}
+
+model Screenshot {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  sessionId   String?  @map("session_id")
+  filePath    String   @map("file_path")
+  capturedAt  DateTime @map("captured_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([userId, capturedAt])
+  @@index([sessionId])
+  @@map("screenshots")
+}

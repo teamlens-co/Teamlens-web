@@ -1,0 +1,1 @@
+{"version":3,"file":"dashboard.service.js","sourceRoot":"","sources":["../../../../src/teamlense_modules/web/services/dashboard.service.ts"],"names":[],"mappings":";;;AACA,4EAAwE;AAExE,MAAa,gBAAgB;IAC3B,MAAM,CAAC,KAAK,CAAC,YAAY,CAAC,MAAc,EAAE,KAAuB;QAC/D,OAAO,kCAAe,CAAC,YAAY,CAAC,MAAM,EAAE,KAAK,CAAC,CAAC;IACrD,CAAC;CACF;AAJD,4CAIC"}
