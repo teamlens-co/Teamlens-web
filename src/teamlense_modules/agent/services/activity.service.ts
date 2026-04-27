@@ -4,8 +4,10 @@ import type {
   ClockInPayload,
   ClockOutPayload,
   DashboardAnalytics,
+  LocationType,
   WorkSessionRecord,
 } from "../../../shared/types/dashboard";
+import { LocationService } from "../../web/services/location.service";
 
 type SqlRow = Record<string, unknown>;
 
@@ -36,7 +38,7 @@ const formatDbDateForClient = (date: Date): string => {
   const pad = (n: number, w = 2) => String(n).padStart(w, "0");
   return (
     `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}` +
-    `T${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}.${pad(date.getUTCMilliseconds(), 3)}`
+    `T${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}.${pad(date.getUTCMilliseconds(), 3)}Z`
   );
 };
 
@@ -119,6 +121,10 @@ export class ActivityService {
     };
     const clockOutAt = asString(row.clock_out_at);
     if (clockOutAt) item.clockOutAt = clockOutAt;
+    const locationType = asString(row.location_type);
+    if (locationType) item.locationType = locationType as LocationType;
+    if (row.latitude != null) item.latitude = asNumber(row.latitude);
+    if (row.longitude != null) item.longitude = asNumber(row.longitude);
     return item;
   }
 
@@ -206,6 +212,9 @@ export class ActivityService {
       $$;
     `);
 
+    // Ensure location-related tables/columns exist
+    await LocationService.ensureSchema();
+
     this.schemaReady = true;
   }
 
@@ -218,7 +227,7 @@ export class ActivityService {
     if (!prisma.$queryRawUnsafe) return null;
 
     const rows = (await prisma.$queryRawUnsafe(
-      `SELECT "id", "user_id", "clock_in_at", "clock_out_at"
+      `SELECT "id", "user_id", "clock_in_at", "clock_out_at", "location_type", "latitude", "longitude"
        FROM "work_sessions"
        WHERE "user_id" = $1 AND "clock_out_at" IS NULL
        ORDER BY "clock_in_at" DESC
@@ -229,7 +238,7 @@ export class ActivityService {
     return rows[0] ? this.mapSessionRow(rows[0]) : null;
   }
 
-  static async clockIn(payload: ClockInPayload): Promise<WorkSessionRecord> {
+  static async clockIn(payload: ClockInPayload, organizationId?: string): Promise<WorkSessionRecord> {
     await this.ensureSchema();
 
     const existing = await this.getActiveSession(payload.userId);
@@ -238,17 +247,51 @@ export class ActivityService {
     const startedAt = toDate(payload.timestamp);
     const id = crypto.randomUUID();
 
-    if (prisma.$executeRawUnsafe) {
-      await prisma.$executeRawUnsafe(
-        `INSERT INTO "work_sessions" ("id","user_id","clock_in_at","created_at","updated_at")
-         VALUES ($1,$2,$3,NOW(),NOW())`,
-        id,
-        payload.userId,
-        startedAt,
+    // Determine location type if coordinates provided
+    let locationType: LocationType | null = null;
+    if (
+      organizationId &&
+      typeof payload.latitude === "number" &&
+      typeof payload.longitude === "number"
+    ) {
+      locationType = await LocationService.determineLocationType(
+        organizationId,
+        payload.latitude,
+        payload.longitude,
+        payload.locationSource,
+        payload.accuracyMeters,
+      );
+
+      console.log(
+        `[ClockIn][Location] user=${payload.userId} org=${organizationId} ` +
+          `lat=${payload.latitude} lng=${payload.longitude} source=${payload.locationSource ?? "unknown"} ` +
+          `accuracy=${payload.accuracyMeters ?? "n/a"} ` +
+          `classified=${locationType}`,
+      );
+    } else {
+      console.log(
+        `[ClockIn][Location] user=${payload.userId} org=${organizationId ?? "unknown"} ` +
+          `lat=${payload.latitude ?? "null"} lng=${payload.longitude ?? "null"} ` +
+          `source=${payload.locationSource ?? "unknown"} accuracy=${payload.accuracyMeters ?? "n/a"} classified=unavailable`,
       );
     }
 
-    return { id, userId: payload.userId, clockInAt: startedAt.toISOString() };
+    if (prisma.$executeRawUnsafe) {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO "work_sessions" ("id","user_id","clock_in_at","latitude","longitude","location_type","created_at","updated_at")
+         VALUES ($1,$2,$3,$4,$5,$6,NOW(),NOW())`,
+        id,
+        payload.userId,
+        startedAt,
+        payload.latitude ?? null,
+        payload.longitude ?? null,
+        locationType,
+      );
+    }
+
+    const record: WorkSessionRecord = { id, userId: payload.userId, clockInAt: startedAt.toISOString() };
+    if (locationType) record.locationType = locationType;
+    return record;
   }
 
   static async clockOut(payload: ClockOutPayload): Promise<WorkSessionRecord | null> {
@@ -328,6 +371,27 @@ export class ActivityService {
     return record;
   }
 
+  static async addManualHours(userId: string, dateStr: string, hours: number): Promise<void> {
+    await this.ensureSchema();
+    const id = crypto.randomUUID();
+    
+    // Create clock_in_at starting from 00:00:00 of that date in UTC
+    const clockInAt = new Date(`${dateStr}T00:00:00Z`);
+    const clockOutAt = new Date(clockInAt.getTime() + hours * 3600000);
+    
+    if (prisma.$executeRawUnsafe) {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO "work_sessions" ("id","user_id","clock_in_at","clock_out_at","location_type","created_at","updated_at")
+         VALUES ($1,$2,$3,$4,$5,NOW(),NOW())`,
+        id,
+        userId,
+        clockInAt,
+        clockOutAt,
+        "manual"
+      );
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Analytics — fixed active-time calculation
   // -------------------------------------------------------------------------
@@ -343,10 +407,12 @@ export class ActivityService {
         range,
         workSeconds: 0,
         activeSeconds: 0,
+        manualSeconds: 0,
         productivityPercent: 0,
         totalMouseMoves: 0,
         totalKeyPresses: 0,
         sessions: [],
+        locationStatus: null,
       };
     }
 
@@ -354,7 +420,7 @@ export class ActivityService {
     // 1. Fetch sessions in range
     // ------------------------------------------------------------------
     const sessionRows = (await prisma.$queryRawUnsafe(
-      `SELECT "id","user_id","clock_in_at","clock_out_at"
+      `SELECT "id","user_id","clock_in_at","clock_out_at","location_type","latitude","longitude"
        FROM "work_sessions"
        WHERE "user_id" = $1
          AND "clock_in_at" < $3
@@ -372,10 +438,12 @@ export class ActivityService {
         range,
         workSeconds: 0,
         activeSeconds: 0,
+        manualSeconds: 0,
         productivityPercent: 0,
         totalMouseMoves: 0,
         totalKeyPresses: 0,
         sessions: [],
+        locationStatus: null,
       };
     }
 
@@ -432,6 +500,7 @@ export class ActivityService {
 
     let totalWorkMs = 0;
     let totalActiveSeconds = 0;
+    let totalManualSeconds = 0;
     const sessions: WorkSessionRecord[] = [];
 
     for (const row of sessionRows) {
@@ -457,11 +526,18 @@ export class ActivityService {
         const lastActivityMs = snaps.length > 0 ? Math.max(...snaps.map((s) => s.ts)) : clockInMs;
 
         const now = Date.now();
-        const isCurrentRange = rangeEndMs >= now - 60_000; // range end is within the last minute (i.e. "now")
+        // "current" range = the range end is either right now OR later today (e.g. 23:59:59)
+        const nowDate = new Date(now);
+        const rangeEndDate = new Date(rangeEndMs);
+        const isCurrentRange =
+          rangeEndMs >= now - 60_000 || // range end is within the last minute
+          (rangeEndDate.getFullYear() === nowDate.getFullYear() &&
+            rangeEndDate.getMonth() === nowDate.getMonth() &&
+            rangeEndDate.getDate() === nowDate.getDate()); // range end is today
 
-        if (isCurrentRange && lastActivityMs >= rangeEndMs - implicitEndMs) {
+        if (isCurrentRange && lastActivityMs >= now - implicitEndMs) {
           // Session is actively running right now
-          clockOutMs = rangeEndMs;
+          clockOutMs = now;
         } else {
           // Historical range or stale session: cap at whichever is earlier — last activity or range end
           clockOutMs = Math.min(lastActivityMs, rangeEndMs);
@@ -475,12 +551,15 @@ export class ActivityService {
       if (sessionEnd <= sessionStart) continue;
 
       const workMs = sessionEnd - sessionStart;
-      totalWorkMs += workMs;
 
-      // Active seconds via the interval-merge algorithm
-      const snaps = snapshotsBySession.get(sid) ?? [];
-      const activeSeconds = computeActiveSeconds(snaps, sessionStart, sessionEnd);
-      totalActiveSeconds += activeSeconds;
+      // Manual vs tracked hours
+      if (row.location_type === "manual") {
+        totalManualSeconds += Math.floor(workMs / 1000);
+      } else {
+        totalWorkMs += workMs;
+        const snaps = snapshotsBySession.get(sid) ?? [];
+        totalActiveSeconds += computeActiveSeconds(snaps, sessionStart, sessionEnd);
+      }
 
       sessions.push(this.mapSessionRow(row));
     }
@@ -491,15 +570,21 @@ export class ActivityService {
     const productivityPercent =
       workSeconds > 0 ? Math.min(100, Math.round((activeSeconds / workSeconds) * 100)) : 0;
 
+    // Compute daily location rollup from all sessions
+    const locationTypes = sessionRows.map((r) => asString(r.location_type) || null);
+    const locationStatus = LocationService.computeDailyLocationStatus(locationTypes);
+
     return {
       userId,
       range,
       workSeconds,
       activeSeconds,
+      manualSeconds: totalManualSeconds,
       productivityPercent,
       totalMouseMoves,
       totalKeyPresses,
       sessions,
+      locationStatus,
     };
   }
 
@@ -512,7 +597,7 @@ export class ActivityService {
     userId: string,
     year: number,
     month: number, // 1-based (1 = January)
-  ): Promise<{ date: string; workSeconds: number; activeSeconds: number }[]> {
+  ): Promise<{ date: string; workSeconds: number; activeSeconds: number; manualSeconds: number }[]> {
     await this.ensureSchema();
     if (!prisma.$queryRawUnsafe) return [];
 
@@ -522,7 +607,7 @@ export class ActivityService {
 
     // Fetch all sessions that overlap this month
     const sessionRows = (await prisma.$queryRawUnsafe(
-      `SELECT "id","user_id","clock_in_at","clock_out_at"
+      `SELECT "id","user_id","clock_in_at","clock_out_at","location_type","latitude","longitude"
        FROM "work_sessions"
        WHERE "user_id" = $1
          AND "clock_in_at" < $3
@@ -566,7 +651,7 @@ export class ActivityService {
     }
 
     // Aggregate by calendar day (UTC)
-    const dayMap = new Map<string, { workMs: number; activeSeconds: number }>();
+    const dayMap = new Map<string, { workMs: number; activeSeconds: number; manualSeconds: number }>();
     const implicitEndMs = IMPLICIT_END_SECONDS * 1000;
     const now = Date.now();
 
@@ -613,12 +698,15 @@ export class ActivityService {
         }
 
         const dateKey = cursor.toISOString().slice(0, 10); // "YYYY-MM-DD"
-        const existing = dayMap.get(dateKey) ?? { workMs: 0, activeSeconds: 0 };
+        const existing = dayMap.get(dateKey) ?? { workMs: 0, activeSeconds: 0, manualSeconds: 0 };
 
-        existing.workMs += sliceEnd - sliceStart;
-
-        const snaps = snapshotsBySession.get(sid) ?? [];
-        existing.activeSeconds += computeActiveSeconds(snaps, sliceStart, sliceEnd);
+        if (row.location_type === "manual") {
+          existing.manualSeconds += Math.floor((sliceEnd - sliceStart) / 1000);
+        } else {
+          existing.workMs += sliceEnd - sliceStart;
+          const snaps = snapshotsBySession.get(sid) ?? [];
+          existing.activeSeconds += computeActiveSeconds(snaps, sliceStart, sliceEnd);
+        }
 
         dayMap.set(dateKey, existing);
         cursor = new Date(cursor.getTime() + 86_400_000);
@@ -628,10 +716,11 @@ export class ActivityService {
     // Build sorted result array
     return Array.from(dayMap.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, { workMs, activeSeconds }]) => ({
+      .map(([date, { workMs, activeSeconds, manualSeconds }]) => ({
         date,
         workSeconds: Math.floor(workMs / 1000),
         activeSeconds: Math.min(activeSeconds, Math.floor(workMs / 1000)),
+        manualSeconds,
       }));
   }
 }

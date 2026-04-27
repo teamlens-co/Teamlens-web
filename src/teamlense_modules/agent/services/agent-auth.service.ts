@@ -54,6 +54,10 @@ export class AgentAuthService {
       throw new Error("User account is not active");
     }
 
+    if (user.role !== "EMPLOYEE") {
+      throw new Error("Desktop agent login is only available for employees");
+    }
+
     const tokenId = randomToken(16);
     const agentToken = signAgentToken({
       userId: user.id,

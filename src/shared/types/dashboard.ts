@@ -1,6 +1,12 @@
+export type LocationType = "office" | "remote" | "manual";
+
 export interface ClockInPayload {
   userId: string;
   timestamp?: string;
+  latitude?: number;
+  longitude?: number;
+  locationSource?: "gps" | "ip";
+  accuracyMeters?: number;
 }
 
 export interface ClockOutPayload {
@@ -14,6 +20,9 @@ export interface WorkSessionRecord {
   userId: string;
   clockInAt: string;
   clockOutAt?: string;
+  locationType?: LocationType;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface DashboardAnalytics {
@@ -21,8 +30,11 @@ export interface DashboardAnalytics {
   range: string;
   workSeconds: number;
   activeSeconds: number;
+  manualSeconds: number;
   productivityPercent: number;
   totalMouseMoves: number;
   totalKeyPresses: number;
   sessions: WorkSessionRecord[];
+  /** Daily location rollup: "Office" | "Remote" | "Mixed" | null */
+  locationStatus: string | null;
 }

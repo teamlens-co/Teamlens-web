@@ -3,37 +3,7 @@ import type { AuthRequest } from "../../../shared/types";
 import { z } from "zod";
 import { AuthService } from "../services/auth.service";
 import type { AuthRole } from "../../../shared/types/auth";
-
-const baseCookieOptions = {
-  httpOnly: true,
-  sameSite: "lax" as const,
-  path: "/",
-};
-
-const shouldUseSecureCookie = (req: Request): boolean => {
-  const explicit = process.env.COOKIE_SECURE?.trim().toLowerCase();
-  if (explicit === "true") return true;
-  if (explicit === "false") return false;
-
-  const forwardedProto = req.headers["x-forwarded-proto"];
-  const proto = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto;
-  return req.secure || proto === "https";
-};
-
-const setAuthCookie = (req: Request, res: Response, token: string): void => {
-  res.cookie("teamlens_access_token", token, {
-    ...baseCookieOptions,
-    secure: shouldUseSecureCookie(req),
-    maxAge: 1000 * 60 * 60,
-  });
-};
-
-const clearAuthCookie = (req: Request, res: Response): void => {
-  res.clearCookie("teamlens_access_token", {
-    ...baseCookieOptions,
-    secure: shouldUseSecureCookie(req),
-  });
-};
+import { clearAuthCookie, setAuthCookie } from "../../../shared/http/auth-cookie";
 
 const managerSignupSchema = z.object({
   fullName: z.string().min(2),
@@ -69,7 +39,10 @@ export const signupManager = async (req: Request, res: Response): Promise<void> 
 
     res.status(201).json({
       success: true,
-      data: result,
+      data: {
+        user: result.user,
+        organization: result.organization,
+      },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to sign up manager";
@@ -100,7 +73,10 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
     res.status(200).json({
       success: true,
-      data: result,
+      data: {
+        user: result.user,
+        organization: result.organization,
+      },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to login";

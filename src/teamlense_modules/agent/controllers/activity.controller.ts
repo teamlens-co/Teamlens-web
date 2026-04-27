@@ -4,6 +4,10 @@ import { ActivityService } from "../services/activity.service";
 
 const clockInSchema = z.object({
   timestamp: z.string().datetime().optional(),
+  latitude: z.coerce.number().finite().optional(),
+  longitude: z.coerce.number().finite().optional(),
+  locationSource: z.enum(["gps", "ip"]).optional(),
+  accuracyMeters: z.coerce.number().positive().finite().optional(),
 });
 
 const clockOutSchema = z.object({
@@ -69,9 +73,13 @@ export const clockIn = async (req: Request, res: Response): Promise<void> => {
     const payload = {
       userId: req.auth.userId,
       ...(parsed.data.timestamp ? { timestamp: parsed.data.timestamp } : {}),
+      ...(parsed.data.latitude != null ? { latitude: parsed.data.latitude } : {}),
+      ...(parsed.data.longitude != null ? { longitude: parsed.data.longitude } : {}),
+      ...(parsed.data.locationSource ? { locationSource: parsed.data.locationSource } : {}),
+      ...(parsed.data.accuracyMeters != null ? { accuracyMeters: parsed.data.accuracyMeters } : {}),
     };
 
-    const session = await ActivityService.clockIn(payload);
+    const session = await ActivityService.clockIn(payload, req.auth.organizationId);
 
     res.status(201).json({
       success: true,

@@ -134,3 +134,21 @@ model Screenshot {
   @@index([sessionId])
   @@map("screenshots")
 }
+
+model LiveScreenSession {
+  id             String    @id
+  managerId      String    @map("manager_id")
+  employeeId     String    @map("employee_id")
+  organizationId String    @map("organization_id")
+  sessionStart   DateTime  @default(now()) @map("session_start")
+  sessionEnd     DateTime? @map("session_end")
+  status         String    @default("REQUESTED")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@index([managerId])
+  @@index([employeeId])
+  @@index([organizationId])
+  @@index([status])
+  @@map("live_screen_sessions")
+}

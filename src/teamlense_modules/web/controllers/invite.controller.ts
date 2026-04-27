@@ -1,8 +1,9 @@
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import type { AuthRequest } from "../../../shared/types";
 import { z } from "zod";
 import { InviteService } from "../services/invite.service";
 import type { AuthRole } from "../../../shared/types/auth";
+import { setAuthCookie } from "../../../shared/http/auth-cookie";
 
 const inviteSchema = z.object({
   email: z.string().email(),
@@ -84,7 +85,7 @@ export const validateInvite = async (req: AuthRequest, res: Response): Promise<v
   }
 };
 
-export const acceptInvite = async (req: AuthRequest, res: Response): Promise<void> => {
+export const acceptInvite = async (req: Request, res: Response): Promise<void> => {
   const parsed = acceptInviteSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -97,10 +98,14 @@ export const acceptInvite = async (req: AuthRequest, res: Response): Promise<voi
 
   try {
     const result = await InviteService.acceptInvite(parsed.data);
+    setAuthCookie(req, res, result.accessToken);
 
     res.status(201).json({
       success: true,
-      data: result,
+      data: {
+        user: result.user,
+        organization: result.organization,
+      },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to accept invite";

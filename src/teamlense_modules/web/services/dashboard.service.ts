@@ -5,4 +5,8 @@ export class DashboardService {
   static async getAnalytics(userId: string, start: Date, end: Date): Promise<DashboardAnalytics> {
     return ActivityService.getAnalytics(userId, start, end);
   }
+
+  static async addManualHours(userId: string, dateStr: string, hours: number): Promise<void> {
+    await ActivityService.addManualHours(userId, dateStr, hours);
+  }
 }
