@@ -5,6 +5,9 @@ import mainRoutes from "./mainRoutes";
 
 const app = express();
 
+// Trust reverse proxy headers (x-forwarded-*) in production deployments.
+app.set("trust proxy", 1);
+
 const frontendOrigin = process.env.FRONTEND_ORIGIN?.trim();
 const frontendOrigins = process.env.FRONTEND_ORIGINS?.split(",")
   .map((value) => value.trim())
