@@ -1,1 +1,0 @@
-{"version":3,"file":"dashboard.service.d.ts","sourceRoot":"","sources":["../../../../../src/teamlense_modules/web/services/dashboard.service.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,kBAAkB,EAAE,MAAM,iCAAiC,CAAC;AAG1E,qBAAa,gBAAgB;WACd,YAAY,CAAC,MAAM,EAAE,MAAM,EAAE,KAAK,EAAE,OAAO,GAAG,MAAM,GAAG,OAAO,CAAC,kBAAkB,CAAC;CAGhG"}
