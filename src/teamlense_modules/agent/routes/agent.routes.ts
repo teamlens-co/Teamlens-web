@@ -16,20 +16,20 @@ const storage = multer.diskStorage({
     const userId = req.auth?.userId || "anonymous";
     const date = new Date();
     const dateFolder = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-    
+
     // Create nested directory structure: uploads/screenshots/<userId>/<dateFolder>
     const dir = path.join('uploads', 'screenshots', userId, dateFolder);
-    
+
     // Ensure the directory exists
     fs.mkdirSync(dir, { recursive: true });
-    
+
     cb(null, dir);
   },
   filename: function (req, file, cb) {
     const date = new Date();
     const timeString = `${String(date.getHours()).padStart(2, '0')}-${String(date.getMinutes()).padStart(2, '0')}-${String(date.getSeconds()).padStart(2, '0')}`;
     const uniqueSuffix = Math.round(Math.random() * 1E9);
-    
+
     // Generates files like: screenshot_14-30-05_123456789.png
     cb(null, `screenshot_${timeString}_${uniqueSuffix}.png`);
   }
