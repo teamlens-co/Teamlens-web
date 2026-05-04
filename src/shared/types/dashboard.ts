@@ -3,6 +3,7 @@ export type LocationType = "office" | "remote" | "manual";
 export interface ClockInPayload {
   userId: string;
   timestamp?: string;
+  activeAfter?: string;
   latitude?: number;
   longitude?: number;
   locationSource?: "gps" | "ip";

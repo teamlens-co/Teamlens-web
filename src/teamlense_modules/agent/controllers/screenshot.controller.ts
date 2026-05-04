@@ -2,9 +2,15 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { ScreenshotService } from "../services/screenshot.service";
 import path from "path";
+import { prisma } from "../../../shared/db/prisma";
 
 const uploadScreenshotSchema = z.object({
   sessionId: z.string().optional(),
+  activeApplication: z.string().max(200).optional(),
+  windowTitle: z.string().max(500).optional(),
+  domain: z.string().max(255).optional(),
+  url: z.string().max(2000).optional(),
+  projectName: z.string().max(200).optional(),
   capturedAt: z.string().datetime().optional(),
 });
 
@@ -26,23 +32,40 @@ export const uploadScreenshot = async (req: Request, res: Response): Promise<voi
     return;
   }
 
-  const body = req.body || {};
-  const sessionId = typeof body.sessionId === "string" ? body.sessionId : undefined;
-  const capturedAt = typeof body.capturedAt === "string" ? body.capturedAt : undefined;
+  const parsed = uploadScreenshotSchema.safeParse(req.body || {});
+  if (!parsed.success) {
+    res.status(400).json({
+      success: false,
+      message: "Invalid screenshot metadata",
+      issues: parsed.error.flatten(),
+    });
+    return;
+  }
 
   try {
+    const users = (await prisma.$queryRawUnsafe(
+      `SELECT "full_name" FROM "users" WHERE "id" = $1 LIMIT 1`,
+      req.auth.userId,
+    )) as Array<{ full_name?: string }>;
+
     const screenshot = await ScreenshotService.uploadScreenshot({
       userId: req.auth.userId,
       filePath: req.file.path,
-      ...(sessionId ? { sessionId } : {}),
-      capturedAt: capturedAt ? new Date(capturedAt) : new Date(),
+      ...(parsed.data.sessionId ? { sessionId: parsed.data.sessionId } : {}),
+      ...(parsed.data.activeApplication ? { activeApplication: parsed.data.activeApplication } : {}),
+      ...(parsed.data.windowTitle ? { windowTitle: parsed.data.windowTitle } : {}),
+      ...(parsed.data.domain ? { domain: parsed.data.domain } : {}),
+      ...(parsed.data.url ? { url: parsed.data.url } : {}),
+      employeeName: users[0]?.full_name ?? req.auth.userId,
+      projectName: parsed.data.projectName ?? "Default Project",
+      capturedAt: parsed.data.capturedAt ? new Date(parsed.data.capturedAt) : new Date(),
     });
 
     res.status(201).json({
       success: true,
       data: {
-        id: screenshot.id,
-        capturedAt: screenshot.capturedAt,
+        id: screenshot?.id,
+        capturedAt: screenshot?.capturedAt,
       },
     });
   } catch (error) {

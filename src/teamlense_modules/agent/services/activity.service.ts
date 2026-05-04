@@ -238,11 +238,44 @@ export class ActivityService {
     return rows[0] ? this.mapSessionRow(rows[0]) : null;
   }
 
+  private static async closeStaleSession(sessionId: string, userId: string): Promise<void> {
+    if (!prisma.$executeRawUnsafe) return;
+
+    await prisma.$executeRawUnsafe(
+      `UPDATE "work_sessions"
+       SET "clock_out_at" = (
+         SELECT COALESCE(MAX(COALESCE("captured_at","created_at")), "work_sessions"."clock_in_at")
+         FROM "activity_logs"
+         WHERE "session_id" = $1
+       ),
+       "updated_at" = NOW()
+       WHERE "id" = $1
+         AND "user_id" = $2
+         AND "clock_out_at" IS NULL`,
+      sessionId,
+      userId,
+    );
+  }
+
   static async clockIn(payload: ClockInPayload, organizationId?: string): Promise<WorkSessionRecord> {
     await this.ensureSchema();
 
     const existing = await this.getActiveSession(payload.userId);
-    if (existing) return existing;
+    if (existing) {
+      const activeAfter = payload.activeAfter ? new Date(payload.activeAfter) : null;
+      const existingStartedAt = new Date(existing.clockInAt);
+
+      if (
+        activeAfter &&
+        !Number.isNaN(activeAfter.getTime()) &&
+        !Number.isNaN(existingStartedAt.getTime()) &&
+        existingStartedAt.getTime() < activeAfter.getTime()
+      ) {
+        await this.closeStaleSession(existing.id, payload.userId);
+      } else {
+        return existing;
+      }
+    }
 
     const startedAt = toDate(payload.timestamp);
     const id = crypto.randomUUID();

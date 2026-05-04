@@ -16,6 +16,7 @@ export const env = {
   jwtAgentTtl: process.env.JWT_AGENT_TTL ?? "30d", // Added for JWT agent token TTL
   inviteTtlHours: toNumber(process.env.INVITE_TTL_HOURS, 72), // Added for invite TTL hours
   webAppUrl: process.env.WEB_APP_URL ?? "http://localhost:3000", // Added for web app URL
+  googlePlacesApiKey: process.env.GOOGLE_PLACES_API_KEY ?? "",
   webrtcIceServers:
     process.env.WEBRTC_ICE_SERVERS ??
     JSON.stringify([{ urls: "stun:stun.l.google.com:19302" }]),

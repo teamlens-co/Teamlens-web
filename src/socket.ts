@@ -72,6 +72,11 @@ const isActiveAgentToken = async (token: string): Promise<boolean> => {
 const authenticateSocket = async (socket: AuthSocket, next: (err?: Error) => void): Promise<void> => {
   const token = extractToken(socket);
   if (!token) {
+    console.warn("[LiveSocket] rejected connection: missing auth token", {
+      id: socket.id,
+      origin: socket.handshake.headers.origin,
+      transport: socket.conn.transport.name,
+    });
     next(new Error("Missing auth token"));
     return;
   }
@@ -79,10 +84,19 @@ const authenticateSocket = async (socket: AuthSocket, next: (err?: Error) => voi
   try {
     const claims = verifyToken(token);
     if (claims.type === "agent" && !(await isActiveAgentToken(token))) {
+      console.warn("[LiveSocket] rejected agent connection: inactive token", {
+        id: socket.id,
+        userId: claims.sub,
+      });
       next(new Error("Agent token is not active"));
       return;
     }
     if (claims.type === "agent" && claims.role !== "EMPLOYEE") {
+      console.warn("[LiveSocket] rejected agent connection: non-employee role", {
+        id: socket.id,
+        userId: claims.sub,
+        role: claims.role,
+      });
       next(new Error("Desktop agent sockets are only available for employees"));
       return;
     }
@@ -96,7 +110,12 @@ const authenticateSocket = async (socket: AuthSocket, next: (err?: Error) => voi
     };
 
     next();
-  } catch {
+  } catch (error) {
+    console.warn("[LiveSocket] rejected connection: invalid token", {
+      id: socket.id,
+      origin: socket.handshake.headers.origin,
+      error: error instanceof Error ? error.message : String(error),
+    });
     next(new Error("Invalid or expired token"));
   }
 };
@@ -189,22 +208,35 @@ export const registerSocket = (server: HttpServer): void => {
     }
 
     socket.join(auth.role === "MANAGER" ? managerRoom(auth.userId) : employeeRoom(auth.userId));
+    console.info("[LiveSocket] connected", {
+      socketId: socket.id,
+      userId: auth.userId,
+      role: auth.role,
+      tokenType: auth.tokenType,
+      transport: socket.conn.transport.name,
+    });
 
     socket.on("live:view-request", async (payload: { employeeId?: string }, ack?: (response: unknown) => void) => {
       try {
         const employeeId = payload.employeeId;
         if (!employeeId || !(await managerCanViewEmployee(auth, employeeId))) {
+          console.warn("[LiveSocket] live:view-request denied", {
+            managerId: auth.userId,
+            employeeId,
+          });
           ack?.({ ok: false, error: "Not authorized to view this employee" });
           return;
         }
 
         if (!(await employeeIsClockedIn(employeeId))) {
+          console.warn("[LiveSocket] live:view-request denied: employee not clocked in", { employeeId });
           ack?.({ ok: false, error: "Employee is not clocked in" });
           return;
         }
 
         const sockets = await io.in(employeeRoom(employeeId)).allSockets();
         if (sockets.size === 0) {
+          console.warn("[LiveSocket] live:view-request denied: employee agent offline", { employeeId });
           ack?.({ ok: false, error: "Employee agent is not connected" });
           return;
         }
@@ -219,6 +251,12 @@ export const registerSocket = (server: HttpServer): void => {
         };
         sessions.set(session.id, session);
         await createAuditSession(session);
+        console.info("[LiveSocket] live:view-request accepted", {
+          sessionId: session.id,
+          managerId: auth.userId,
+          employeeId,
+          employeeSockets: sockets.size,
+        });
 
         socket.join(sessionRoom(session.id));
         ack?.({ ok: true, sessionId: session.id, iceServers: parseIceServers() });
@@ -242,6 +280,10 @@ export const registerSocket = (server: HttpServer): void => {
       session.touchedAt = Date.now();
       socket.join(sessionRoom(session.id));
       await markSession(session.id, "ACTIVE");
+      console.info("[LiveSocket] live:view-accepted", {
+        sessionId: session.id,
+        employeeId: session.employeeId,
+      });
       socket.to(sessionRoom(session.id)).emit("live:view-accepted", {
         sessionId: session.id,
         employeeId: session.employeeId,
@@ -265,6 +307,7 @@ export const registerSocket = (server: HttpServer): void => {
       const session = payload.sessionId ? getSessionForSocket(socket, payload.sessionId) : null;
       if (!session || auth.userId !== session.employeeId) return;
       session.touchedAt = Date.now();
+      console.info("[LiveSocket] webrtc:offer", { sessionId: session.id });
       socket.to(sessionRoom(session.id)).emit("webrtc:offer", payload);
     });
 
@@ -272,6 +315,7 @@ export const registerSocket = (server: HttpServer): void => {
       const session = payload.sessionId ? getSessionForSocket(socket, payload.sessionId) : null;
       if (!session || auth.userId !== session.managerId) return;
       session.touchedAt = Date.now();
+      console.info("[LiveSocket] webrtc:answer", { sessionId: session.id });
       socket.to(sessionRoom(session.id)).emit("webrtc:answer", payload);
     });
 

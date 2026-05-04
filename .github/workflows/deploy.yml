@@ -60,7 +60,7 @@ jobs:
             set -e
             echo "Deploying backend..."
             
-            cd /opt/teamlens-backend
+            cd cd /root/teamlens/teamlens-web-server
 
             if docker compose version >/dev/null 2>&1; then
               COMPOSE_CMD="docker compose"
@@ -72,7 +72,7 @@ jobs:
             docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             
             $COMPOSE_CMD down || true
-            $COMPOSE_CMD up -d
+            $COMPOSE_CMD up -d --build
             
             sleep 5
             $COMPOSE_CMD exec -T backend npx prisma migrate deploy

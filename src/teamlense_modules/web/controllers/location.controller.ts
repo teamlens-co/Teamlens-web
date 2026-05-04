@@ -2,6 +2,27 @@ import type { Response } from "express";
 import type { AuthRequest } from "../../../shared/types";
 import { LocationService } from "../services/location.service";
 
+export const searchOfficeLocations = async (req: AuthRequest, res: Response): Promise<void> => {
+  if (!req.auth) {
+    res.status(401).json({ success: false, message: "Unauthorized" });
+    return;
+  }
+
+  const query = typeof req.query.q === "string" ? req.query.q : "";
+  if (query.trim().length < 3) {
+    res.status(400).json({ success: false, message: "Search query must be at least 3 characters" });
+    return;
+  }
+
+  try {
+    const results = await LocationService.searchOfficeAddresses(query);
+    res.status(200).json({ success: true, data: results });
+  } catch (error) {
+    console.error("Failed to search office locations", error);
+    res.status(500).json({ success: false, message: "Unable to search locations" });
+  }
+};
+
 export const getOfficeLocations = async (req: AuthRequest, res: Response): Promise<void> => {
   if (!req.auth) {
     res.status(401).json({ success: false, message: "Unauthorized" });

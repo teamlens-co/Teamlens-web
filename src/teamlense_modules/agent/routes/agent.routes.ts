@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { clockIn, clockOut, createActivity, getActiveSession } from "../controllers/activity.controller";
+import { clockIn, clockOut, createActivity, createUsage, getActiveSession } from "../controllers/activity.controller";
 import { loginAgent } from "../controllers/auth.controller";
 import { uploadScreenshot, getScreenshots, getScreenshot } from "../controllers/screenshot.controller";
 import { requireAuth } from "../../../shared/middlewares/auth.middleware";
@@ -42,6 +42,7 @@ agentRouter.get("/active-session", requireAuth, getActiveSession);
 agentRouter.post("/clock-in", requireAuth, clockIn);
 agentRouter.post("/clock-out", requireAuth, clockOut);
 agentRouter.post("/activity", requireAuth, createActivity);
+agentRouter.post("/usage", requireAuth, createUsage);
 
 // Screenshot routes
 agentRouter.post("/screenshots", requireAuth, upload.single("screenshot"), uploadScreenshot);

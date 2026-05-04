@@ -4,6 +4,12 @@ type UploadScreenshotPayload = {
   userId: string;
   filePath: string;
   sessionId?: string;
+  activeApplication?: string;
+  windowTitle?: string;
+  domain?: string;
+  url?: string;
+  employeeName?: string;
+  projectName?: string;
   capturedAt: Date;
 };
 
@@ -17,51 +23,64 @@ type GetScreenshotsPayload = {
 
 export const ScreenshotService = {
   async uploadScreenshot(payload: UploadScreenshotPayload) {
-    const screenshot = await prisma.screenshot.create({
-      data: {
-        userId: payload.userId,
-        sessionId: payload.sessionId ?? null,
-        filePath: payload.filePath,
-        capturedAt: payload.capturedAt,
-      },
-      select: {
-        id: true,
-        userId: true,
-        sessionId: true,
-        capturedAt: true,
-        createdAt: true,
-      },
-    });
+    await prisma.$executeRawUnsafe(`ALTER TABLE "screenshots" ADD COLUMN IF NOT EXISTS "active_application" TEXT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "screenshots" ADD COLUMN IF NOT EXISTS "window_title" TEXT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "screenshots" ADD COLUMN IF NOT EXISTS "domain" TEXT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "screenshots" ADD COLUMN IF NOT EXISTS "url" TEXT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "screenshots" ADD COLUMN IF NOT EXISTS "employee_name" TEXT`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "screenshots" ADD COLUMN IF NOT EXISTS "project_name" TEXT`);
 
-    return screenshot;
+    const id = crypto.randomUUID();
+    const rows = (await prisma.$queryRawUnsafe(
+      `INSERT INTO "screenshots"
+        ("id", "user_id", "session_id", "file_path", "active_application", "window_title",
+         "domain", "url", "employee_name", "project_name", "captured_at", "created_at")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+       RETURNING "id", "user_id" AS "userId", "session_id" AS "sessionId",
+                 "active_application" AS "activeApplication", "window_title" AS "windowTitle",
+                 "domain", "url", "employee_name" AS "employeeName", "project_name" AS "projectName",
+                 "captured_at" AS "capturedAt", "created_at" AS "createdAt"`,
+      id,
+      payload.userId,
+      payload.sessionId ?? null,
+      payload.filePath,
+      payload.activeApplication ?? null,
+      payload.windowTitle ?? null,
+      payload.domain ?? null,
+      payload.url ?? null,
+      payload.employeeName ?? null,
+      payload.projectName ?? null,
+      payload.capturedAt,
+    )) as Array<Record<string, unknown>>;
+
+    return rows[0];
   },
 
   async getScreenshots(payload: GetScreenshotsPayload) {
-    const screenshots = await prisma.screenshot.findMany({
-      where: {
-        userId: payload.userId,
-        ...(payload.sessionId ? { sessionId: payload.sessionId } : {}),
-        ...(payload.startDate || payload.endDate ? {
-          capturedAt: {
-            ...(payload.startDate ? { gte: payload.startDate } : {}),
-            ...(payload.endDate ? { lte: payload.endDate } : {}),
-          }
-        } : {}),
-      },
-      select: {
-        id: true,
-        userId: true,
-        sessionId: true,
-        capturedAt: true,
-        createdAt: true,
-      },
-      orderBy: {
-        capturedAt: "desc",
-      },
-      take: payload.limit,
-    });
+    const filters = [
+      `"user_id" = $1`,
+      payload.sessionId ? `"session_id" = $2` : "",
+      payload.startDate ? `"captured_at" >= $${payload.sessionId ? 3 : 2}` : "",
+      payload.endDate ? `"captured_at" <= $${payload.sessionId ? (payload.startDate ? 4 : 3) : payload.startDate ? 3 : 2}` : "",
+    ].filter(Boolean);
 
-    return screenshots;
+    const values: unknown[] = [payload.userId];
+    if (payload.sessionId) values.push(payload.sessionId);
+    if (payload.startDate) values.push(payload.startDate);
+    if (payload.endDate) values.push(payload.endDate);
+    values.push(payload.limit);
+
+    return prisma.$queryRawUnsafe(
+      `SELECT "id", "user_id" AS "userId", "session_id" AS "sessionId",
+              "active_application" AS "activeApplication", "window_title" AS "windowTitle",
+              "domain", "url", "employee_name" AS "employeeName", "project_name" AS "projectName",
+              "captured_at" AS "capturedAt", "created_at" AS "createdAt"
+       FROM "screenshots"
+       WHERE ${filters.join(" AND ")}
+       ORDER BY "captured_at" DESC
+       LIMIT $${values.length}`,
+      ...values,
+    );
   },
 
   async getScreenshotById(id: string) {

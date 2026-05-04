@@ -1,5 +1,12 @@
 import { Router } from "express";
-import { getDashboardAnalytics, addManualHours } from "../controllers/dashboard.controller";
+import {
+  addManualHours,
+  getActivityTimeline,
+  getDashboardAnalytics,
+  getUsageReport,
+  listClassificationRules,
+  upsertClassificationRule,
+} from "../controllers/dashboard.controller";
 import { getCalendarHeatmap } from "../controllers/calendar.controller";
 import {
   createAgentConnectToken,
@@ -10,8 +17,23 @@ import {
   signupManager,
 } from "../controllers/auth.controller";
 import { acceptInvite, createInvite, validateInvite } from "../controllers/invite.controller";
-import { getOfficeLocations, upsertOfficeLocation, deleteOfficeLocation } from "../controllers/location.controller";
+import {
+  deleteOfficeLocation,
+  getOfficeLocations,
+  searchOfficeLocations,
+  upsertOfficeLocation,
+} from "../controllers/location.controller";
 import { uploadRecording, getRecordings, getRecordingFile, deleteRecording } from "../controllers/recording.controller";
+import {
+  addTeamMember,
+  createTeam,
+  deleteTeam,
+  getTeam,
+  getTeamAnalytics,
+  listTeams,
+  removeTeamMember,
+  updateTeam,
+} from "../controllers/team.controller";
 import { requireAuth, requireRole } from "../../../shared/middlewares/auth.middleware";
 import multer from "multer";
 import fs from "fs";
@@ -28,8 +50,12 @@ webRouter.get("/health", (_req, res) => {
 });
 
 webRouter.get("/dashboard/analytics", requireAuth, getDashboardAnalytics);
+webRouter.get("/dashboard/activity-timeline", requireAuth, getActivityTimeline);
+webRouter.get("/dashboard/usage-report", requireAuth, getUsageReport);
 webRouter.post("/dashboard/manual-hours", requireAuth, requireRole("MANAGER"), addManualHours);
 webRouter.get("/dashboard/calendar", requireAuth, getCalendarHeatmap);
+webRouter.get("/classification-rules", requireAuth, listClassificationRules);
+webRouter.post("/classification-rules", requireAuth, requireRole("MANAGER"), upsertClassificationRule);
 
 webRouter.post("/auth/signup-manager", signupManager);
 webRouter.post("/auth/login", login);
@@ -39,11 +65,21 @@ webRouter.post("/auth/agent-token", requireAuth, createAgentConnectToken);
 
 webRouter.get("/users", requireAuth, requireRole("MANAGER"), getTeamUsers);
 
+webRouter.post("/teams", requireAuth, requireRole("MANAGER"), createTeam);
+webRouter.get("/teams", requireAuth, requireRole("MANAGER"), listTeams);
+webRouter.get("/teams/:id", requireAuth, requireRole("MANAGER"), getTeam);
+webRouter.put("/teams/:id", requireAuth, requireRole("MANAGER"), updateTeam);
+webRouter.delete("/teams/:id", requireAuth, requireRole("MANAGER"), deleteTeam);
+webRouter.post("/teams/:id/members", requireAuth, requireRole("MANAGER"), addTeamMember);
+webRouter.delete("/teams/:id/members/:userId", requireAuth, requireRole("MANAGER"), removeTeamMember);
+webRouter.get("/teams/:id/analytics", requireAuth, requireRole("MANAGER"), getTeamAnalytics);
+
 webRouter.post("/invites", requireAuth, requireRole("MANAGER"), createInvite);
 webRouter.get("/invites/validate", validateInvite);
 webRouter.post("/invites/accept", acceptInvite);
 
 // Office location management (Manager only)
+webRouter.get("/locations/search", requireAuth, requireRole("MANAGER"), searchOfficeLocations);
 webRouter.get("/locations", requireAuth, getOfficeLocations);
 webRouter.put("/locations", requireAuth, requireRole("MANAGER"), upsertOfficeLocation);
 webRouter.delete("/locations/:id", requireAuth, requireRole("MANAGER"), deleteOfficeLocation);

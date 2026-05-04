@@ -83,8 +83,34 @@ model User {
   invitedUsers   User[]       @relation("UserInvites")
   invitesCreated InviteToken[] @relation("InvitedBy")
   agentTokens    AgentToken[]
+  ownedTeams     Team[]        @relation("ManagerTeams")
+  teamMemberships TeamMembership[]
 
   @@map("users")
+}
+
+model Team {
+  id          String           @id @default(cuid())
+  name        String
+  managerId   String           @map("manager_id")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  manager     User             @relation("ManagerTeams", fields: [managerId], references: [id])
+  memberships TeamMembership[]
+
+  @@index([managerId])
+  @@map("teams")
+}
+
+model TeamMembership {
+  id        String @id @default(cuid())
+  teamId    String @map("team_id")
+  userId    String @map("user_id")
+  team      Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+  @@map("team_memberships")
 }
 
 model InviteToken {
@@ -127,12 +153,69 @@ model Screenshot {
   userId      String   @map("user_id")
   sessionId   String?  @map("session_id")
   filePath    String   @map("file_path")
+  activeApplication String? @map("active_application")
+  windowTitle String? @map("window_title")
+  domain      String?
+  url         String?
+  employeeName String? @map("employee_name")
+  projectName String? @map("project_name")
   capturedAt  DateTime @map("captured_at")
   createdAt   DateTime @default(now()) @map("created_at")
 
   @@index([userId, capturedAt])
   @@index([sessionId])
   @@map("screenshots")
+}
+
+enum ActivityCategory {
+  PRODUCTIVE
+  UNPRODUCTIVE
+  NEUTRAL
+}
+
+enum ActivityTargetType {
+  APP
+  DOMAIN
+  URL
+}
+
+model ActivityUsageLog {
+  id                String           @id @default(cuid())
+  organizationId    String           @map("organization_id")
+  userId            String           @map("user_id")
+  sessionId         String?          @map("session_id")
+  targetType        ActivityTargetType @map("target_type")
+  appName           String           @map("app_name")
+  windowTitle       String?          @map("window_title")
+  domain            String?
+  url               String?
+  category          ActivityCategory @default(NEUTRAL)
+  durationSeconds   Int              @default(0) @map("duration_seconds")
+  idleSeconds       Int              @default(0) @map("idle_seconds")
+  isIdle            Boolean          @default(false) @map("is_idle")
+  capturedAt        DateTime         @map("captured_at")
+  createdAt         DateTime         @default(now()) @map("created_at")
+
+  @@index([organizationId, capturedAt])
+  @@index([userId, capturedAt])
+  @@index([sessionId])
+  @@index([targetType, appName])
+  @@index([domain])
+  @@map("activity_usage_logs")
+}
+
+model ClassificationRule {
+  id             String             @id @default(cuid())
+  organizationId String             @map("organization_id")
+  targetType     ActivityTargetType @map("target_type")
+  targetValue    String             @map("target_value")
+  category       ActivityCategory
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+
+  @@unique([organizationId, targetType, targetValue])
+  @@index([organizationId])
+  @@map("classification_rules")
 }
 
 model LiveScreenSession {

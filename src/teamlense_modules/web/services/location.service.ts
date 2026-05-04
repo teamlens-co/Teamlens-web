@@ -1,6 +1,16 @@
 import { prisma } from "../../../shared/db/prisma";
+import { env } from "../../../config/env";
 
 type SqlRow = Record<string, unknown>;
+
+export interface LocationSearchResult {
+  id: string;
+  label: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  provider: "google" | "openstreetmap";
+}
 
 const asString = (v: unknown): string => {
   if (typeof v === "string") return v;
@@ -11,6 +21,12 @@ const asString = (v: unknown): string => {
 const asNumber = (v: unknown): number => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
+};
+
+const getString = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
+
+const getRecord = (value: unknown): Record<string, unknown> | undefined => {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 };
 
 export interface OfficeLocation {
@@ -45,6 +61,105 @@ function haversineDistance(
 
 export class LocationService {
   private static schemaReady = false;
+
+  static async searchOfficeAddresses(query: string): Promise<LocationSearchResult[]> {
+    const trimmed = query.trim();
+    if (trimmed.length < 3) return [];
+
+    if (env.googlePlacesApiKey) {
+      return this.searchGooglePlaces(trimmed);
+    }
+
+    return this.searchOpenStreetMap(trimmed);
+  }
+
+  private static async searchGooglePlaces(query: string): Promise<LocationSearchResult[]> {
+    const response = await fetch("https://places.googleapis.com/v1/places:searchText", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": env.googlePlacesApiKey,
+        "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.location",
+      },
+      body: JSON.stringify({
+        textQuery: query,
+        maxResultCount: 8,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Google Places search failed with ${response.status}`);
+    }
+
+    const payload = getRecord(await response.json());
+    const places = Array.isArray(payload?.places) ? payload.places : [];
+
+    return places.flatMap((place): LocationSearchResult[] => {
+      const placeRecord = getRecord(place);
+      const location = getRecord(placeRecord?.location);
+      const displayName = getRecord(placeRecord?.displayName);
+      const latitude = Number(location?.latitude);
+      const longitude = Number(location?.longitude);
+
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        return [];
+      }
+
+      const label = getString(displayName?.text) || getString(placeRecord?.formattedAddress) || "Office";
+      const address = getString(placeRecord?.formattedAddress) || label;
+
+      return [{
+        id: getString(placeRecord?.id) || `${latitude},${longitude}`,
+        label,
+        address,
+        latitude,
+        longitude,
+        provider: "google",
+      }];
+    });
+  }
+
+  private static async searchOpenStreetMap(query: string): Promise<LocationSearchResult[]> {
+    const url = new URL("https://nominatim.openstreetmap.org/search");
+    url.searchParams.set("format", "jsonv2");
+    url.searchParams.set("limit", "8");
+    url.searchParams.set("q", query);
+
+    const response = await fetch(url, {
+      headers: {
+        "Accept-Language": "en",
+        "User-Agent": "TeamLens office location search",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenStreetMap search failed with ${response.status}`);
+    }
+
+    const payload = await response.json();
+    const rows = Array.isArray(payload) ? payload : [];
+
+    return rows.flatMap((row): LocationSearchResult[] => {
+      const record = getRecord(row);
+      const latitude = Number(record?.lat);
+      const longitude = Number(record?.lon);
+
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        return [];
+      }
+
+      const address = getString(record?.display_name) || "Office";
+
+      return [{
+        id: getString(record?.place_id) || `${latitude},${longitude}`,
+        label: getString(record?.name) || address.split(",")[0]?.trim() || "Office",
+        address,
+        latitude,
+        longitude,
+        provider: "openstreetmap",
+      }];
+    });
+  }
 
   static async ensureSchema(): Promise<void> {
     if (this.schemaReady || !prisma.$executeRawUnsafe) return;
