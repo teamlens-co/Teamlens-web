@@ -1,9 +1,12 @@
 import { Router } from "express";
 import {
   addManualHours,
+  createManualTimeRequest,
   getActivityTimeline,
   getDashboardAnalytics,
   getUsageReport,
+  listManualTimeRequests,
+  reviewManualTimeRequest,
   listClassificationRules,
   upsertClassificationRule,
 } from "../controllers/dashboard.controller";
@@ -53,6 +56,9 @@ webRouter.get("/dashboard/analytics", requireAuth, getDashboardAnalytics);
 webRouter.get("/dashboard/activity-timeline", requireAuth, getActivityTimeline);
 webRouter.get("/dashboard/usage-report", requireAuth, getUsageReport);
 webRouter.post("/dashboard/manual-hours", requireAuth, requireRole("MANAGER"), addManualHours);
+webRouter.get("/dashboard/manual-time-requests", requireAuth, listManualTimeRequests);
+webRouter.post("/dashboard/manual-time-requests", requireAuth, createManualTimeRequest);
+webRouter.patch("/dashboard/manual-time-requests/:id/review", requireAuth, requireRole("MANAGER"), reviewManualTimeRequest);
 webRouter.get("/dashboard/calendar", requireAuth, getCalendarHeatmap);
 webRouter.get("/classification-rules", requireAuth, listClassificationRules);
 webRouter.post("/classification-rules", requireAuth, requireRole("MANAGER"), upsertClassificationRule);

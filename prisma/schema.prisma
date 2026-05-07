@@ -30,6 +30,12 @@ enum AgentTokenStatus {
   REVOKED
 }
 
+enum ManualTimeStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model ActivityLog {
   id         Int      @id @default(autoincrement())
   userId     String   @map("user_id")
@@ -85,8 +91,33 @@ model User {
   agentTokens    AgentToken[]
   ownedTeams     Team[]        @relation("ManagerTeams")
   teamMemberships TeamMembership[]
+  manualTimeRequests ManualTimeRequest[] @relation("ManualTimeRequestUser")
+  manualTimeReviews  ManualTimeRequest[] @relation("ManualTimeRequestReviewer")
 
   @@map("users")
+}
+
+model ManualTimeRequest {
+  id             String           @id @default(cuid())
+  organizationId String           @map("organization_id")
+  userId         String           @map("user_id")
+  requestedById  String           @map("requested_by_id")
+  reviewedById   String?          @map("reviewed_by_id")
+  startAt        DateTime         @map("start_at")
+  endAt          DateTime         @map("end_at")
+  durationSeconds Int             @map("duration_seconds")
+  reason         String
+  status         ManualTimeStatus @default(PENDING)
+  reviewNote     String?          @map("review_note")
+  reviewedAt     DateTime?        @map("reviewed_at")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+  user           User             @relation("ManualTimeRequestUser", fields: [userId], references: [id], onDelete: Cascade)
+  reviewer       User?            @relation("ManualTimeRequestReviewer", fields: [reviewedById], references: [id])
+
+  @@index([organizationId, status])
+  @@index([userId, startAt])
+  @@map("manual_time_requests")
 }
 
 model Team {

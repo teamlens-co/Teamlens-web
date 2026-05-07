@@ -12,9 +12,9 @@ import { LocationService } from "../../web/services/location.service";
 type SqlRow = Record<string, unknown>;
 
 /**
- * Maximum tail (seconds) to count for the last active snapshot when there is no
- * newer snapshot yet. This prevents unlimited extension while still handling
- * short upload gaps.
+ * Maximum tail (seconds) to count after the last mouse/keyboard interaction.
+ * After this grace period, the remaining session time is considered idle until
+ * another interaction snapshot arrives.
  */
 const ACTIVE_TAIL_SECONDS = 5;
 
@@ -66,8 +66,8 @@ const toDate = (value?: string): Date => {
 //     If there is no next snapshot, apply a short tail (ACTIVE_TAIL_SECONDS).
 //  3. Clamp every segment to [sessionStart, sessionEnd].
 //
-// This ensures idle snapshots stop active time immediately instead of extending
-// a long fixed window after activity.
+// In practice, "active" means mouse or keyboard input was present in that
+// snapshot. Once input stops, active time only extends by the short grace tail.
 // ---------------------------------------------------------------------------
 
 interface Snapshot {
@@ -513,9 +513,9 @@ export class ActivityService {
     for (const row of logRows) {
       const sid = asString(row.session_id);
       const tsDate = row.ts instanceof Date ? row.ts : new Date(asString(row.ts));
-      const isActive = row.is_active === true || row.is_active === 1;
       const mouseMoves = asNumber(row.mouse_moves);
       const keyPresses = asNumber(row.key_presses);
+      const isActive = mouseMoves > 0 || keyPresses > 0;
 
       if (!snapshotsBySession.has(sid)) snapshotsBySession.set(sid, []);
       snapshotsBySession.get(sid)!.push({ ts: tsDate.getTime(), isActive });
@@ -678,7 +678,9 @@ export class ActivityService {
     for (const row of logRows) {
       const sid = asString(row.session_id);
       const tsDate = row.ts instanceof Date ? row.ts : new Date(asString(row.ts));
-      const isActive = row.is_active === true || row.is_active === 1;
+      const mouseMoves = asNumber(row.mouse_moves);
+      const keyPresses = asNumber(row.key_presses);
+      const isActive = mouseMoves > 0 || keyPresses > 0;
       if (!snapshotsBySession.has(sid)) snapshotsBySession.set(sid, []);
       snapshotsBySession.get(sid)!.push({ ts: tsDate.getTime(), isActive });
     }

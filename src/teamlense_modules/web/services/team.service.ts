@@ -108,7 +108,14 @@ export class TeamService {
       managerId,
     )) as SqlRow[];
 
-    return rows.map(mapTeam);
+    const teams = rows.map(mapTeam);
+
+    return Promise.all(
+      teams.map(async (team) => ({
+        ...team,
+        members: await this.listMembersForTeam(team.id),
+      })),
+    );
   }
 
   static async getTeam(teamId: string, managerId: string) {
@@ -202,6 +209,10 @@ export class TeamService {
     const team = await this.getOwnedTeam(teamId, managerId);
     if (!team) return null;
 
+    return this.listMembersForTeam(teamId);
+  }
+
+  private static async listMembersForTeam(teamId: string) {
     const rows = (await prisma.$queryRawUnsafe(
       `SELECT u."id", u."full_name", u."email", u."role", u."status"
        FROM "team_memberships" tm

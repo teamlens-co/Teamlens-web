@@ -1,9 +1,10 @@
-import type { Request, Response } from "express";
+import type { Response } from "express";
 import path from "path";
 import fs from "fs";
+import type { AuthRequest } from "../../../shared/types";
 import { RecordingService } from "../services/recording.service";
 
-export const uploadRecording = async (req: Request, res: Response): Promise<void> => {
+export const uploadRecording = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const auth = req.auth;
     if (!auth || auth.role !== "MANAGER") {
@@ -43,7 +44,7 @@ export const uploadRecording = async (req: Request, res: Response): Promise<void
   }
 };
 
-export const getRecordings = async (req: Request, res: Response): Promise<void> => {
+export const getRecordings = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const auth = req.auth;
     if (!auth) {
@@ -51,7 +52,8 @@ export const getRecordings = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const employeeId = typeof req.query.employeeId === "string" ? req.query.employeeId : undefined;
+    const requestedEmployeeId = typeof req.query.employeeId === "string" ? req.query.employeeId : undefined;
+    const employeeId = auth.role === "MANAGER" ? requestedEmployeeId : auth.userId;
     const startDate = typeof req.query.startDate === "string" ? req.query.startDate : undefined;
     const endDate = typeof req.query.endDate === "string" ? req.query.endDate : undefined;
     const limit = typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : 50;
@@ -73,13 +75,19 @@ export const getRecordings = async (req: Request, res: Response): Promise<void> 
   }
 };
 
-export const getRecordingFile = async (req: Request, res: Response): Promise<void> => {
+export const getRecordingFile = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const id = String(req.params.id);
     const recording = await RecordingService.getRecordingById(id);
 
     if (!recording) {
       res.status(404).json({ success: false, error: "Recording not found" });
+      return;
+    }
+
+    const auth = req.auth;
+    if (!auth || recording.organizationId !== auth.organizationId || (auth.role !== "MANAGER" && recording.employeeId !== auth.userId)) {
+      res.status(403).json({ success: false, error: "Not authorized to view this recording" });
       return;
     }
 
@@ -98,7 +106,7 @@ export const getRecordingFile = async (req: Request, res: Response): Promise<voi
   }
 };
 
-export const deleteRecording = async (req: Request, res: Response): Promise<void> => {
+export const deleteRecording = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const auth = req.auth;
     if (!auth || auth.role !== "MANAGER") {

@@ -59,6 +59,18 @@ const manualHoursSchema = z.object({
   hours: z.number().positive()
 });
 
+const manualTimeStatusSchema = z.enum(["PENDING", "APPROVED", "REJECTED"]);
+const createManualTimeRequestSchema = z.object({
+  userId: z.string().min(1).optional(),
+  startAt: z.string().datetime(),
+  endAt: z.string().datetime(),
+  reason: z.string().trim().min(3).max(1000),
+});
+const reviewManualTimeRequestSchema = z.object({
+  status: z.enum(["APPROVED", "REJECTED"]),
+  reviewNote: z.string().trim().max(1000).optional(),
+});
+
 export const addManualHours = async (req: AuthRequest, res: Response): Promise<void> => {
   if (!req.auth || req.auth.role !== "MANAGER") {
     res.status(403).json({ success: false, message: "Forbidden" });
@@ -77,6 +89,124 @@ export const addManualHours = async (req: AuthRequest, res: Response): Promise<v
   } catch (error) {
     console.error("Failed to add manual hours", error);
     res.status(500).json({ success: false, message: "Unable to add manual hours" });
+  }
+};
+
+export const listManualTimeRequests = async (req: AuthRequest, res: Response): Promise<void> => {
+  if (!req.auth) {
+    res.status(401).json({ success: false, message: "Unauthorized" });
+    return;
+  }
+
+  const parsedStatus = typeof req.query.status === "string" ? manualTimeStatusSchema.safeParse(req.query.status.toUpperCase()) : null;
+
+  try {
+    const listParams: {
+      organizationId: string;
+      requestingUserId: string;
+      isManager: boolean;
+      status?: "PENDING" | "APPROVED" | "REJECTED";
+    } = {
+      organizationId: req.auth.organizationId,
+      requestingUserId: req.auth.userId,
+      isManager: req.auth.role === "MANAGER",
+    };
+    if (parsedStatus?.success) listParams.status = parsedStatus.data;
+
+    const requests = await DashboardService.listManualTimeRequests(listParams);
+
+    res.status(200).json({ success: true, data: requests });
+  } catch (error) {
+    console.error("Failed to fetch manual time requests", error);
+    res.status(500).json({ success: false, message: "Unable to fetch manual time requests" });
+  }
+};
+
+export const createManualTimeRequest = async (req: AuthRequest, res: Response): Promise<void> => {
+  if (!req.auth) {
+    res.status(401).json({ success: false, message: "Unauthorized" });
+    return;
+  }
+
+  const parsed = createManualTimeRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ success: false, message: "Invalid payload", issues: parsed.error.flatten() });
+    return;
+  }
+
+  try {
+    const createParams: {
+      organizationId: string;
+      requestingUserId: string;
+      isManager: boolean;
+      userId?: string;
+      startAt: Date;
+      endAt: Date;
+      reason: string;
+    } = {
+      organizationId: req.auth.organizationId,
+      requestingUserId: req.auth.userId,
+      isManager: req.auth.role === "MANAGER",
+      startAt: new Date(parsed.data.startAt),
+      endAt: new Date(parsed.data.endAt),
+      reason: parsed.data.reason,
+    };
+    if (parsed.data.userId) createParams.userId = parsed.data.userId;
+
+    const request = await DashboardService.createManualTimeRequest(createParams);
+
+    res.status(201).json({ success: true, data: request });
+  } catch (error) {
+    console.error("Failed to create manual time request", error);
+    res.status(400).json({
+      success: false,
+      message: error instanceof Error ? error.message : "Unable to create manual time request",
+    });
+  }
+};
+
+export const reviewManualTimeRequest = async (req: AuthRequest, res: Response): Promise<void> => {
+  if (!req.auth || req.auth.role !== "MANAGER") {
+    res.status(403).json({ success: false, message: "Forbidden" });
+    return;
+  }
+
+  const parsed = reviewManualTimeRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ success: false, message: "Invalid payload", issues: parsed.error.flatten() });
+    return;
+  }
+
+  const requestId = req.params.id;
+  if (typeof requestId !== "string" || requestId.length === 0) {
+    res.status(400).json({ success: false, message: "Missing request id" });
+    return;
+  }
+
+  try {
+    const reviewParams: {
+      organizationId: string;
+      managerId: string;
+      requestId: string;
+      status: "APPROVED" | "REJECTED";
+      reviewNote?: string;
+    } = {
+      organizationId: req.auth.organizationId,
+      managerId: req.auth.userId,
+      requestId,
+      status: parsed.data.status,
+    };
+    if (parsed.data.reviewNote) reviewParams.reviewNote = parsed.data.reviewNote;
+
+    const request = await DashboardService.reviewManualTimeRequest(reviewParams);
+
+    res.status(200).json({ success: true, data: request });
+  } catch (error) {
+    console.error("Failed to review manual time request", error);
+    res.status(400).json({
+      success: false,
+      message: error instanceof Error ? error.message : "Unable to review manual time request",
+    });
   }
 };
 
