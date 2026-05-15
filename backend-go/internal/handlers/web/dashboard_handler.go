@@ -1,0 +1,157 @@
+package web
+
+import (
+	"log/slog"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/teamlens/backend-go/internal/middleware"
+	"github.com/teamlens/backend-go/internal/models"
+	"github.com/teamlens/backend-go/internal/services"
+)
+
+type DashboardHandler struct {
+	service     *services.DashboardService
+	activitySvc *services.ActivityService
+}
+
+func NewDashboardHandler(svc *services.DashboardService, actSvc *services.ActivityService) *DashboardHandler {
+	return &DashboardHandler{service: svc, activitySvc: actSvc}
+}
+
+func (h *DashboardHandler) GetAnalytics(w http.ResponseWriter, r *http.Request) {
+	auth := middleware.GetAuthContext(r.Context())
+	if auth == nil {
+		middleware.Error(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	userID := r.URL.Query().Get("userId")
+	if userID == "" {
+		userID = auth.UserID
+	}
+
+	start, end := parseDateRange(r)
+	if start.IsZero() || end.IsZero() {
+		middleware.Error(w, http.StatusBadRequest, "startDate and endDate query parameters are required (RFC3339 format)")
+		return
+	}
+
+	result, err := h.service.GetAnalytics(r.Context(), userID, start, end)
+	if err != nil {
+		slog.Error("Dashboard analytics failed", "error", err)
+		middleware.Error(w, http.StatusInternalServerError, "Unable to fetch analytics")
+		return
+	}
+
+	middleware.Success(w, http.StatusOK, result)
+}
+
+func (h *DashboardHandler) GetCalendarHeatmap(w http.ResponseWriter, r *http.Request) {
+	auth := middleware.GetAuthContext(r.Context())
+	if auth == nil {
+		middleware.Error(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	userID := r.URL.Query().Get("userId")
+	if userID == "" {
+		userID = auth.UserID
+	}
+
+	yearStr := r.URL.Query().Get("year")
+	monthStr := r.URL.Query().Get("month")
+
+	year, _ := strconv.Atoi(yearStr)
+	month, _ := strconv.Atoi(monthStr)
+
+	if year == 0 {
+		year = time.Now().Year()
+	}
+	if month == 0 {
+		month = int(time.Now().Month())
+	}
+
+	entries, err := h.activitySvc.GetCalendarHeatmap(r.Context(), userID, year, month)
+	if err != nil {
+		slog.Error("Calendar heatmap failed", "error", err)
+		middleware.Error(w, http.StatusInternalServerError, "Unable to fetch calendar data")
+		return
+	}
+
+	if entries == nil {
+		entries = []models.CalendarHeatmapEntry{}
+	}
+
+	middleware.Success(w, http.StatusOK, entries)
+}
+
+func parseDateRange(r *http.Request) (time.Time, time.Time) {
+	startStr := r.URL.Query().Get("startDate")
+	endStr := r.URL.Query().Get("endDate")
+
+	if startStr == "" || endStr == "" {
+		return time.Time{}, time.Time{}
+	}
+
+	start, err := time.Parse(time.RFC3339, startStr)
+	if err != nil {
+		start, err = time.Parse("2006-01-02", startStr)
+		if err != nil {
+			return time.Time{}, time.Time{}
+		}
+	}
+
+	end, err := time.Parse(time.RFC3339, endStr)
+	if err != nil {
+		end, err = time.Parse("2006-01-02", endStr)
+		if err != nil {
+			return time.Time{}, time.Time{}
+		}
+		end = end.Add(24*time.Hour - time.Second)
+	}
+
+	return start.UTC(), end.UTC()
+}
+
+func (h *DashboardHandler) GetTeamAnalytics(w http.ResponseWriter, r *http.Request) {
+	auth := middleware.GetAuthContext(r.Context())
+	if auth == nil {
+		middleware.Error(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	teamID := strings.TrimPrefix(r.URL.Path, "/api/v1/teams/analytics/")
+	parts := strings.SplitN(teamID, "/", 2)
+	if len(parts) > 0 {
+		teamID = parts[0]
+	}
+
+	// Remove trailing slash if any
+	teamID = strings.TrimRight(teamID, "/")
+
+	if teamID == "" {
+		// Try as query param
+		teamID = r.URL.Query().Get("teamId")
+	}
+
+	if teamID == "" {
+		middleware.Error(w, http.StatusBadRequest, "teamId is required")
+		return
+	}
+
+	if auth.Role != models.RoleManager {
+		middleware.Error(w, http.StatusForbidden, "Forbidden")
+		return
+	}
+
+	start, end := parseDateRange(r)
+	if start.IsZero() || end.IsZero() {
+		middleware.Error(w, http.StatusBadRequest, "startDate and endDate query parameters are required")
+		return
+	}
+
+	middleware.Error(w, http.StatusNotImplemented, "Team analytics not available on this endpoint")
+}

@@ -1,0 +1,291 @@
+package web
+
+import (
+	"encoding/json"
+	"log/slog"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/teamlens/backend-go/internal/middleware"
+	"github.com/teamlens/backend-go/internal/models"
+	"github.com/teamlens/backend-go/internal/services"
+)
+
+type SettingsHandler struct {
+	pool        *pgxpool.Pool
+	locationSvc *services.LocationService
+	activitySvc *services.ActivityService
+	authSvc     *services.AuthService
+}
+
+func NewSettingsHandler(pool *pgxpool.Pool, locSvc *services.LocationService, actSvc *services.ActivityService, authSvc *services.AuthService) *SettingsHandler {
+	return &SettingsHandler{
+		pool:        pool,
+		locationSvc: locSvc,
+		activitySvc: actSvc,
+		authSvc:     authSvc,
+	}
+}
+
+// ─── Calendar / Manual Time ────────────────────────────────────────────────
+
+func (h *SettingsHandler) AddManualHours(w http.ResponseWriter, r *http.Request) {
+	auth := middleware.GetAuthContext(r.Context())
+	if auth == nil {
+		middleware.Error(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	var input struct {
+		Date  string  `json:"date"`
+		Hours float64 `json:"hours"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		middleware.Error(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if input.Date == "" || input.Hours <= 0 {
+		middleware.Error(w, http.StatusBadRequest, "date and hours are required")
+		return
+	}
+
+	if err := h.activitySvc.AddManualHours(r.Context(), auth.UserID, input.Date, input.Hours); err != nil {
+		slog.Error("Failed to add manual hours", "error", err)
+		middleware.Error(w, http.StatusInternalServerError, "Unable to add manual hours")
+		return
+	}
+
+	middleware.Success(w, http.StatusOK, map[string]string{"status": "added"})
+}
+
+func (h *SettingsHandler) GetCalendarHeatmap(w http.ResponseWriter, r *http.Request) {
+	auth := middleware.GetAuthContext(r.Context())
+	if auth == nil {
+		middleware.Error(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	userID := r.URL.Query().Get("userId")
+	if userID == "" {
+		userID = auth.UserID
+	}
+
+	year, _ := strconv.Atoi(r.URL.Query().Get("year"))
+	month, _ := strconv.Atoi(r.URL.Query().Get("month"))
+	if year == 0 {
+		year = time.Now().Year()
+	}
+	if month == 0 {
+		month = int(time.Now().Month())
+	}
+
+	entries, err := h.activitySvc.GetCalendarHeatmap(r.Context(), userID, year, month)
+	if err != nil {
+		slog.Error("Calendar heatmap failed", "error", err)
+		middleware.Error(w, http.StatusInternalServerError, "Unable to fetch calendar data")
+		return
+	}
+	if entries == nil {
+		entries = []models.CalendarHeatmapEntry{}
+	}
+
+	middleware.Success(w, http.StatusOK, entries)
+}
+
+// ─── Environment Config ────────────────────────────────────────────────────
+
+func (h *SettingsHandler) GetPublicEnv(w http.ResponseWriter, r *http.Request) {
+	env := map[string]interface{}{
+		"googlePlacesApiKey": "",
+		"appVersion":         "1.0.0",
+		"features":           map[string]bool{"liveScreenView": true, "recordings": true},
+	}
+	middleware.Success(w, http.StatusOK, env)
+}
+
+func (h *SettingsHandler) GetUser(w http.ResponseWriter, r *http.Request) {
+	auth := middleware.GetAuthContext(r.Context())
+	if auth == nil {
+		middleware.Error(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	user, err := h.authSvc.Me(r.Context(), auth.UserID)
+	if err != nil {
+		middleware.Error(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	middleware.Success(w, http.StatusOK, user)
+}
+
+// ─── Manual Time Requests ──────────────────────────────────────────────────
+
+func (h *SettingsHandler) CreateManualTimeRequest(w http.ResponseWriter, r *http.Request) {
+	auth := middleware.GetAuthContext(r.Context())
+	if auth == nil {
+		middleware.Error(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	var input struct {
+		StartAt string `json:"startAt"`
+		EndAt   string `json:"endAt"`
+		Reason  string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		middleware.Error(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	startAt, err := time.Parse(time.RFC3339, input.StartAt)
+	if err != nil {
+		middleware.Error(w, http.StatusBadRequest, "Invalid startAt format")
+		return
+	}
+	endAt, err := time.Parse(time.RFC3339, input.EndAt)
+	if err != nil {
+		middleware.Error(w, http.StatusBadRequest, "Invalid endAt format")
+		return
+	}
+
+	if endAt.Before(startAt) || endAt.Equal(startAt) {
+		middleware.Error(w, http.StatusBadRequest, "endAt must be after startAt")
+		return
+	}
+
+	durationSec := int(endAt.Sub(startAt).Seconds())
+	id := services.RandomToken(16)
+
+	_, err = h.pool.Exec(r.Context(),
+		`INSERT INTO manual_time_requests
+		 (id, organization_id, user_id, requested_by_id, start_at, end_at, duration_seconds, reason, status, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'PENDING', NOW(), NOW())`,
+		id, auth.OrganizationID, auth.UserID, auth.UserID, startAt, endAt, durationSec, input.Reason,
+	)
+	if err != nil {
+		slog.Error("Failed to create manual time request", "error", err)
+		middleware.Error(w, http.StatusInternalServerError, "Unable to create request")
+		return
+	}
+
+	middleware.Success(w, http.StatusCreated, map[string]string{"status": "created", "id": id})
+}
+
+func (h *SettingsHandler) ListManualTimeRequests(w http.ResponseWriter, r *http.Request) {
+	auth := middleware.GetAuthContext(r.Context())
+	if auth == nil {
+		middleware.Error(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	statusFilter := r.URL.Query().Get("status")
+
+	query := `SELECT mtr.id, mtr.organization_id, mtr.user_id, mtr.requested_by_id,
+	                 mtr.start_at, mtr.end_at, mtr.duration_seconds, mtr.reason,
+	                 mtr.status::text, mtr.created_at, u.full_name
+	          FROM manual_time_requests mtr
+	          JOIN users u ON u.id = mtr.user_id
+	          WHERE mtr.organization_id = $1`
+
+	args := []interface{}{auth.OrganizationID}
+	paramIdx := 2
+
+	if auth.Role == models.RoleEmployee {
+		query += ` AND mtr.user_id = $` + strconv.Itoa(paramIdx)
+		args = append(args, auth.UserID)
+		paramIdx++
+	}
+
+	if statusFilter != "" {
+		query += ` AND mtr.status::text = $` + strconv.Itoa(paramIdx)
+		args = append(args, strings.ToUpper(statusFilter))
+		paramIdx++
+	}
+
+	query += ` ORDER BY mtr.created_at DESC LIMIT 50`
+
+	rows, err := h.pool.Query(r.Context(), query, args...)
+	if err != nil {
+		slog.Error("Failed to list manual time requests", "error", err)
+		middleware.Error(w, http.StatusInternalServerError, "Unable to fetch requests")
+		return
+	}
+	defer rows.Close()
+
+	var requests []models.ManualTimeRequest
+	for rows.Next() {
+		var r models.ManualTimeRequest
+		var statusStr string
+		if err := rows.Scan(&r.ID, &r.OrganizationID, &r.UserID, &r.RequestedByID,
+			&r.StartAt, &r.EndAt, &r.DurationSeconds, &r.Reason,
+			&statusStr, &r.CreatedAt, &r.EmployeeName); err != nil {
+			slog.Error("Failed to scan manual time request", "error", err)
+			continue
+		}
+		r.Status = models.ManualTimeStatus(statusStr)
+		requests = append(requests, r)
+	}
+
+	if requests == nil {
+		requests = []models.ManualTimeRequest{}
+	}
+
+	middleware.Success(w, http.StatusOK, requests)
+}
+
+func (h *SettingsHandler) ReviewManualTimeRequest(w http.ResponseWriter, r *http.Request) {
+	auth := middleware.GetAuthContext(r.Context())
+	if auth == nil {
+		middleware.Error(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	if auth.Role != models.RoleManager {
+		middleware.Error(w, http.StatusForbidden, "Forbidden")
+		return
+	}
+
+	requestID := r.PathValue("requestId")
+	if requestID == "" {
+		middleware.Error(w, http.StatusBadRequest, "Request ID is required")
+		return
+	}
+
+	var input struct {
+		Status string `json:"status"`
+		Note   string `json:"note"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		middleware.Error(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	status := strings.ToUpper(input.Status)
+	if status != "APPROVED" && status != "REJECTED" {
+		middleware.Error(w, http.StatusBadRequest, "Status must be APPROVED or REJECTED")
+		return
+	}
+
+	result, err := h.pool.Exec(r.Context(),
+		`UPDATE manual_time_requests
+		 SET status = $1::"ManualTimeStatus", review_note = $2, reviewed_by_id = $3, reviewed_at = NOW(), updated_at = NOW()
+		 WHERE id = $4 AND organization_id = $5`,
+		status, input.Note, auth.UserID, requestID, auth.OrganizationID,
+	)
+	if err != nil {
+		slog.Error("Failed to review manual time request", "error", err)
+		middleware.Error(w, http.StatusInternalServerError, "Unable to review request")
+		return
+	}
+	if result.RowsAffected() == 0 {
+		middleware.Error(w, http.StatusNotFound, "Request not found")
+		return
+	}
+
+	middleware.Success(w, http.StatusOK, map[string]string{"status": status, "id": requestID})
+}

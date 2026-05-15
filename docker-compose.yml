@@ -1,0 +1,64 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: teamlens-postgres-v2
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: teamlens
+      POSTGRES_PASSWORD: teamlens
+      POSTGRES_DB: teamlens
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teamlens -d teamlens"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend-go:
+    build:
+      context: ./backend-go
+      dockerfile: Dockerfile
+    container_name: teamlens-api-go
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      DATABASE_URL: "postgres://teamlens:teamlens@postgres:5432/teamlens"
+      JWT_SECRET: "${JWT_SECRET:-change-me-in-production}"
+      WEB_APP_URL: "http://localhost:5173"
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:5173,http://localhost:8081"
+      UPLOAD_DIR: "/app/uploads"
+      GOOGLE_PLACES_API_KEY: "${GOOGLE_PLACES_API_KEY:-}"
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend-ws:
+    build:
+      context: ./backend-ws
+      dockerfile: Dockerfile
+    container_name: teamlens-ws
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: "4000"
+      DATABASE_URL: "postgres://teamlens:teamlens@postgres:5432/teamlens"
+      JWT_SECRET: "${JWT_SECRET:-change-me-in-production}"
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:5173"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  uploads_data:
