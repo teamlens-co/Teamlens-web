@@ -1,13 +1,12 @@
-# Environment files
+# Environment
 .env
 .env.*
 !.env.example
-!.env.*.example
 
 # Node
 node_modules/
 dist/
-build/
+.next/
 *.js.map
 .npm/
 
@@ -18,6 +17,9 @@ backend-go/teamlens-api
 *.dll
 *.so
 *.dylib
+
+# Tauri / Rust
+agent/src-tauri/target/
 
 # IDE
 .vscode/
@@ -30,5 +32,8 @@ backend-go/teamlens-api
 .DS_Store
 Thumbs.db
 
-# Uploads
+# Uploads (local dev)
 uploads/
+
+# Docker
+.docker/
