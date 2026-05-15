@@ -59,12 +59,13 @@ type AgentLoginResponse struct {
 }
 
 type UserResponse struct {
-	ID             string   `json:"id"`
-	FullName       string   `json:"fullName"`
-	Email          string   `json:"email"`
-	Role           AuthRole `json:"role"`
-	OrganizationID string   `json:"organizationId,omitempty"`
-	Status         string   `json:"status,omitempty"`
+	ID             string       `json:"id"`
+	FullName       string       `json:"fullName"`
+	Email          string       `json:"email"`
+	Role           AuthRole     `json:"role"`
+	OrganizationID string       `json:"organizationId,omitempty"`
+	Organization   *OrgResponse `json:"organization,omitempty"`
+	Status         string       `json:"status,omitempty"`
 }
 
 type OrgResponse struct {
