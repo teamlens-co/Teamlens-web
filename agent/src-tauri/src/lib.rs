@@ -49,6 +49,7 @@ struct ActiveWindowInfo {
     app_name: String,
     window_title: String,
     process_path: String,
+    browser_url: Option<String>,
 }
 
 static INPUT_COUNTER: OnceLock<Arc<Mutex<InputCounter>>> = OnceLock::new();
@@ -290,6 +291,143 @@ fn read_process_path(hwnd: HWND) -> String {
 }
 
 #[cfg(target_os = "windows")]
+fn get_browser_url_uia(hwnd: HWND, app_name: &str) -> Option<String> {
+    let lower_app = app_name.to_lowercase();
+    if !["chrome", "chrome.exe", "msedge", "msedge.exe", "brave", "brave.exe", "firefox", "firefox.exe"].contains(&lower_app.as_str()) {
+        return None;
+    }
+
+    use uiautomation::UIAutomation;
+    use uiautomation::types::TreeScope;
+    use uiautomation::variants::Variant;
+    use uiautomation::types::ControlType;
+    use uiautomation::types::UIProperty;
+    use uiautomation::patterns::UIValuePattern;
+
+    let automation = UIAutomation::new().ok()?;
+    let root = automation.element_from_handle((hwnd as isize).into()).ok()?;
+    let cond = automation.create_property_condition(
+        UIProperty::ControlType, 
+        Variant::from(ControlType::Edit as i32), 
+        None
+    ).ok()?;
+
+    let edits = root.find_all(TreeScope::Descendants, &cond).ok()?;
+    let mut best: Option<(i32, String)> = None;
+
+    for edit in edits {
+        let pattern = match edit.get_pattern::<UIValuePattern>() {
+            Ok(pattern) => pattern,
+            Err(_) => continue,
+        };
+
+        let raw_value = match pattern.get_value() {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+
+        let Some(url) = normalize_browser_url(&raw_value) else {
+            continue;
+        };
+
+        let name = edit.get_name().unwrap_or_default().to_lowercase();
+        let automation_id = edit.get_automation_id().unwrap_or_default().to_lowercase();
+        let score = browser_address_bar_score(&lower_app, &name, &automation_id);
+
+        if score > best.as_ref().map(|(current, _)| *current).unwrap_or(-1) {
+            best = Some((score, url));
+        }
+    }
+
+    best.map(|(_, url)| url)
+}
+
+#[cfg(target_os = "windows")]
+fn browser_address_bar_score(app_name: &str, name: &str, automation_id: &str) -> i32 {
+    let mut score = 0;
+
+    if automation_id.contains("address") || automation_id.contains("omnibox") || automation_id == "edit" {
+        score += 80;
+    }
+
+    if name.contains("address")
+        || name.contains("search or enter web address")
+        || name.contains("search or type web address")
+        || name.contains("search with google or enter address")
+        || name.contains("enter address")
+        || name.contains("url")
+    {
+        score += 70;
+    }
+
+    if app_name.contains("firefox") && (name.contains("search") || name.contains("address")) {
+        score += 25;
+    }
+
+    score
+}
+
+#[cfg(target_os = "windows")]
+fn normalize_browser_url(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || trimmed.contains(' ') || trimmed.len() > 2048 {
+        return None;
+    }
+
+    let lower = trimmed.to_lowercase();
+    if lower.starts_with("http://")
+        || lower.starts_with("https://")
+        || lower.starts_with("file://")
+        || lower.starts_with("chrome://")
+        || lower.starts_with("edge://")
+        || lower.starts_with("brave://")
+        || lower.starts_with("about:")
+    {
+        return Some(trimmed.to_string());
+    }
+
+    if looks_like_domain_or_localhost(trimmed) {
+        return Some(format!("https://{}", trimmed));
+    }
+
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn looks_like_domain_or_localhost(value: &str) -> bool {
+    let without_path = value.split(['/', '?', '#']).next().unwrap_or(value);
+    let host = without_path
+        .split('@')
+        .last()
+        .unwrap_or(without_path)
+        .split(':')
+        .next()
+        .unwrap_or(without_path)
+        .trim_matches('.');
+
+    if host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+
+    let parts: Vec<&str> = host.split('.').collect();
+    if parts.len() < 2 {
+        return false;
+    }
+
+    let suffix = parts.last().copied().unwrap_or_default();
+    suffix.len() >= 2
+        && suffix.chars().all(|ch| ch.is_ascii_alphabetic())
+        && parts.iter().all(|part| {
+            !part.is_empty()
+                && part
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+                && !part.starts_with('-')
+                && !part.ends_with('-')
+        })
+}
+
+#[cfg(target_os = "windows")]
 #[tauri::command]
 fn get_active_window_info() -> Result<ActiveWindowInfo, String> {
     unsafe {
@@ -299,6 +437,7 @@ fn get_active_window_info() -> Result<ActiveWindowInfo, String> {
                 app_name: "Unknown".to_string(),
                 window_title: String::new(),
                 process_path: String::new(),
+                browser_url: None,
             });
         }
 
@@ -310,10 +449,13 @@ fn get_active_window_info() -> Result<ActiveWindowInfo, String> {
             .unwrap_or("Unknown")
             .to_string();
 
+        let browser_url = get_browser_url_uia(hwnd, &app_name);
+
         Ok(ActiveWindowInfo {
             app_name,
             window_title,
             process_path,
+            browser_url,
         })
     }
 }
@@ -325,6 +467,7 @@ fn get_active_window_info() -> Result<ActiveWindowInfo, String> {
         app_name: "Unknown".to_string(),
         window_title: String::new(),
         process_path: String::new(),
+        browser_url: None,
     })
 }
 
@@ -345,6 +488,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             greet,
             set_auth_token,
