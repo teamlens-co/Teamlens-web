@@ -103,6 +103,7 @@ func main() {
 
 	// Public endpoints
 	webr.Post("/auth/signup", webAuthHandler.Signup)
+	webr.Post("/auth/signup-manager", webAuthHandler.Signup) // Frontend alias
 	webr.Post("/auth/login", webAuthHandler.Login)
 	webr.Get("/auth/invite/validate", webInviteHandler.ValidateInvite)
 	webr.Post("/auth/invite/accept", webInviteHandler.AcceptInvite)
@@ -113,6 +114,8 @@ func main() {
 
 		r.Get("/auth/me", webAuthHandler.Me)
 		r.Get("/auth/users", webAuthHandler.ListUsers)
+		r.Get("/users", webAuthHandler.ListUsers)         // Frontend: /api/web/users
+		r.Get("/users/{userId}", webAuthHandler.ListUsers) // Frontend: /api/web/users/{id}
 
 		// Invites (manager only)
 		r.Post("/invites", webInviteHandler.CreateInvite)
@@ -135,6 +138,9 @@ func main() {
 		r.Post("/office-locations", webLocHandler.UpsertOfficeLocation)
 		r.Get("/office-locations", webLocHandler.ListOfficeLocations)
 		r.Delete("/office-locations/{locationId}", webLocHandler.DeleteOfficeLocation)
+		r.Post("/locations", webLocHandler.UpsertOfficeLocation)  // Frontend alias
+		r.Get("/locations", webLocHandler.ListOfficeLocations)    // Frontend alias
+		r.Delete("/locations/{locationId}", webLocHandler.DeleteOfficeLocation) // Frontend alias
 		r.Get("/locations/search", webLocHandler.SearchLocations)
 
 		// Dashboard
@@ -189,7 +195,7 @@ func main() {
 		r.Get("/dashboard/usage-report", agentUsageHandler.GetUsageReport)
 	})
 
-	r.Mount("/api/v1", webr)
+	r.Mount("/api/web", webr)
 
 	// ─── Agent API ──────────────────────────────────────────────────────────
 

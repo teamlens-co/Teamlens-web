@@ -90,6 +90,11 @@ func (s *AuthService) SignupManager(ctx context.Context, input struct {
 			Email:          email,
 			Role:           models.RoleManager,
 			OrganizationID: orgID,
+			Organization: &models.OrgResponse{
+				ID:   orgID,
+				Name: strings.TrimSpace(input.OrganizationName),
+				Slug: slug,
+			},
 		},
 		Organization: models.OrgResponse{
 			ID:   orgID,
@@ -153,6 +158,11 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*model
 			Email:          user.Email,
 			Role:           models.AuthRole(user.Role),
 			OrganizationID: user.OrganizationID,
+			Organization: &models.OrgResponse{
+				ID:   user.OrganizationID,
+				Name: user.OrgName,
+				Slug: user.OrgSlug,
+			},
 		},
 		Organization: models.OrgResponse{
 			ID:   user.OrganizationID,
@@ -165,13 +175,14 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*model
 func (s *AuthService) Me(ctx context.Context, userID string) (*models.UserResponse, error) {
 	var user models.UserResponse
 	var orgName, orgSlug, status string
+	var orgID string
 
 	err := s.pool.QueryRow(ctx,
 		`SELECT u.id, u.full_name, u.email, u.role, u.status, u.organization_id, o.name, o.slug
 		 FROM users u
 		 JOIN organizations o ON o.id = u.organization_id
 		 WHERE u.id = $1`, userID,
-	).Scan(&user.ID, &user.FullName, &user.Email, &user.Role, &status, &user.OrganizationID, &orgName, &orgSlug)
+	).Scan(&user.ID, &user.FullName, &user.Email, &user.Role, &status, &orgID, &orgName, &orgSlug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, errors.New("User not found")
@@ -180,6 +191,12 @@ func (s *AuthService) Me(ctx context.Context, userID string) (*models.UserRespon
 	}
 
 	user.Status = status
+	user.OrganizationID = orgID
+	user.Organization = &models.OrgResponse{
+		ID:   orgID,
+		Name: orgName,
+		Slug: orgSlug,
+	}
 	return &user, nil
 }
 
