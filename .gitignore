@@ -1,0 +1,34 @@
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Node
+node_modules/
+dist/
+build/
+*.js.map
+.npm/
+
+# Go
+backend-go/teamlens-api
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploads
+uploads/
