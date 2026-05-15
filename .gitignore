@@ -37,3 +37,8 @@ uploads/
 
 # Docker
 .docker/
+
+# Mobile (Expo)
+mobile/.env
+mobile/.expo/
+mobile/dist/

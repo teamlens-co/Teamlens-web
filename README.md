@@ -87,10 +87,10 @@ VITE_WEB_URL=http://your-server:80
 ## API Endpoints
 
 All REST endpoints are at `/api/*` (routed to Go):
-- `POST /api/v1/auth/login` — Manager login
-- `POST /api/v1/auth/signup` — Manager signup
-- `GET /api/v1/auth/me` — Current user
-- `GET /api/v1/dashboard/analytics` — Dashboard analytics
+- `POST /api/web/auth/login` — Manager login
+- `POST /api/web/auth/signup` — Manager signup (or `/api/web/auth/signup-manager`)
+- `GET /api/web/auth/me` — Current user
+- `GET /api/web/dashboard/analytics` — Dashboard analytics
 - `POST /api/agent/auth/login` — Agent login
 - `POST /api/agent/clock-in` — Clock in
 - `POST /api/agent/clock-out` — Clock out
