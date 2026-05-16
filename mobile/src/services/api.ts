@@ -1,7 +1,10 @@
 import { Platform } from 'react-native';
 
+// Default: nginx gateway on port 80 (docker compose routes /api/* → Go API)
 const DEFAULT_API_BASE =
-  Platform.OS === 'android' ? 'http://10.0.2.2:5000/api' : 'http://localhost:5000/api';
+  Platform.OS === 'android'
+    ? 'http://10.0.2.2:80/api'
+    : 'http://localhost:80/api';
 
 const API_BASE = (process.env.EXPO_PUBLIC_API_URL || DEFAULT_API_BASE).replace(/\/+$/, '');
 
