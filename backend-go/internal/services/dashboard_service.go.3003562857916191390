@@ -83,7 +83,7 @@ type AttendanceOverview struct {
 	DaysInMonth      int                  `json:"daysInMonth"`
 	Stats            AttendanceStats      `json:"stats"`
 	Employees        []AttendanceEmployee `json:"employees"`
-	Timesheets       []TimesheetEntry     `json:"timesheets"`
+	Timesheets        []TimesheetEntry     `json:"timesheets"`
 }
 
 func NewDashboardService(pool *pgxpool.Pool, locationSvc *LocationService) *DashboardService {
@@ -150,7 +150,7 @@ func (s *DashboardService) GetAttendance(ctx context.Context, organizationID, vi
 		ThresholdMinutes: threshold,
 		DaysInMonth:      len(days),
 		Employees:        []AttendanceEmployee{},
-		Timesheets:       []TimesheetEntry{},
+		Timesheets:        []TimesheetEntry{},
 	}
 	overview.Stats.Employees = len(users)
 
@@ -414,10 +414,10 @@ func (s *DashboardService) computeAnalytics(ctx context.Context, userID string, 
 
 	// Fetch all activity logs for these sessions
 	type activityLog struct {
-		SessionID  string
-		Timestamp  time.Time
-		MouseMoves int32
-		KeyPresses int32
+		SessionID    string
+		Timestamp    time.Time
+		MouseMoves   int32
+		KeyPresses   int32
 	}
 
 	var logs []activityLog
@@ -559,17 +559,17 @@ func (s *DashboardService) computeAnalytics(ctx context.Context, userID string, 
 	locationStatus := s.locationService.ComputeDailyLocationStatus(locationTypes)
 
 	return &models.DashboardAnalytics{
-		UserID:              userID,
-		Range:               "custom",
-		WorkSeconds:         workSeconds,
-		ActiveSeconds:       activeSeconds,
-		IdleSeconds:         idleSeconds,
-		ManualSeconds:       totalManualSeconds,
+		UserID:             userID,
+		Range:              "custom",
+		WorkSeconds:        workSeconds,
+		ActiveSeconds:      activeSeconds,
+		IdleSeconds:        idleSeconds,
+		ManualSeconds:      totalManualSeconds,
 		ProductivityPercent: productivityPct,
-		TotalMouseMoves:     totalMouseMoves,
-		TotalKeyPresses:     totalKeyPresses,
-		Sessions:            dashSessions,
-		LocationStatus:      locationStatus,
+		TotalMouseMoves:    totalMouseMoves,
+		TotalKeyPresses:    totalKeyPresses,
+		Sessions:           dashSessions,
+		LocationStatus:     locationStatus,
 	}, nil
 }
 
@@ -659,9 +659,9 @@ func (s *DashboardService) GetCalendarHeatmap(ctx context.Context, userID string
 
 	// Aggregate by calendar day
 	type dayAccum struct {
-		workMs    int64
-		activeSec int64
-		manualSec int64
+		workMs       int64
+		activeSec    int64
+		manualSec    int64
 	}
 	dayMap := make(map[string]*dayAccum)
 	implicitEndMs := int64(implicitEndSeconds * 1000)

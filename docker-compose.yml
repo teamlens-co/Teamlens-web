@@ -26,13 +26,14 @@ services:
     container_name: teamlens-api-go
     restart: unless-stopped
     ports:
-      - "${GO_PORT:-8080}:8080"
+      - "5000:5000"
     environment:
-      PORT: "8080"
+      PORT: "5000"
       DATABASE_URL: "postgres://teamlens:teamlens@postgres:5432/teamlens"
       JWT_SECRET: "${JWT_SECRET:-change-me-in-production}"
+      JWT_ACCESS_TTL: "${JWT_ACCESS_TTL:-12h}"
       WEB_APP_URL: "http://localhost:3000"
-      CORS_ORIGINS: "http://localhost:3000,http://localhost:5173,http://localhost:8081,http://localhost:80"
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:1420"
       UPLOAD_DIR: "/app/uploads"
       GOOGLE_PLACES_API_KEY: "${GOOGLE_PLACES_API_KEY:-}"
     volumes:
@@ -48,14 +49,14 @@ services:
       dockerfile: Dockerfile
     container_name: teamlens-ws
     restart: unless-stopped
-    expose:
-      - "4000"
+    ports:
+      - "4000:4000"
     environment:
       PORT: "4000"
       DATABASE_URL: "postgres://teamlens:teamlens@postgres:5432/teamlens"
       JWT_SECRET: "${JWT_SECRET:-change-me-in-production}"
       WEBRTC_ICE_SERVERS: "${WEBRTC_ICE_SERVERS:-[]}"
-      CORS_ORIGINS: "http://localhost:3000,http://localhost:5173"
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:1420"
     depends_on:
       postgres:
         condition: service_healthy
@@ -66,14 +67,18 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:-http://localhost/api}"
+        NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:-http://localhost:5000}"
+        NEXT_PUBLIC_WS_URL: "${NEXT_PUBLIC_WS_URL:-http://localhost:4000}"
         NEXT_PUBLIC_WEBRTC_ICE_SERVERS: "${WEBRTC_ICE_SERVERS:-[]}"
     container_name: teamlens-frontend
     restart: unless-stopped
     expose:
       - "3000"
+    ports:
+      - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:-http://localhost/api}"
+      NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:-http://localhost:5000}"
+      NEXT_PUBLIC_WS_URL: "${NEXT_PUBLIC_WS_URL:-http://localhost:4000}"
       NEXT_PUBLIC_WEBRTC_ICE_SERVERS: "${WEBRTC_ICE_SERVERS:-[]}"
       AGENT_DOWNLOAD_URL: "${AGENT_DOWNLOAD_URL:-}"
       NODE_ENV: "${NODE_ENV:-production}"

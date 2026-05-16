@@ -27,9 +27,9 @@ RUN mkdir -p /app/uploads/screenshots /app/uploads/recordings \
 
 USER appuser
 
-EXPOSE 8080
+EXPOSE 5000
 
-ENV PORT=8080
+ENV PORT=5000
 ENV UPLOAD_DIR=/app/uploads
 
 CMD ["/app/teamlens-api"]

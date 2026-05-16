@@ -22,21 +22,21 @@ type ActivityTimelineApp struct {
 }
 
 type ActivityTimelineEmployee struct {
-	UserID             string                `json:"userId"`
-	EmployeeName       string                `json:"employeeName"`
-	Email              string                `json:"email"`
-	ActiveSeconds      int64                 `json:"activeSeconds"`
-	IdleSeconds        int64                 `json:"idleSeconds"`
-	WorkSeconds        int64                 `json:"workSeconds"`
-	UtilizationPercent int                   `json:"utilizationPercent"`
-	MouseMoves         int64                 `json:"mouseMoves"`
-	KeyPresses         int64                 `json:"keyPresses"`
-	MousePercent       int                   `json:"mousePercent"`
-	KeyboardPercent    int                   `json:"keyboardPercent"`
-	FirstActiveAt      *string               `json:"firstActiveAt"`
-	LastActiveAt       *string               `json:"lastActiveAt"`
+	UserID             string            `json:"userId"`
+	EmployeeName       string            `json:"employeeName"`
+	Email              string            `json:"email"`
+	ActiveSeconds      int64             `json:"activeSeconds"`
+	IdleSeconds        int64             `json:"idleSeconds"`
+	WorkSeconds        int64             `json:"workSeconds"`
+	UtilizationPercent int               `json:"utilizationPercent"`
+	MouseMoves         int64             `json:"mouseMoves"`
+	KeyPresses         int64             `json:"keyPresses"`
+	MousePercent       int               `json:"mousePercent"`
+	KeyboardPercent    int               `json:"keyboardPercent"`
+	FirstActiveAt      *string           `json:"firstActiveAt"`
+	LastActiveAt       *string           `json:"lastActiveAt"`
 	TopApps            []ActivityTimelineApp `json:"topApps"`
-	Segments           []ActivitySegment     `json:"segments"`
+	Segments           []ActivitySegment `json:"segments"`
 }
 
 type ActivityTimeline struct {
@@ -211,9 +211,9 @@ func (s *ActivityService) ClockOut(ctx context.Context, payload *models.ClockOut
 	}
 
 	return &models.WorkSessionRecord{
-		ID:         row.id,
-		UserID:     payload.UserID,
-		ClockInAt:  row.clockInAt.Format(time.RFC3339),
+		ID:        row.id,
+		UserID:    payload.UserID,
+		ClockInAt: row.clockInAt.Format(time.RFC3339),
 		ClockOutAt: endedAt.Format(time.RFC3339),
 	}, nil
 }

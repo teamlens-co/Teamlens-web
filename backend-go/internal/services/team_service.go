@@ -28,7 +28,7 @@ func (s *TeamService) CreateTeam(ctx context.Context, name, managerID string) (*
 	err := s.pool.QueryRow(ctx,
 		`INSERT INTO teams (id, name, manager_id, created_at)
 		 VALUES ($1, $2, $3, NOW())
-		 RETURNING id, name, manager_id, created_at`,
+		 RETURNING id, name, manager_id, created_at::text`,
 		id, strings.TrimSpace(name), managerID,
 	).Scan(&team.ID, &team.Name, &team.ManagerID, &team.CreatedAt)
 	if err != nil {
@@ -42,7 +42,7 @@ func (s *TeamService) CreateTeam(ctx context.Context, name, managerID string) (*
 
 func (s *TeamService) ListTeams(ctx context.Context, managerID string) ([]models.TeamResponse, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT t.id, t.name, t.manager_id, t.created_at,
+		`SELECT t.id, t.name, t.manager_id, t.created_at::text,
 		        COUNT(tm.id)::int AS member_count
 		 FROM teams t
 		 LEFT JOIN team_memberships tm ON tm.team_id = t.id
@@ -210,11 +210,14 @@ func (s *TeamService) GetAnalytics(ctx context.Context, teamID, managerID string
 	}
 
 	members, err := s.ListMembers(ctx, teamID, managerID)
-	if err != nil || members == nil {
+	if err != nil {
 		return nil, errors.New("team not found")
 	}
+	if members == nil {
+		members = []models.UserResponse{}
+	}
 
-	var memberAnalytics []models.TeamMemberAnalytics
+	memberAnalytics := []models.TeamMemberAnalytics{}
 	var totalActiveSeconds, totalTrackedSeconds, totalMeasuredWorkSeconds int64
 
 	for _, m := range members {
@@ -260,7 +263,7 @@ func (s *TeamService) GetAnalytics(ctx context.Context, teamID, managerID string
 func (s *TeamService) getOwnedTeam(ctx context.Context, teamID, managerID string) (*models.TeamResponse, error) {
 	var team models.TeamResponse
 	err := s.pool.QueryRow(ctx,
-		`SELECT t.id, t.name, t.manager_id, t.created_at,
+		`SELECT t.id, t.name, t.manager_id, t.created_at::text,
 		        COUNT(tm.id)::int AS member_count
 		 FROM teams t
 		 LEFT JOIN team_memberships tm ON tm.team_id = t.id

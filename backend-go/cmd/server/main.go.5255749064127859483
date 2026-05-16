@@ -116,7 +116,7 @@ func main() {
 
 		r.Get("/auth/me", webAuthHandler.Me)
 		r.Get("/auth/users", webAuthHandler.ListUsers)
-		r.Get("/users", webAuthHandler.ListUsers)          // Frontend: /api/web/users
+		r.Get("/users", webAuthHandler.ListUsers)         // Frontend: /api/web/users
 		r.Get("/users/{userId}", webAuthHandler.ListUsers) // Frontend: /api/web/users/{id}
 
 		// Invites (manager only)
@@ -140,9 +140,8 @@ func main() {
 		r.Post("/office-locations", webLocHandler.UpsertOfficeLocation)
 		r.Get("/office-locations", webLocHandler.ListOfficeLocations)
 		r.Delete("/office-locations/{locationId}", webLocHandler.DeleteOfficeLocation)
-		r.Post("/locations", webLocHandler.UpsertOfficeLocation)                // Frontend alias
-		r.Put("/locations", webLocHandler.UpsertOfficeLocation)                 // Frontend alias
-		r.Get("/locations", webLocHandler.ListOfficeLocations)                  // Frontend alias
+		r.Post("/locations", webLocHandler.UpsertOfficeLocation)  // Frontend alias
+		r.Get("/locations", webLocHandler.ListOfficeLocations)    // Frontend alias
 		r.Delete("/locations/{locationId}", webLocHandler.DeleteOfficeLocation) // Frontend alias
 		r.Get("/locations/search", webLocHandler.SearchLocations)
 
@@ -168,7 +167,7 @@ func main() {
 		// Employee management (manager only)
 		r.Delete("/employees/{employeeId}", webAuthHandler.DeleteEmployee)
 
-		// Environment
+			// Environment
 		r.Get("/env", webSettingsHandler.GetPublicEnv)
 		r.Get("/users/me", webSettingsHandler.GetUser)
 
@@ -191,11 +190,9 @@ func main() {
 
 		// Settings
 		r.Get("/settings", webSettingsHandler.GetPublicEnv)
-		r.Put("/settings", webSettingsHandler.UpdateSettings)
-		r.Patch("/settings", webSettingsHandler.UpdateSettings)
 
 		// Attendance
-		r.Get("/dashboard/attendance", webDashHandler.GetAttendance)
+		r.Get("/dashboard/attendance", webDashHandler.GetAnalytics)
 		r.Get("/dashboard/activity-timeline", webDashHandler.GetActivityTimeline)
 		r.Get("/dashboard/usage-report", agentUsageHandler.GetUsageReport)
 	})

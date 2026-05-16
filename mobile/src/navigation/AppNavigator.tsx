@@ -35,6 +35,7 @@ function TabIcon({ label, focused }: { label: string; focused: boolean }) {
 function MainTabs() {
   return (
     <Tab.Navigator
+      id="MainTabs"
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarIcon: ({ focused }) => <TabIcon label={route.name} focused={focused} />,
@@ -76,7 +77,7 @@ export default function AppNavigator() {
 
   return (
     <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator id="RootStack" screenOptions={{ headerShown: false }}>
         {isAuthenticated ? (
           <Stack.Screen name="Main" component={MainTabs} />
         ) : (

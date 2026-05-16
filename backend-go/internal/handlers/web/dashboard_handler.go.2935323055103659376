@@ -111,34 +111,6 @@ func (h *DashboardHandler) GetActivityTimeline(w http.ResponseWriter, r *http.Re
 	middleware.Success(w, http.StatusOK, result)
 }
 
-func (h *DashboardHandler) GetAttendance(w http.ResponseWriter, r *http.Request) {
-	auth := middleware.GetAuthContext(r.Context())
-	if auth == nil {
-		middleware.Error(w, http.StatusUnauthorized, "Unauthorized")
-		return
-	}
-
-	start, end := parseDateRange(r)
-	if start.IsZero() || end.IsZero() {
-		middleware.Error(w, http.StatusBadRequest, "startDate and endDate query parameters are required (RFC3339 format)")
-		return
-	}
-
-	var requestedUserID *string
-	if userID := r.URL.Query().Get("userId"); userID != "" {
-		requestedUserID = &userID
-	}
-
-	result, err := h.service.GetAttendance(r.Context(), auth.OrganizationID, auth.UserID, auth.Role, requestedUserID, start, end)
-	if err != nil {
-		slog.Error("Attendance overview failed", "error", err)
-		middleware.Error(w, http.StatusInternalServerError, "Unable to fetch attendance")
-		return
-	}
-
-	middleware.Success(w, http.StatusOK, result)
-}
-
 func parseDateRange(r *http.Request) (time.Time, time.Time) {
 	startStr := r.URL.Query().Get("startDate")
 	endStr := r.URL.Query().Get("endDate")

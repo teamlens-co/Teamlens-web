@@ -35,6 +35,26 @@ func Connect(ctx context.Context, databaseURL string) (*Pool, error) {
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
 
+	if err := ensureCompatibilitySchema(ctx, pool); err != nil {
+		return nil, fmt.Errorf("ensure compatibility schema: %w", err)
+	}
+
 	slog.Info("Connected to PostgreSQL", "maxConns", config.MaxConns)
 	return &Pool{Pool: pool}, nil
+}
+
+func ensureCompatibilitySchema(ctx context.Context, pool *pgxpool.Pool) error {
+	statements := []string{
+		`ALTER TABLE work_sessions ADD COLUMN IF NOT EXISTS location_type text`,
+		`ALTER TABLE work_sessions ADD COLUMN IF NOT EXISTS latitude double precision`,
+		`ALTER TABLE work_sessions ADD COLUMN IF NOT EXISTS longitude double precision`,
+	}
+
+	for _, statement := range statements {
+		if _, err := pool.Exec(ctx, statement); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

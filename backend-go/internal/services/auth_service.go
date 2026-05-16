@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -255,7 +256,7 @@ func (s *AuthService) GetTeamUsers(ctx context.Context, organizationID string) (
 	var users []models.UserResponse
 	for rows.Next() {
 		var u models.UserResponse
-		var createdAt string
+		var createdAt time.Time
 		if err := rows.Scan(&u.ID, &u.FullName, &u.Email, &u.Role, &u.Status, &createdAt); err != nil {
 			return nil, fmt.Errorf("scan user: %w", err)
 		}

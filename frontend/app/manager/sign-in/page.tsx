@@ -31,7 +31,7 @@ export default function ManagerSignInPage() {
 
   const apiBase = useMemo(() => {
     const envBase = process.env.NEXT_PUBLIC_API_URL?.trim();
-    return envBase && envBase.length > 0 ? envBase.replace(/\/$/, "") : "";
+    return envBase && envBase.length > 0 ? envBase.replace(/\/$/, "") : "http://localhost:5000";
   }, []);
 
   useEffect(() => {
@@ -173,7 +173,7 @@ export default function ManagerSignInPage() {
                opacity: [0.1, 0.3, 0.1]
              }}
              transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
-             className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20"
+             className="absolute inset-0 opacity-20 [background-image:radial-gradient(rgba(255,255,255,0.28)_1px,transparent_1px)] [background-size:4px_4px]"
            />
         </div>
 

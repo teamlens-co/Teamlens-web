@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -62,6 +63,7 @@ type ActiveWindowInfo = {
   app_name: string;
   window_title: string;
   process_path: string;
+  browser_url?: string;
 };
 
 const getApiBase = (): string => {
@@ -80,6 +82,15 @@ const getWebBase = (): string => {
   }
 
   throw new Error("VITE_WEB_URL is required");
+};
+
+const getWsBase = (): string => {
+  const configured = import.meta.env.VITE_WS_URL?.trim();
+  if (configured) {
+    return configured.replace(/\/$/, "");
+  }
+
+  return "http://localhost:4000";
 };
 
 const formatSeconds = (seconds: number): string => {
@@ -177,28 +188,62 @@ const fetchJsonWithTimeout = async <T,>(url: string, timeoutMs: number): Promise
   }
 };
 
-const inferUrlFromTitle = (title: string): string | undefined => {
+const normalizeTrackedUrl = (value?: string): string | undefined => {
+  const trimmed = value?.trim();
+  if (!trimmed || /\s/.test(trimmed)) return undefined;
+  if (/^(https?:\/\/|file:\/\/|chrome:\/\/|edge:\/\/|brave:\/\/|about:)/i.test(trimmed)) return trimmed;
+  if (/^(localhost|(?:[a-z0-9-]+\.)+[a-z]{2,})(?::\d+)?(?:[/?#].*)?$/i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  return undefined;
+};
+
+const inferUrlFromTitle = (title: string, browserUrl?: string): string | undefined => {
+  const normalizedBrowserUrl = normalizeTrackedUrl(browserUrl);
+  if (normalizedBrowserUrl) return normalizedBrowserUrl;
   const match = title.match(/https?:\/\/[^\s|]+/i);
-  return match?.[0];
+  return normalizeTrackedUrl(match?.[0]);
+};
+
+const invalidDomainSuffixes = new Set(["app", "css", "html", "js", "jsx", "json", "md", "py", "rs", "tsx", "ts", "txt", "vue", "xml"]);
+const SCREENSHOT_INTERVAL_MIN_MS = 30_000;
+const SCREENSHOT_INTERVAL_MAX_MS = 120_000;
+
+const nextScreenshotDelayMs = () =>
+  Math.floor(Math.random() * (SCREENSHOT_INTERVAL_MAX_MS - SCREENSHOT_INTERVAL_MIN_MS + 1)) + SCREENSHOT_INTERVAL_MIN_MS;
+
+const cleanInferredDomain = (value?: string): string | undefined => {
+  const domain = value?.replace(/^https?:\/\//i, "").replace(/^www\./i, "").split(/[/?#]/)[0]?.toLowerCase();
+  if (!domain) return undefined;
+  const parts = domain.split(".");
+  const suffix = parts[parts.length - 1] ?? "";
+  if (parts.length < 2 || invalidDomainSuffixes.has(suffix) || !/^[a-z0-9.-]+$/.test(domain) || parts.some((part) => !part)) {
+    return undefined;
+  }
+  return domain;
 };
 
 const inferDomain = (activeWindow: ActiveWindowInfo): string | undefined => {
-  const explicitUrl = inferUrlFromTitle(activeWindow.window_title);
+  const explicitUrl = inferUrlFromTitle(activeWindow.window_title, activeWindow.browser_url);
   if (explicitUrl) {
     try {
-      return new URL(explicitUrl).hostname.replace(/^www\./, "").toLowerCase();
+      return cleanInferredDomain(new URL(explicitUrl).hostname);
     } catch {
       return undefined;
     }
   }
 
   const title = activeWindow.window_title.toLowerCase();
+  const domainMatch = title.match(/(?:^|\s|\||-)((?:[a-z0-9-]+\.)+[a-z]{2,})(?::\d+)?(?:\s|$|\/|\||-)/i);
+  const inferredDomain = cleanInferredDomain(domainMatch?.[1]);
+  if (inferredDomain) return inferredDomain;
+
   const configuredWebHost = (() => {
     const configured = import.meta.env.VITE_WEB_URL?.trim();
     if (!configured) return undefined;
 
     try {
-      return new URL(configured).hostname.replace(/^www\./, "").toLowerCase();
+      return cleanInferredDomain(new URL(configured).hostname);
     } catch {
       return undefined;
     }
@@ -241,6 +286,8 @@ function App() {
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [authUserName, setAuthUserName] = useState<string>("");
+  const [organizationName, setOrganizationName] = useState<string>("");
+  const [appVersion, setAppVersion] = useState<string>("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoginLoading, setIsLoginLoading] = useState(false);
@@ -264,19 +311,21 @@ function App() {
   const [lastInputSource, setLastInputSource] = useState<"global" | "fallback">("global");
   const [debugLocation, setDebugLocation] = useState<{ lat?: number; lng?: number; source?: string } | null>(null);
   const [activeWindow, setActiveWindow] = useState<ActiveWindowInfo | null>(null);
-  const [clickProbeCount, setClickProbeCount] = useState(0);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const mouseMovesRef = useRef(0);
   const keyPressesRef = useRef(0);
 
   const apiBase = useMemo(() => getApiBase(), []);
   const webBase = useMemo(() => getWebBase(), []);
+  const wsBase = useMemo(() => getWsBase(), []);
   const {
     isStreaming: isLiveScreenStreaming,
     liveMessage,
     stopLiveScreen,
   } = useEmployeeLiveScreen({
     apiBase,
+    wsBase,
     authToken,
     enabled: isAuthenticated,
     captureEnabled: isClockedIn,
@@ -297,6 +346,7 @@ function App() {
     setAuthToken(payload.token);
     setAuthUserId(payload.user.id);
     setAuthUserName(payload.user.fullName);
+    setOrganizationName(payload.organization?.name || "");
     setIsAuthenticated(true);
     setAuthError(null);
   };
@@ -506,7 +556,7 @@ function App() {
       const data = await res.json();
       console.log("Sent:", data);
 
-      const url = inferUrlFromTitle(windowInfo.window_title);
+      const url = inferUrlFromTitle(windowInfo.window_title, windowInfo.browser_url);
       const domain = inferDomain(windowInfo);
       await fetch(`${apiBase}/api/agent/usage`, {
         method: "POST",
@@ -568,7 +618,7 @@ function App() {
       formData.append("windowTitle", windowInfo.window_title || "");
       formData.append("projectName", "Default Project");
       const domain = inferDomain(windowInfo);
-      const url = inferUrlFromTitle(windowInfo.window_title);
+      const url = inferUrlFromTitle(windowInfo.window_title, windowInfo.browser_url);
       if (domain) formData.append("domain", domain);
       if (url) formData.append("url", url);
       formData.append("screenshot", screenshotBlob, "screenshot.png");
@@ -597,6 +647,7 @@ function App() {
 
   useEffect(() => {
     void restoreAuthToken();
+    getVersion().then(setAppVersion).catch(() => setAppVersion("0.1.0"));
   }, []);
 
   useEffect(() => {
@@ -633,15 +684,22 @@ function App() {
 
     const activityInterval = setInterval(sendData, 10000);
 
-    // Screenshot capture interval. Production deployments can raise this to 300 seconds.
-    const screenshotInterval = setInterval(() => {
-      void captureAndUploadScreenshot();
-    }, 300000);
+    let screenshotTimeout: number | undefined;
+    const scheduleScreenshot = () => {
+      screenshotTimeout = window.setTimeout(() => {
+        void captureAndUploadScreenshot();
+        scheduleScreenshot();
+      }, nextScreenshotDelayMs());
+    };
+
+    scheduleScreenshot();
 
     return () => {
       clearInterval(timer);
       clearInterval(activityInterval);
-      clearInterval(screenshotInterval);
+      if (screenshotTimeout !== undefined) {
+        clearTimeout(screenshotTimeout);
+      }
     };
   }, [isClockedIn, startedAt, sessionId]);
 
@@ -887,45 +945,69 @@ function App() {
 
   if (!isAuthenticated || !authToken) {
     return (
-      <div className="agent-shell auth-shell">
-        <section className="auth-card">
-          <h1>TeamLens Agent Login</h1>
-          <p>Sign in to start secure desktop activity tracking.</p>
-
-          <label>
-            Email
-            <input
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="you@company.com"
+      <div className="agent-shell">
+        <header className="top-bar">
+          <div className="window-controls">
+            <button className="control-dot red" onClick={() => void handleClose()} aria-label="Close window" />
+            <button
+              className="control-dot yellow"
+              onClick={() => void handleMinimize()}
+              aria-label="Minimize window"
             />
-          </label>
-
-          <label>
-            Password
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="Enter password"
+            <button
+              className="control-dot green"
+              disabled
+              aria-label="Window size locked"
             />
-          </label>
+          </div>
+          <div className="brand-name" data-tauri-drag-region>
+            <span className="tl-brand-mark" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+              <span></span>
+            </span>{" "}
+            TeamLens
+          </div>
+          <div className="bar-spacer" data-tauri-drag-region />
+        </header>
 
-          <button className="clock-btn clock-in" onClick={() => void login()} disabled={isLoginLoading}>
-            {isLoginLoading ? "Logging in..." : "Login"}
-          </button>
+        <div className="auth-shell" data-tauri-drag-region>
+          <section className="auth-card">
+            <h1>TeamLens Agent Login</h1>
+            <p>Sign in to start secure desktop activity tracking.</p>
 
-          <button className="create-account-btn" onClick={() => void openCreateAccount()}>
-            Create Account
-          </button>
+            <label>
+              Email
+              <input
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="you@company.com"
+              />
+            </label>
 
-          <button className="interaction-test-btn" type="button" onClick={() => setClickProbeCount((count) => count + 1)}>
-            Click test: {clickProbeCount}
-          </button>
+            <label>
+              Password
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Enter password"
+              />
+            </label>
 
-          {authError ? <p className="sync-message">{authError}</p> : null}
-        </section>
+            <button className="clock-btn clock-in" onClick={() => void login()} disabled={isLoginLoading}>
+              {isLoginLoading ? "Logging in..." : "Login"}
+            </button>
+
+            <button className="create-account-btn" onClick={() => void openCreateAccount()}>
+              Create Account
+            </button>
+
+            {authError ? <p className="sync-message">{authError}</p> : null}
+          </section>
+        </div>
       </div>
     );
   }
@@ -948,14 +1030,61 @@ function App() {
             />
           </div>
           <div className="brand-name" data-tauri-drag-region>
-            <span className="brand-icon">|·|·|</span> TeamLens
+            <span className="tl-brand-mark" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+              <span></span>
+            </span>{" "}
+            TeamLens
           </div>
           <div className="bar-spacer">
-            <div className="profile-icon" onClick={() => void logout()} title="Logout">
+            <div className="profile-icon" onClick={() => setIsSidebarOpen(true)} title="Profile">
               {authUserName.substring(0, 2).toUpperCase() || "PM"}
             </div>
           </div>
         </header>
+
+        {isSidebarOpen && (
+          <>
+            <div className="sidebar-overlay" onClick={() => setIsSidebarOpen(false)} />
+            <aside className="profile-sidebar">
+              <div className="sidebar-header">
+                <h2>Account</h2>
+                <button className="close-btn" onClick={() => setIsSidebarOpen(false)}>×</button>
+              </div>
+
+              <div className="sidebar-tabs">
+                <div className="active-tab">Profile</div>
+              </div>
+
+              <div className="sidebar-content account-content">
+                <div className="profile-info">
+                  <div className="profile-avatar-large">
+                    {authUserName.substring(0, 2).toUpperCase() || "PM"}
+                  </div>
+                  <h3>{authUserName || "User"}</h3>
+                  <p>{email || ""}</p>
+                </div>
+
+                <div className="companies-section">
+                  <h4 className="section-title">Companies</h4>
+                  <div className="company-item">
+                    <span>{organizationName || "Company"}</span>
+                    <span className="check-icon">✓</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="sidebar-footer account-footer">
+                <button className="signout-link" onClick={() => { setIsSidebarOpen(false); void logout(); }}>
+                  Sign out
+                </button>
+                <span className="app-version">Version: {appVersion}</span>
+              </div>
+            </aside>
+          </>
+        )}
 
         <div className="timer-panel">
           <p className="date-label">{todayLabel}</p>
@@ -973,9 +1102,6 @@ function App() {
               {isClockedIn ? "Clock Out" : "Clock In"}
             </button>
           </div>
-          <button className="interaction-test-btn compact" type="button" onClick={() => setClickProbeCount((count) => count + 1)}>
-            Click test: {clickProbeCount}
-          </button>
           {syncMessage ? <p className="sync-message">{syncMessage}</p> : null}
           {isLiveScreenStreaming ? (
             <div className="live-stream-indicator" role="status">

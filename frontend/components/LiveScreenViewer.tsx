@@ -73,7 +73,7 @@ const generateFilename = (employeeId: string, startedAt: Date): string => {
 };
 
 export default function LiveScreenViewer({ employeeId, disabled, disabledReason, autoStart = false }: LiveScreenViewerProps) {
-  const { apiBase, user } = useAuth();
+  const { apiBase, wsBase, authHeaders, user } = useAuth();
   const [socketState, setSocketState] = useState<"idle" | "connecting" | "connected" | "error">("idle");
   const [viewState, setViewState] = useState<"idle" | "requesting" | "waiting" | "live" | "ended">("idle");
   const [message, setMessage] = useState<string>("");
@@ -261,7 +261,7 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
 
         // Upload to backend in the background
         const formData = new FormData();
-        formData.append("recording", blob, generateFilename(employeeId, startedAt));
+        formData.append("file", blob, generateFilename(employeeId, startedAt));
         formData.append("employeeId", employeeId);
         formData.append("durationMs", String(durationMs));
         formData.append("recordedAt", startedAt.toISOString());
@@ -271,6 +271,7 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
 
         fetch(`${apiBase}/api/web/recordings`, {
           method: "POST",
+          headers: authHeaders?.Authorization ? { Authorization: authHeaders.Authorization } : undefined,
           credentials: "include",
           body: formData,
         }).then(async (res) => {
@@ -310,7 +311,7 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
       console.error("Failed to start recording", err);
       setMessage("Unable to start recording. Your browser may not support MediaRecorder.");
     }
-  }, [employeeId, stopRecording]);
+  }, [apiBase, authHeaders, employeeId, stopRecording]);
 
   // Download recording
   const downloadRecording = useCallback((entry: RecordingEntry) => {
@@ -390,7 +391,9 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
     if (!user) return;
 
     setSocketState("connecting");
-    const socket = io(apiBase, {
+    const token = typeof window !== "undefined" ? window.localStorage.getItem("teamlens_access_token") ?? "" : "";
+    const socket = io(wsBase, {
+      auth: token ? { token } : undefined,
       withCredentials: true,
       transports: ["polling", "websocket"],
       upgrade: true,
@@ -540,7 +543,7 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
       socketRef.current = null;
       cleanupPeer();
     };
-  }, [apiBase, cleanupPeer, iceServers, startStatsMonitor, stopViewing, user]);
+  }, [cleanupPeer, iceServers, startStatsMonitor, stopViewing, user, wsBase]);
 
   const requestLiveView = useCallback(() => {
     if (!canView || !socketRef.current || socketState !== "connected") return;

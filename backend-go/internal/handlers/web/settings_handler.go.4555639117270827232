@@ -110,10 +110,10 @@ func (h *SettingsHandler) GetPublicEnv(w http.ResponseWriter, r *http.Request) {
 	}
 
 	env := map[string]interface{}{
-		"googlePlacesApiKey":           "",
-		"appVersion":                   "1.0.0",
-		"productivityThresholdMinutes": threshold,
-		"features":                     map[string]bool{"liveScreenView": true, "recordings": true},
+		"googlePlacesApiKey":            "",
+		"appVersion":                    "1.0.0",
+		"productivityThresholdMinutes":  threshold,
+		"features":                      map[string]bool{"liveScreenView": true, "recordings": true},
 	}
 	middleware.Success(w, http.StatusOK, env)
 }

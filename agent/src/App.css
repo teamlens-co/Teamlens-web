@@ -1,14 +1,15 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
-  --bg-app: #ffffff;
-  --bg-sessions: #f4f5f7;
-  --text-dark: #202b3c;
-  --text-gray: #8895a7;
-  --border-color: #e5e9f0;
-  --btn-orange: #f28b3a;
-  --btn-green: #3ab27b;
-  --btn-purple: #8b75f0;
+  --bg-app: oklch(0.98 0.008 75);
+  --bg-sessions: oklch(0.969 0.012 75);
+  --text-dark: oklch(0.235 0.012 60);
+  --text-gray: oklch(0.55 0.012 65);
+  --border-color: oklch(0.9 0.01 70);
+  --btn-orange: oklch(0.652 0.176 35);
+  --btn-green: oklch(0.72 0.17 155);
+  --btn-purple: oklch(0.652 0.176 35);
+  --btn-brand: oklch(0.652 0.176 35);
   
   font-family: 'Inter', sans-serif;
   color: var(--text-dark);
@@ -150,10 +151,32 @@ body {
   gap: 6px;
 }
 
-.brand-icon {
-  color: var(--btn-purple);
-  font-size: 16px;
-  font-weight: bold;
+.tl-brand-mark {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  height: 20px;
+  width: 20px;
+  gap: 2px;
+}
+
+.tl-brand-mark span {
+  height: auto;
+  width: auto;
+  border-radius: 3px;
+}
+
+.tl-brand-mark span:nth-child(1) {
+  background: var(--btn-brand);
+}
+
+.tl-brand-mark span:nth-child(2),
+.tl-brand-mark span:nth-child(4) {
+  background: var(--text-dark);
+}
+
+.tl-brand-mark span:nth-child(3) {
+  background: transparent;
 }
 
 .bar-spacer {
@@ -241,7 +264,7 @@ input,
 }
 
 .clock-in {
-  background: var(--btn-green);
+  background: var(--btn-brand);
 }
 
 .clock-out {
@@ -493,4 +516,192 @@ input,
 /* Hide debug info in prod clone */
 .debug-telemetry {
   display: none;
+}
+
+/* Sidebar */
+.sidebar-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  -webkit-app-region: no-drag;
+}
+
+.profile-sidebar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 260px;
+  background: var(--bg-app);
+  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.1);
+  z-index: 101;
+  display: flex;
+  flex-direction: column;
+  -webkit-app-region: no-drag;
+}
+
+.sidebar-header {
+  display: flex;
+  justify-content: center;
+  position: relative;
+  align-items: center;
+  padding: 16px;
+}
+
+.sidebar-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.close-btn {
+  position: absolute;
+  right: 16px;
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--text-gray);
+  padding: 0 4px;
+}
+
+.close-btn:hover {
+  color: var(--text-dark);
+}
+
+.sidebar-content {
+  flex: 1;
+  padding: 24px 16px;
+}
+
+.profile-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 24px 16px 32px;
+}
+
+.profile-avatar-large {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: #f19e6d;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.profile-info h3 {
+  margin: 0 0 4px 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.profile-info p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-gray);
+}
+
+.sidebar-footer {
+  padding: 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.logout-btn {
+  width: 100%;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: oklch(0.62 0.22 27); /* Destructive color */
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.logout-btn:hover {
+  background: #fff5f5;
+  border-color: oklch(0.62 0.22 27);
+}
+
+.sidebar-tabs {
+  display: flex;
+  justify-content: center;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.active-tab {
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #6366f1;
+  border-bottom: 2px solid #6366f1;
+  margin-bottom: -1px;
+}
+
+.account-content {
+  padding: 0;
+}
+
+.companies-section {
+  border-top: 1px solid var(--border-color);
+}
+
+.section-title {
+  margin: 0;
+  padding: 16px 16px 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-gray);
+}
+
+.company-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.check-icon {
+  color: #6366f1;
+  font-weight: bold;
+}
+
+.account-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: none;
+  padding: 16px;
+}
+
+.signout-link {
+  background: none;
+  border: none;
+  color: #ef4444;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.signout-link:hover {
+  text-decoration: underline;
+}
+
+.app-version {
+  font-size: 12px;
+  color: var(--text-gray);
 }

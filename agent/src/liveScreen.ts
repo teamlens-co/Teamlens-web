@@ -38,6 +38,7 @@ import { io, type Socket } from "socket.io-client";
 
 export type UseEmployeeLiveScreenArgs = {
   apiBase: string;
+  wsBase?: string;
   authToken: string | null;
   enabled: boolean;
   captureEnabled: boolean;
@@ -357,7 +358,7 @@ const patchSdpBandwidth = (sdp: string, bps: number): string => {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export const useEmployeeLiveScreen = ({
-  apiBase, authToken, enabled, captureEnabled,
+  apiBase, wsBase, authToken, enabled, captureEnabled,
 }: UseEmployeeLiveScreenArgs) => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [liveMessage, setLiveMessage] = useState<string | null>(null);
@@ -449,7 +450,7 @@ export const useEmployeeLiveScreen = ({
       return;
     }
 
-    const socket = io(apiBase, {
+    const socket = io(wsBase || apiBase, {
       auth: { token: authToken },
       transports: ["polling", "websocket"],
       upgrade: true,
@@ -596,7 +597,7 @@ export const useEmployeeLiveScreen = ({
       cleanupPeer();
       sessionIdRef.current = null;
     };
-  }, [apiBase, authToken, baseIceServers, captureEnabled, cleanupPeer, enabled, ensureNativeCapture, stopLiveScreen]);
+  }, [apiBase, authToken, baseIceServers, captureEnabled, cleanupPeer, enabled, ensureNativeCapture, stopLiveScreen, wsBase]);
 
   return { isStreaming, liveMessage, stopLiveScreen };
 };

@@ -26,6 +26,7 @@ type AuthContextType = {
   user: UserProfile | null;
   organization: Organization | null;
   apiBase: string;
+  wsBase: string;
   authHeaders: { "Content-Type": string; Authorization?: string } | null;
   selectedUserId: string;
   setSelectedUserId: (id: string) => void;
@@ -133,7 +134,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const apiBase = useMemo(() => {
     const envBase = process.env.NEXT_PUBLIC_API_URL?.trim();
-    return envBase && envBase.length > 0 ? envBase.replace(/\/$/, "") : "";
+    return envBase && envBase.length > 0 ? envBase.replace(/\/$/, "") : "http://localhost:5000";
+  }, []);
+
+  const wsBase = useMemo(() => {
+    const envBase = process.env.NEXT_PUBLIC_WS_URL?.trim();
+    return envBase && envBase.length > 0 ? envBase.replace(/\/$/, "") : "http://localhost:4000";
   }, []);
 
   const authHeaders = useMemo(() => {
@@ -227,6 +233,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         organization,
         apiBase,
+        wsBase,
         authHeaders,
         selectedUserId,
         setSelectedUserId,

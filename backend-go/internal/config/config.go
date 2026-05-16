@@ -36,7 +36,7 @@ func Load() (*Config, error) {
 	_ = godotenv.Load()
 
 	cfg := &Config{
-		Port:              getEnv("PORT", "8080"),
+		Port:              getEnv("PORT", "5000"),
 		WebAppURL:         getEnv("WEB_APP_URL", "http://localhost:3000"),
 		UploadDir:         getEnv("UPLOAD_DIR", "./uploads"),
 		DatabaseURL:       getEnv("DATABASE_URL", "postgres://teamlens:teamlens@localhost:5432/teamlens"),

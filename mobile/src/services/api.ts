@@ -1,4 +1,9 @@
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost/api';
+import { Platform } from 'react-native';
+
+const DEFAULT_API_BASE =
+  Platform.OS === 'android' ? 'http://10.0.2.2:5000/api' : 'http://localhost:5000/api';
+
+const API_BASE = (process.env.EXPO_PUBLIC_API_URL || DEFAULT_API_BASE).replace(/\/+$/, '');
 
 class ApiService {
   private token: string | null = null;
@@ -30,7 +35,15 @@ class ApiService {
         body: body ? JSON.stringify(body) : undefined,
       });
 
-      const json = await response.json();
+      const responseText = await response.text();
+      const json = responseText ? JSON.parse(responseText) : {};
+
+      if (!response.ok) {
+        return {
+          ok: false,
+          message: json.message || `Request failed (${response.status})`,
+        };
+      }
 
       if (json.success && json.data) {
         return { ok: true, data: json.data as T };

@@ -235,16 +235,16 @@ func FormatGoogleType(types []string) string {
 		return "Unknown"
 	}
 	typeMap := map[string]string{
-		"street_address":              "Street Address",
-		"route":                       "Route",
-		"premise":                     "Premise",
-		"establishment":               "Establishment",
-		"point_of_interest":           "Point of Interest",
-		"locality":                    "Locality",
+		"street_address":      "Street Address",
+		"route":               "Route",
+		"premise":             "Premise",
+		"establishment":       "Establishment",
+		"point_of_interest":   "Point of Interest",
+		"locality":            "Locality",
 		"administrative_area_level_1": "City",
-		"country":                     "Country",
-		"postal_code":                 "Postal Code",
-		"subpremise":                  "Subpremise",
+		"country":             "Country",
+		"postal_code":         "Postal Code",
+		"subpremise":          "Subpremise",
 	}
 	if label, ok := typeMap[types[0]]; ok {
 		return label
