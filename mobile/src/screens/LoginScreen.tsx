@@ -4,6 +4,7 @@ import {
   StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
+import { colors, borderRadius, typography } from '../theme';
 
 export default function LoginScreen() {
   const { login, signup } = useAuth();
@@ -41,7 +42,13 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.inner}>
-        <Text style={styles.logo}>📊 TeamLens</Text>
+        {/* Logo mark */}
+        <View style={styles.logoMark}>
+          {[0, 1, 2].map((i) => (
+            <View key={i} style={[styles.dot, { backgroundColor: colors.brand }]} />
+          ))}
+        </View>
+        <Text style={styles.logoText}>TeamLens</Text>
         <Text style={styles.subtitle}>{isSignup ? 'Create Account' : 'Sign In'}</Text>
 
         {isSignup && (
@@ -49,7 +56,7 @@ export default function LoginScreen() {
             <TextInput
               style={styles.input}
               placeholder="Full Name"
-              placeholderTextColor="#666"
+              placeholderTextColor={colors.mutedLight}
               value={fullName}
               onChangeText={setFullName}
               autoCapitalize="words"
@@ -57,7 +64,7 @@ export default function LoginScreen() {
             <TextInput
               style={styles.input}
               placeholder="Organization Name"
-              placeholderTextColor="#666"
+              placeholderTextColor={colors.mutedLight}
               value={orgName}
               onChangeText={setOrgName}
               autoCapitalize="words"
@@ -68,7 +75,7 @@ export default function LoginScreen() {
         <TextInput
           style={styles.input}
           placeholder="Email"
-          placeholderTextColor="#666"
+          placeholderTextColor={colors.mutedLight}
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"
@@ -77,7 +84,7 @@ export default function LoginScreen() {
         <TextInput
           style={styles.input}
           placeholder="Password"
-          placeholderTextColor="#666"
+          placeholderTextColor={colors.mutedLight}
           value={password}
           onChangeText={setPassword}
           secureTextEntry
@@ -89,7 +96,7 @@ export default function LoginScreen() {
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={colors.white} />
           ) : (
             <Text style={styles.buttonText}>{isSignup ? 'Sign Up' : 'Sign In'}</Text>
           )}
@@ -108,39 +115,50 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0a0a0a',
+    backgroundColor: colors.bg,
   },
   inner: {
     flex: 1,
     justifyContent: 'center',
     paddingHorizontal: 24,
   },
-  logo: {
-    fontSize: 36,
-    fontWeight: '800',
-    color: '#fff',
+  logoMark: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+    marginBottom: 12,
+  },
+  dot: {
+    width: 10,
+    height: 10,
+    borderRadius: 10,
+  },
+  logoText: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: colors.text,
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#888',
+    fontSize: 15,
+    color: colors.muted,
     textAlign: 'center',
     marginBottom: 32,
   },
   input: {
-    backgroundColor: '#1a1a1a',
+    backgroundColor: colors.white,
     borderWidth: 1,
-    borderColor: '#333',
-    borderRadius: 12,
+    borderColor: colors.input,
+    borderRadius: borderRadius.md,
     padding: 16,
-    fontSize: 16,
-    color: '#fff',
+    fontSize: 15,
+    color: colors.text,
     marginBottom: 12,
   },
   button: {
-    backgroundColor: '#4f46e5',
-    borderRadius: 12,
+    backgroundColor: colors.brand,
+    borderRadius: borderRadius.md,
     padding: 16,
     alignItems: 'center',
     marginTop: 8,
@@ -149,7 +167,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   buttonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -158,7 +176,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   switchText: {
-    color: '#4f46e5',
+    color: colors.brand,
     fontSize: 14,
   },
 });

@@ -1,9 +1,10 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, RefreshControl, ActivityIndicator, TouchableOpacity,
+  View, Text, ScrollView, StyleSheet, RefreshControl, ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import api from '../services/api';
+import { colors, borderRadius } from '../theme';
 import type { AttendanceEntry } from '../types';
 
 export default function AttendanceScreen() {
@@ -15,11 +16,8 @@ export default function AttendanceScreen() {
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
     const end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString();
-
     const result = await api.getAttendance(start, end);
-    if (result.ok && result.data) {
-      setEntries(result.data);
-    }
+    if (result.ok && result.data) setEntries(result.data);
     setLoading(false);
     setRefreshing(false);
   }, []);
@@ -28,18 +26,18 @@ export default function AttendanceScreen() {
 
   const statusColor = (status: string) => {
     switch (status) {
-      case 'present': return '#22c55e';
-      case 'late': return '#eab308';
-      case 'half-day': return '#f97316';
-      case 'absent': return '#ef4444';
-      default: return '#888';
+      case 'present': return colors.success;
+      case 'late': return colors.warning;
+      case 'half-day': return '#FF9800';
+      case 'absent': return colors.danger;
+      default: return colors.muted;
     }
   };
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4f46e5" />
+        <ActivityIndicator size="large" color={colors.brand} />
       </View>
     );
   }
@@ -47,7 +45,7 @@ export default function AttendanceScreen() {
   return (
     <ScrollView
       style={styles.container}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} tintColor="#4f46e5" />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} tintColor={colors.brand} />}
     >
       <Text style={styles.title}>Attendance</Text>
       {entries.length === 0 ? (
@@ -57,7 +55,7 @@ export default function AttendanceScreen() {
           <View key={entry.id} style={styles.card}>
             <View style={styles.cardHeader}>
               <Text style={styles.name}>{entry.fullName}</Text>
-              <View style={[styles.badge, { backgroundColor: statusColor(entry.status) + '20' }]}>
+              <View style={[styles.badge, { backgroundColor: statusColor(entry.status) + '18' }]}>
                 <View style={[styles.dot, { backgroundColor: statusColor(entry.status) }]} />
                 <Text style={[styles.statusText, { color: statusColor(entry.status) }]}>
                   {entry.status.toUpperCase()}
@@ -70,16 +68,16 @@ export default function AttendanceScreen() {
                 <Text style={styles.value}>{new Date(entry.date).toLocaleDateString()}</Text>
               </View>
               <View style={styles.infoRow}>
-                <Text style={styles.label}>Clock In</Text>
+                <Text style={styles.label}>In</Text>
                 <Text style={styles.value}>{entry.clockIn ? new Date(entry.clockIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</Text>
               </View>
               <View style={styles.infoRow}>
-                <Text style={styles.label}>Clock Out</Text>
+                <Text style={styles.label}>Out</Text>
                 <Text style={styles.value}>{entry.clockOut ? new Date(entry.clockOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</Text>
               </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.label}>Total Hours</Text>
-                <Text style={styles.value}>{entry.totalHours.toFixed(1)}h</Text>
+              <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
+                <Text style={styles.label}>Hours</Text>
+                <Text style={[styles.value, { fontWeight: '600' }]}>{entry.totalHours.toFixed(1)}h</Text>
               </View>
             </View>
           </View>
@@ -90,27 +88,21 @@ export default function AttendanceScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0a0a0a' },
-  title: { fontSize: 24, fontWeight: '700', color: '#fff', padding: 20, paddingTop: 60 },
-  empty: { color: '#666', textAlign: 'center', marginTop: 40, fontSize: 16 },
+  container: { flex: 1, backgroundColor: colors.bg },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.bg },
+  title: { fontSize: 24, fontWeight: '700', color: colors.text, padding: 20, paddingTop: 60 },
+  empty: { color: colors.muted, textAlign: 'center', marginTop: 40, fontSize: 16 },
   card: {
-    backgroundColor: '#1a1a1a', borderRadius: 12, marginHorizontal: 16, marginBottom: 12, padding: 16,
+    backgroundColor: colors.white, borderRadius: borderRadius.md, marginHorizontal: 16, marginBottom: 12, padding: 16,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
   },
-  cardHeader: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12,
-  },
-  name: { fontSize: 16, fontWeight: '600', color: '#fff' },
-  badge: {
-    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
-  },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  name: { fontSize: 16, fontWeight: '600', color: colors.text },
+  badge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   dot: { width: 6, height: 6, borderRadius: 3, marginRight: 6 },
   statusText: { fontSize: 11, fontWeight: '600' },
   cardBody: {},
-  infoRow: {
-    flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6,
-    borderBottomWidth: 1, borderBottomColor: '#222',
-  },
-  label: { fontSize: 14, color: '#888' },
-  value: { fontSize: 14, color: '#ddd' },
+  infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F0EDEA' },
+  label: { fontSize: 14, color: colors.muted },
+  value: { fontSize: 14, color: colors.text },
 });

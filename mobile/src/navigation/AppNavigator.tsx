@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, Text, ActivityIndicator } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
+import { colors } from '../theme';
 
 // Screens
 import LoginScreen from '../screens/LoginScreen';
@@ -16,7 +17,6 @@ import SettingsScreen from '../screens/SettingsScreen';
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// Simple text-based tab icons
 function TabIcon({ label, focused }: { label: string; focused: boolean }) {
   const icons: Record<string, string> = {
     Home: '📊',
@@ -27,7 +27,7 @@ function TabIcon({ label, focused }: { label: string; focused: boolean }) {
   };
   return (
     <View style={{ alignItems: 'center' }}>
-      <Text style={{ fontSize: 20 }}>{icons[label] || '•'}</Text>
+      <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.5 }}>{icons[label] || '•'}</Text>
     </View>
   );
 }
@@ -39,11 +39,11 @@ function MainTabs() {
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarIcon: ({ focused }) => <TabIcon label={route.name} focused={focused} />,
-        tabBarActiveTintColor: '#4f46e5',
-        tabBarInactiveTintColor: '#666',
+        tabBarActiveTintColor: colors.brand,
+        tabBarInactiveTintColor: colors.tabInactive,
         tabBarStyle: {
-          backgroundColor: '#111',
-          borderTopColor: '#222',
+          backgroundColor: colors.white,
+          borderTopColor: colors.tabBorder,
           borderTopWidth: 1,
           paddingTop: 4,
           paddingBottom: 8,
@@ -69,8 +69,8 @@ export default function AppNavigator() {
 
   if (isLoading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0a0a0a' }}>
-        <ActivityIndicator size="large" color="#4f46e5" />
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.bg }}>
+        <ActivityIndicator size="large" color={colors.brand} />
       </View>
     );
   }

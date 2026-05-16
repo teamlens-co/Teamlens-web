@@ -4,7 +4,8 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import api from '../services/api';
-import type { TeamMember, User } from '../types';
+import { colors, borderRadius } from '../theme';
+import type { User } from '../types';
 
 export default function TeamScreen() {
   const [users, setUsers] = useState<User[]>([]);
@@ -13,9 +14,7 @@ export default function TeamScreen() {
 
   const fetchData = useCallback(async () => {
     const result = await api.getUsers();
-    if (result.ok && result.data) {
-      setUsers(result.data);
-    }
+    if (result.ok && result.data) setUsers(result.data);
     setLoading(false);
     setRefreshing(false);
   }, []);
@@ -24,16 +23,16 @@ export default function TeamScreen() {
 
   const roleColor = (role: string) => {
     switch (role) {
-      case 'MANAGER': return '#4f46e5';
-      case 'EMPLOYEE': return '#22c55e';
-      default: return '#888';
+      case 'MANAGER': return colors.brand;
+      case 'EMPLOYEE': return colors.success;
+      default: return colors.muted;
     }
   };
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4f46e5" />
+        <ActivityIndicator size="large" color={colors.brand} />
       </View>
     );
   }
@@ -41,7 +40,7 @@ export default function TeamScreen() {
   return (
     <ScrollView
       style={styles.container}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} tintColor="#4f46e5" />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} tintColor={colors.brand} />}
     >
       <Text style={styles.title}>Team</Text>
       <Text style={styles.count}>{users.length} member{users.length !== 1 ? 's' : ''}</Text>
@@ -50,8 +49,8 @@ export default function TeamScreen() {
       ) : (
         users.map((user) => (
           <TouchableOpacity key={user.id} style={styles.card}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
+            <View style={[styles.avatar, { backgroundColor: user.role === 'MANAGER' ? colors.brandLight : '#E8F5E9' }]}>
+              <Text style={[styles.avatarText, { color: user.role === 'MANAGER' ? colors.brandDark : colors.success }]}>
                 {user.fullName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
               </Text>
             </View>
@@ -59,9 +58,9 @@ export default function TeamScreen() {
               <Text style={styles.name}>{user.fullName}</Text>
               <Text style={styles.email}>{user.email}</Text>
             </View>
-            <View style={[styles.roleBadge, { backgroundColor: roleColor(user.role) + '20' }]}>
+            <View style={[styles.roleBadge, { backgroundColor: roleColor(user.role) + '18' }]}>
               <Text style={[styles.roleText, { color: roleColor(user.role) }]}>
-                {user.role}
+                {user.role === 'MANAGER' ? 'Admin' : 'Member'}
               </Text>
             </View>
           </TouchableOpacity>
@@ -72,41 +71,21 @@ export default function TeamScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0a0a0a' },
-  title: { fontSize: 24, fontWeight: '700', color: '#fff', padding: 20, paddingTop: 60 },
-  count: { fontSize: 14, color: '#888', marginTop: -12, paddingHorizontal: 20, marginBottom: 12 },
-  empty: { color: '#666', textAlign: 'center', marginTop: 40, fontSize: 16 },
+  container: { flex: 1, backgroundColor: colors.bg },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.bg },
+  title: { fontSize: 24, fontWeight: '700', color: colors.text, padding: 20, paddingTop: 60 },
+  count: { fontSize: 14, color: colors.muted, marginTop: -12, paddingHorizontal: 20, marginBottom: 12 },
+  empty: { color: colors.muted, textAlign: 'center', marginTop: 40, fontSize: 16 },
   card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    marginHorizontal: 16,
-    marginBottom: 8,
-    padding: 14,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.white, borderRadius: borderRadius.md,
+    marginHorizontal: 16, marginBottom: 8, padding: 14,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 1 }, elevation: 1,
   },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#333',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  avatarText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#fff',
-  },
+  avatar: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  avatarText: { fontSize: 14, fontWeight: '700' },
   info: { flex: 1 },
-  name: { fontSize: 15, fontWeight: '600', color: '#fff' },
-  email: { fontSize: 13, color: '#888', marginTop: 2 },
-  roleBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
-  },
+  name: { fontSize: 15, fontWeight: '600', color: colors.text },
+  email: { fontSize: 13, color: colors.muted, marginTop: 2 },
+  roleBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   roleText: { fontSize: 11, fontWeight: '600' },
 });

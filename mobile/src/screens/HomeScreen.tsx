@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, RefreshControl, ActivityIndicator, Dimensions,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import api from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { colors, borderRadius } from '../theme';
 import type { DashboardAnalytics, CalendarDay } from '../types';
 
 const screenWidth = Dimensions.get('window').width;
@@ -26,26 +27,15 @@ export default function HomeScreen() {
       api.getCalendarHeatmap(now.getFullYear(), now.getMonth() + 1),
     ]);
 
-    if (analyticsResult.ok && analyticsResult.data) {
-      setAnalytics(analyticsResult.data);
-    }
-    if (calendarResult.ok && calendarResult.data) {
-      setCalendar(calendarResult.data);
-    }
+    if (analyticsResult.ok && analyticsResult.data) setAnalytics(analyticsResult.data);
+    if (calendarResult.ok && calendarResult.data) setCalendar(calendarResult.data);
     setLoading(false);
     setRefreshing(false);
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchData();
-    }, [fetchData])
-  );
+  useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchData();
-  };
+  const onRefresh = () => { setRefreshing(true); fetchData(); };
 
   const formatHours = (minutes?: number) => {
     if (!minutes) return '0h 0m';
@@ -57,7 +47,7 @@ export default function HomeScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4f46e5" />
+        <ActivityIndicator size="large" color={colors.brand} />
       </View>
     );
   }
@@ -65,7 +55,7 @@ export default function HomeScreen() {
   return (
     <ScrollView
       style={styles.container}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#4f46e5" />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand} />}
     >
       {/* Header */}
       <View style={styles.header}>
@@ -75,14 +65,14 @@ export default function HomeScreen() {
 
       {/* Stats Cards */}
       <View style={styles.cardsRow}>
-        <View style={[styles.card, { backgroundColor: '#1e1b4b' }]}>
+        <View style={[styles.card, { backgroundColor: colors.brandLight }]}>
           <Text style={styles.cardLabel}>Active Time</Text>
           <Text style={styles.cardValue}>{formatHours(analytics?.totalActiveMinutes)}</Text>
           <Text style={styles.cardSub}>
             {analytics?.activePercentage?.toFixed(1) || '0'}% productive
           </Text>
         </View>
-        <View style={[styles.card, { backgroundColor: '#1c1917' }]}>
+        <View style={[styles.card, { backgroundColor: colors.surface }]}>
           <Text style={styles.cardLabel}>Idle Time</Text>
           <Text style={styles.cardValue}>{formatHours(analytics?.totalIdleMinutes)}</Text>
           <Text style={styles.cardSub}>
@@ -94,19 +84,19 @@ export default function HomeScreen() {
       </View>
 
       <View style={styles.cardsRow}>
-        <View style={[styles.card, { backgroundColor: '#0f172a' }]}>
+        <View style={[styles.card, { backgroundColor: colors.white }]}>
           <Text style={styles.cardLabel}>Sessions</Text>
           <Text style={styles.cardValue}>{analytics?.sessionCount || 0}</Text>
           <Text style={styles.cardSub}>this period</Text>
         </View>
-        <View style={[styles.card, { backgroundColor: '#0a1628' }]}>
+        <View style={[styles.card, { backgroundColor: colors.white }]}>
           <Text style={styles.cardLabel}>Daily Avg</Text>
           <Text style={styles.cardValue}>{formatHours(analytics?.dailyAverage ? analytics.dailyAverage * 60 : 0)}</Text>
           <Text style={styles.cardSub}>per day</Text>
         </View>
       </View>
 
-      {/* Calendar (7-day mini) */}
+      {/* Calendar Heatmap */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>This Month</Text>
         <View style={styles.calendarGrid}>
@@ -117,12 +107,12 @@ export default function HomeScreen() {
                 styles.calendarCell,
                 {
                   backgroundColor: day.activeMinutes > 120
-                    ? '#4f46e5'
+                    ? colors.brand
                     : day.activeMinutes > 60
-                    ? '#312e81'
+                    ? '#D4A853'
                     : day.activeMinutes > 0
-                    ? '#1e1b4b'
-                    : '#1a1a1a',
+                    ? colors.brandLight
+                    : '#F0EDEA',
                 },
               ]}
             />
@@ -130,7 +120,7 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* Activity Summary */}
+      {/* Daily Breakdown */}
       {analytics?.dayData && analytics.dayData.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Daily Breakdown</Text>
@@ -140,12 +130,7 @@ export default function HomeScreen() {
                 {new Date(day.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
               </Text>
               <View style={styles.dayBarContainer}>
-                <View
-                  style={[
-                    styles.dayBar,
-                    { width: `${Math.min((day.activeMinutes / 480) * 100, 100)}%` },
-                  ]}
-                />
+                <View style={[styles.dayBar, { width: `${Math.min((day.activeMinutes / 480) * 100, 100)}%` }]} />
               </View>
               <Text style={styles.dayHours}>{formatHours(day.activeMinutes)}</Text>
             </View>
@@ -157,104 +142,32 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0a0a0a',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#0a0a0a',
-  },
-  header: {
-    padding: 20,
-    paddingTop: 60,
-  },
-  greeting: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  orgName: {
-    fontSize: 14,
-    color: '#888',
-    marginTop: 4,
-  },
-  cardsRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    gap: 12,
-    marginBottom: 12,
-  },
+  container: { flex: 1, backgroundColor: colors.bg },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.bg },
+  header: { padding: 20, paddingTop: 60 },
+  greeting: { fontSize: 28, fontWeight: '700', color: colors.text },
+  orgName: { fontSize: 14, color: colors.muted, marginTop: 4 },
+  cardsRow: { flexDirection: 'row', paddingHorizontal: 16, gap: 12, marginBottom: 12 },
   card: {
-    flex: 1,
-    borderRadius: 16,
-    padding: 16,
+    flex: 1, borderRadius: borderRadius.lg, padding: 16,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
-  cardLabel: {
-    fontSize: 12,
-    color: '#aaa',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  cardValue: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#fff',
-    marginTop: 4,
-  },
-  cardSub: {
-    fontSize: 12,
-    color: '#888',
-    marginTop: 4,
-  },
-  section: {
-    padding: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: 12,
-  },
-  calendarGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
-  },
+  cardLabel: { fontSize: 11, color: colors.muted, textTransform: 'uppercase', letterSpacing: 1 },
+  cardValue: { fontSize: 28, fontWeight: '700', color: colors.text, marginTop: 4 },
+  cardSub: { fontSize: 12, color: colors.muted, marginTop: 4 },
+  section: { padding: 20 },
+  sectionTitle: { fontSize: 18, fontWeight: '600', color: colors.text, marginBottom: 12 },
+  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
   calendarCell: {
-    width: (screenWidth - 56) / 7,
-    aspectRatio: 1,
-    borderRadius: 4,
+    width: (screenWidth - 56) / 7, aspectRatio: 1, borderRadius: 4,
   },
-  dayRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  dayName: {
-    width: 120,
-    fontSize: 12,
-    color: '#aaa',
-  },
+  dayRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  dayName: { width: 120, fontSize: 12, color: colors.muted },
   dayBarContainer: {
-    flex: 1,
-    height: 20,
-    backgroundColor: '#1a1a1a',
-    borderRadius: 10,
-    overflow: 'hidden',
-    marginHorizontal: 8,
+    flex: 1, height: 20, backgroundColor: '#F0EDEA', borderRadius: 10,
+    overflow: 'hidden', marginHorizontal: 8,
   },
-  dayBar: {
-    height: '100%',
-    backgroundColor: '#4f46e5',
-    borderRadius: 10,
-  },
-  dayHours: {
-    width: 60,
-    fontSize: 12,
-    color: '#888',
-    textAlign: 'right',
-  },
+  dayBar: { height: '100%', backgroundColor: colors.brand, borderRadius: 10 },
+  dayHours: { width: 60, fontSize: 12, color: colors.muted, textAlign: 'right' },
 });
