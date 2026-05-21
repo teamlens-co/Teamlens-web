@@ -1,12 +1,25 @@
-import { Platform } from 'react-native';
+import { NativeModules, Platform } from 'react-native';
 
 // Default: nginx gateway on port 80 (docker compose routes /api/* → Go API)
-const DEFAULT_API_BASE =
-  Platform.OS === 'android'
-    ? 'http://10.0.2.2:80/api'
-    : 'http://localhost:80/api';
+const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 
-const API_BASE = (process.env.EXPO_PUBLIC_API_URL || DEFAULT_API_BASE).replace(/\/+$/, '');
+const getMetroHost = (): string | null => {
+  const scriptURL = NativeModules.SourceCode?.scriptURL;
+  if (typeof scriptURL !== 'string') return null;
+
+  const match = scriptURL.match(/^[a-z]+:\/\/([^/:]+)/i);
+  return match?.[1] ?? null;
+};
+
+const getDefaultApiBase = () => {
+  const metroHost = getMetroHost();
+  if (metroHost) return `http://${metroHost}/api`;
+
+  if (Platform.OS === 'android') return 'http://10.0.2.2/api';
+  return 'http://localhost/api';
+};
+
+export const API_BASE = trimTrailingSlash(process.env.EXPO_PUBLIC_API_URL || getDefaultApiBase());
 
 class ApiService {
   private token: string | null = null;
@@ -39,7 +52,15 @@ class ApiService {
       });
 
       const responseText = await response.text();
-      const json = responseText ? JSON.parse(responseText) : {};
+      let json: { success?: boolean; data?: T; message?: string } = {};
+      try {
+        json = responseText ? JSON.parse(responseText) : {};
+      } catch {
+        return {
+          ok: false,
+          message: `Unexpected response from ${API_BASE}. Check that the API gateway is running.`,
+        };
+      }
 
       if (!response.ok) {
         return {
@@ -52,8 +73,11 @@ class ApiService {
         return { ok: true, data: json.data as T };
       }
       return { ok: false, message: json.message || 'Request failed' };
-    } catch (error) {
-      return { ok: false, message: 'Network error. Check your connection.' };
+    } catch {
+      return {
+        ok: false,
+        message: `Network error. Check that your phone and server are on the same network, and that ${API_BASE} is reachable.`,
+      };
     }
   }
 
@@ -100,6 +124,12 @@ class ApiService {
     return this.request<import('../types').ActivityEntry[]>('GET', `/web/dashboard/activity-timeline?${params}`);
   }
 
+  async getUsageReport(startDate: string, endDate: string, userId?: string, groupBy = 'total') {
+    const params = new URLSearchParams({ startDate, endDate, groupBy });
+    if (userId) params.append('userId', userId);
+    return this.request<import('../types').UsageReport>('GET', `/web/dashboard/usage-report?${params}`);
+  }
+
   // ── Team ──────────────────────────────────────────────────────────────
 
   async getTeams() {
@@ -124,7 +154,7 @@ class ApiService {
 
   async getScreenshots(userId?: string) {
     const params = userId ? `?userId=${userId}` : '';
-    return this.request<import('../types').Screenshot[]>('GET', `/web/recordings${params}`);
+    return this.request<import('../types').Screenshot[]>('GET', `/agent/screenshots${params}`);
   }
 
   // ── Manual Time ───────────────────────────────────────────────────────

@@ -2,32 +2,30 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Text, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
-import { colors } from '../theme';
+import { colors, shadow } from '../theme';
+import { MiniIcon } from '../components/IosKit';
 
-// Screens
 import LoginScreen from '../screens/LoginScreen';
 import HomeScreen from '../screens/HomeScreen';
-import AttendanceScreen from '../screens/AttendanceScreen';
-import ActivitiesScreen from '../screens/ActivitiesScreen';
 import TeamScreen from '../screens/TeamScreen';
+import InsightsScreen from '../screens/InsightsScreen';
+import AlertsScreen from '../screens/AlertsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import ActivitiesScreen from '../screens/ActivitiesScreen';
+import LiveScreen from '../screens/LiveScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 function TabIcon({ label, focused }: { label: string; focused: boolean }) {
-  const icons: Record<string, string> = {
-    Home: '📊',
-    Attendance: '📋',
-    Activities: '⚡',
-    Team: '👥',
-    Settings: '⚙️',
-  };
+  const tone = focused ? colors.tabActive : colors.tabInactive;
+  const iconName = label === 'Home' ? 'grid' : label === 'Team' ? 'team' : label === 'AI' ? 'brain' : label === 'Alerts' ? 'bell' : 'settings';
+
   return (
-    <View style={{ alignItems: 'center' }}>
-      <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.5 }}>{icons[label] || '•'}</Text>
+    <View style={styles.iconBox}>
+      <MiniIcon name={iconName} color={tone} size={22} />
     </View>
   );
 }
@@ -41,28 +39,35 @@ function MainTabs() {
         tabBarIcon: ({ focused }) => <TabIcon label={route.name} focused={focused} />,
         tabBarActiveTintColor: colors.brand,
         tabBarInactiveTintColor: colors.tabInactive,
+        tabBarHideOnKeyboard: true,
         tabBarStyle: {
-          backgroundColor: colors.white,
+          backgroundColor: colors.tabBg,
           borderTopColor: colors.tabBorder,
           borderTopWidth: 1,
-          paddingTop: 4,
-          paddingBottom: 8,
-          height: 60,
+          height: Platform.OS === 'ios' ? 88 : 68,
+          paddingTop: 12,
+          paddingBottom: Platform.OS === 'ios' ? 28 : 12,
+          ...shadow.lg,
         },
         tabBarLabelStyle: {
           fontSize: 11,
-          fontWeight: '500',
+          fontWeight: '600',
+          marginTop: 2,
         },
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Attendance" component={AttendanceScreen} />
-      <Tab.Screen name="Activities" component={ActivitiesScreen} />
       <Tab.Screen name="Team" component={TeamScreen} />
+      <Tab.Screen name="AI" component={InsightsScreen} />
+      <Tab.Screen name="Alerts" component={AlertsScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );
 }
+
+const styles = StyleSheet.create({
+  iconBox: { width: 28, height: 24, alignItems: 'center', justifyContent: 'center' },
+});
 
 export default function AppNavigator() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -79,7 +84,11 @@ export default function AppNavigator() {
     <NavigationContainer>
       <Stack.Navigator id="RootStack" screenOptions={{ headerShown: false }}>
         {isAuthenticated ? (
-          <Stack.Screen name="Main" component={MainTabs} />
+          <>
+            <Stack.Screen name="Main" component={MainTabs} />
+            <Stack.Screen name="Activities" component={ActivitiesScreen} />
+            <Stack.Screen name="Live" component={LiveScreen} />
+          </>
         ) : (
           <Stack.Screen name="Login" component={LoginScreen} />
         )}

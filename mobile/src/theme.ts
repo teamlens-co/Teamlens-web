@@ -1,43 +1,41 @@
-// TeamLens Web theme (light/warm)
-// Matches frontend/app/globals.css brand colors
+// TeamLens mobile theme matched to frontend/app/globals.css.
 export const colors = {
-  // Brand
-  brand: '#B8860B',        // oklch(0.652 0.176 35) → warm amber
-  brandLight: '#FDF4E6',   // oklch(0.95 0.035 35) → light amber tint
-  brandDark: '#8B6914',    // oklch(0.58 0.176 35) → darker amber
+  brand: '#E2553D',
+  brandLight: '#FFF1ED',
+  brandDark: '#B93A28',
+  brandTint: '#FFF1ED',
 
-  // Backgrounds
-  bg: '#F7F5F2',           // oklch(0.969 0.012 75) → warm white
-  surface: '#FAF9F7',      // oklch(0.98 0.008 75) → slightly lighter
-  surface2: '#FCFBFA',     // oklch(0.992 0.005 75) → white with warmth
+  bg: '#F8F5F2', // Slightly warmer and lighter
+  surface: '#FFFFFF',
+  surface2: '#FAF8F6',
   card: '#FFFFFF',
-  sidebar: '#FAF9F7',      // oklch(0.98 0.008 75)
+  sidebar: '#FAF8F6',
 
-  // Text
-  text: '#2D2A26',         // warm dark gray (from TeamLensLogo)
-  muted: '#8B8580',        // oklch(0.55 0.012 65)
-  mutedLight: '#B5B0AB',   // lighter muted
+  text: '#1A1817',
+  muted: '#726A64',
+  mutedLight: '#A69E97',
 
-  // Borders
-  border: '#E8E4E0',       // oklch(0.9 0.01 70)
-  input: '#E8E4E0',
+  border: '#E8E1DA',
+  input: '#E8E1DA',
+  divider: '#F0EBE6',
 
-  // Status
-  success: '#4CAF50',
-  warning: '#F5A623',
-  danger: '#E53935',
-  info: '#5C6BC0',
+  success: '#10B981',
+  successTint: '#ECFDF5',
+  warning: '#F59E0B',
+  warningTint: '#FFFBEB',
+  danger: '#EF4444',
+  dangerTint: '#FEF2F2',
+  info: '#3B82F6',
+  infoTint: '#EFF6FF',
 
-  // White / overlay
   white: '#FFFFFF',
   black: '#1A1817',
-  overlay: 'rgba(0,0,0,0.5)',
+  overlay: 'rgba(0,0,0,0.4)',
 
-  // Tab bar
-  tabActive: '#B8860B',
-  tabInactive: '#B5B0AB',
+  tabActive: '#E2553D',
+  tabInactive: '#A69E97',
   tabBg: '#FFFFFF',
-  tabBorder: '#E8E4E0',
+  tabBorder: '#E8E1DA',
 } as const;
 
 export const spacing = {
@@ -45,23 +43,50 @@ export const spacing = {
   sm: 8,
   md: 12,
   lg: 16,
-  xl: 20,
-  xxl: 24,
+  xl: 24,
+  xxl: 32,
 } as const;
 
 export const borderRadius = {
+  xs: 4,
   sm: 8,
   md: 12,
   lg: 16,
-  xl: 20,
+  xl: 24,
+  full: 9999,
+} as const;
+
+export const shadow = {
+  sm: {
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
+  md: {
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  lg: {
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
+  },
 } as const;
 
 export const typography = {
-  h1: { fontSize: 28, fontWeight: '700' as const, color: colors.text },
-  h2: { fontSize: 24, fontWeight: '700' as const, color: colors.text },
+  h1: { fontSize: 32, fontWeight: '700' as const, color: colors.text, letterSpacing: -0.5 },
+  h2: { fontSize: 24, fontWeight: '700' as const, color: colors.text, letterSpacing: -0.3 },
   h3: { fontSize: 18, fontWeight: '600' as const, color: colors.text },
-  body: { fontSize: 15, color: colors.text },
+  body: { fontSize: 16, color: colors.text, lineHeight: 24 },
+  bodySm: { fontSize: 14, color: colors.text, lineHeight: 20 },
   caption: { fontSize: 13, color: colors.muted },
-  small: { fontSize: 11, color: colors.mutedLight },
-  label: { fontSize: 12, color: colors.muted, textTransform: 'uppercase' as const, letterSpacing: 1 },
+  small: { fontSize: 12, color: colors.mutedLight },
+  label: { fontSize: 12, fontWeight: '600' as const, color: colors.muted, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
 } as const;

@@ -28,8 +28,12 @@ export interface DashboardAnalytics {
   totalActiveMinutes?: number;
   totalIdleMinutes?: number;
   activePercentage?: number;
+  activeSeconds?: number;
+  idleSeconds?: number;
+  productivityPercent?: number;
   dailyAverage?: number;
   sessionCount?: number;
+  sessions?: unknown[];
   dayData?: DayData[];
 }
 
@@ -77,9 +81,12 @@ export interface CalendarDay {
 
 export interface Screenshot {
   id: string;
-  url: string;
+  userId: string;
+  url: string; // Map from filePath if needed, but usually the API returns a URL
   capturedAt: string;
-  application?: string;
+  employeeName?: string;
+  activeApplication?: string;
+  windowTitle?: string;
 }
 
 export interface Recording {
@@ -113,4 +120,32 @@ export interface ClassificationRule {
   category: 'productive' | 'neutral' | 'unproductive';
   label: string;
   color: string;
+}
+
+export interface UsageReportItem {
+  name: string;
+  targetType: string;
+  appName: string;
+  domain: string;
+  category: 'PRODUCTIVE' | 'UNPRODUCTIVE' | 'NEUTRAL' | string;
+  durationSeconds: number;
+  samples: number;
+}
+
+export interface UsageReport {
+  items: UsageReportItem[];
+  categories?: Array<{
+    name: string;
+    category: string;
+    durationSeconds: number;
+  }>;
+  breakdowns?: Array<{
+    name: string;
+    employeeName: string;
+    teamName: string;
+    locationName: string;
+    durationSeconds: number;
+    samples: number;
+  }>;
+  groupBy?: string;
 }
