@@ -20,6 +20,18 @@ const getDefaultApiBase = () => {
 };
 
 export const API_BASE = trimTrailingSlash(process.env.EXPO_PUBLIC_API_URL || getDefaultApiBase());
+export const WEB_BASE = trimTrailingSlash(
+  process.env.EXPO_PUBLIC_WEB_URL ||
+  API_BASE.replace(/\/api$/, '').replace(':5000', ':3000')
+);
+export const WEB_API_BASE = trimTrailingSlash(
+  process.env.EXPO_PUBLIC_WEB_API_BASE ||
+  API_BASE.replace(/\/api$/, '')
+);
+export const WEB_WS_BASE = trimTrailingSlash(
+  process.env.EXPO_PUBLIC_WS_URL ||
+  API_BASE.replace(/\/api$/, '').replace(':5000', ':4000')
+);
 
 class ApiService {
   private token: string | null = null;
@@ -69,7 +81,7 @@ class ApiService {
         };
       }
 
-      if (json.success && json.data) {
+      if (json.success) {
         return { ok: true, data: json.data as T };
       }
       return { ok: false, message: json.message || 'Request failed' };
@@ -115,7 +127,7 @@ class ApiService {
 
   async getAttendance(startDate: string, endDate: string) {
     const params = new URLSearchParams({ startDate, endDate });
-    return this.request<import('../types').AttendanceEntry[]>('GET', `/web/dashboard/attendance?${params}`);
+    return this.request<import('../types').AttendanceOverview>('GET', `/web/dashboard/attendance?${params}`);
   }
 
   async getActivityTimeline(startDate: string, endDate: string, userId?: string) {
@@ -124,20 +136,46 @@ class ApiService {
     return this.request<import('../types').ActivityEntry[]>('GET', `/web/dashboard/activity-timeline?${params}`);
   }
 
-  async getUsageReport(startDate: string, endDate: string, userId?: string, groupBy = 'total') {
+  async getTeamAnalytics(teamId: string, startDate: string, endDate: string) {
+    const params = new URLSearchParams({ startDate, endDate });
+    return this.request<import('../types').DashboardAnalytics>('GET', `/web/teams/${teamId}/analytics?${params}`);
+  }
+
+  async getUsageReport(startDate: string, endDate: string, userId?: string, groupBy = 'total', teamId?: string) {
     const params = new URLSearchParams({ startDate, endDate, groupBy });
     if (userId) params.append('userId', userId);
+    if (teamId) params.append('teamId', teamId);
     return this.request<import('../types').UsageReport>('GET', `/web/dashboard/usage-report?${params}`);
   }
 
   // ── Team ──────────────────────────────────────────────────────────────
 
   async getTeams() {
-    return this.request<{ id: string; name: string; memberCount: number }[]>('GET', '/web/teams');
+    return this.request<import('../types').Team[]>('GET', '/web/teams');
+  }
+
+  async createTeam(name: string, description?: string) {
+    return this.request<import('../types').Team>('POST', '/web/teams', { name, description });
+  }
+
+  async updateTeam(teamId: string, name: string, description?: string) {
+    return this.request<import('../types').Team>('PUT', `/web/teams/${teamId}`, { name, description });
+  }
+
+  async deleteTeam(teamId: string) {
+    return this.request<unknown>('DELETE', `/web/teams/${teamId}`);
   }
 
   async getTeamMembers(teamId: string) {
     return this.request<import('../types').TeamMember[]>('GET', `/web/teams/${teamId}/members`);
+  }
+
+  async addTeamMember(teamId: string, userId: string) {
+    return this.request<unknown>('POST', `/web/teams/${teamId}/members`, { userId });
+  }
+
+  async removeTeamMember(teamId: string, userId: string) {
+    return this.request<unknown>('DELETE', `/web/teams/${teamId}/members/${userId}`);
   }
 
   // ── Users ─────────────────────────────────────────────────────────────
@@ -146,15 +184,47 @@ class ApiService {
     return this.request<import('../types').User[]>('GET', '/web/users');
   }
 
-  // ── Recordings & Screenshots ──────────────────────────────────────────
-
-  async getRecordings() {
-    return this.request<import('../types').Recording[]>('GET', '/web/recordings');
+  async deleteEmployee(employeeId: string) {
+    return this.request<unknown>('DELETE', `/web/employees/${employeeId}`);
   }
 
-  async getScreenshots(userId?: string) {
-    const params = userId ? `?userId=${userId}` : '';
-    return this.request<import('../types').Screenshot[]>('GET', `/agent/screenshots${params}`);
+  async createInvite(email: string, role: 'MANAGER' | 'EMPLOYEE' = 'EMPLOYEE', teamId?: string) {
+    return this.request<import('../types').Invite>('POST', '/web/invites', { email, role, teamId });
+  }
+
+  async getInvites() {
+    return this.request<import('../types').Invite[]>('GET', '/web/invites');
+  }
+
+  async revokeInvite(inviteId: string) {
+    return this.request<unknown>('POST', `/web/invites/${inviteId}/revoke`);
+  }
+
+  // ── Recordings & Screenshots ──────────────────────────────────────────
+
+  async getRecordings(userId?: string) {
+    const params = new URLSearchParams();
+    if (userId) params.append('userId', userId);
+    const query = params.toString();
+    return this.request<import('../types').Recording[]>('GET', `/web/recordings${query ? `?${query}` : ''}`);
+  }
+
+  async deleteRecording(recordingId: string) {
+    return this.request<unknown>('DELETE', `/web/recordings/${recordingId}`);
+  }
+
+  async getScreenshots(options?: { userId?: string; startDate?: string; endDate?: string; limit?: number }) {
+    const params = new URLSearchParams();
+    if (options?.userId) params.append('userId', options.userId);
+    if (options?.startDate) params.append('startDate', options.startDate);
+    if (options?.endDate) params.append('endDate', options.endDate);
+    if (options?.limit) params.append('limit', String(options.limit));
+    const query = params.toString();
+    return this.request<import('../types').Screenshot[]>('GET', `/agent/screenshots${query ? `?${query}` : ''}`);
+  }
+
+  async deleteScreenshot(screenshotId: string) {
+    return this.request<unknown>('DELETE', `/agent/screenshots/${screenshotId}`);
   }
 
   // ── Manual Time ───────────────────────────────────────────────────────
@@ -163,10 +233,53 @@ class ApiService {
     return this.request<import('../types').ManualTimeRequest[]>('GET', '/web/manual-time-requests');
   }
 
+  async createManualTimeRequest(date: string, hours: number, reason: string) {
+    return this.request<import('../types').ManualTimeRequest>('POST', '/web/dashboard/manual-time-requests', {
+      date,
+      hours,
+      reason,
+    });
+  }
+
+  async reviewManualTimeRequest(id: string, status: 'approved' | 'rejected', managerNote?: string) {
+    return this.request<import('../types').ManualTimeRequest>('PATCH', `/web/dashboard/manual-time-requests/${id}/review`, {
+      status,
+      managerNote,
+    });
+  }
+
   // ── Settings ──────────────────────────────────────────────────────────
 
   async getSettings() {
     return this.request<Record<string, unknown>>('GET', '/web/settings');
+  }
+
+  async updateSettings(settings: Record<string, unknown>) {
+    return this.request<Record<string, unknown>>('PATCH', '/web/settings', settings);
+  }
+
+  async getLocations() {
+    return this.request<import('../types').OfficeLocation[]>('GET', '/web/locations');
+  }
+
+  async searchLocations(query: string) {
+    return this.request<import('../types').LocationSearchResult[]>('GET', `/web/locations/search?q=${encodeURIComponent(query)}`);
+  }
+
+  async saveLocation(payload: Partial<import('../types').OfficeLocation>) {
+    return this.request<import('../types').OfficeLocation>('POST', '/web/locations', payload as Record<string, unknown>);
+  }
+
+  async deleteLocation(locationId: string) {
+    return this.request<unknown>('DELETE', `/web/locations/${locationId}`);
+  }
+
+  async getClassificationRules() {
+    return this.request<import('../types').ClassificationRule[]>('GET', '/web/classification-rules');
+  }
+
+  async upsertClassificationRule(rule: Partial<import('../types').ClassificationRule>) {
+    return this.request<import('../types').ClassificationRule>('POST', '/web/classification-rules', rule as Record<string, unknown>);
   }
 }
 

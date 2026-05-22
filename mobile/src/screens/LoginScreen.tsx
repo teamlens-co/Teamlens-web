@@ -207,7 +207,7 @@ const styles = StyleSheet.create({
   logoText: {
     ...typography.h3,
     color: colors.brand,
-    fontWeight: '800',
+    fontWeight: '600',
   },
   heroSection: {
     marginBottom: spacing.xl,
@@ -291,7 +291,7 @@ const styles = StyleSheet.create({
   buttonText: {
     color: colors.white,
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   forgotPass: {
     alignItems: 'center',

@@ -81,12 +81,12 @@ export const shadow = {
 } as const;
 
 export const typography = {
-  h1: { fontSize: 32, fontWeight: '700' as const, color: colors.text, letterSpacing: -0.5 },
-  h2: { fontSize: 24, fontWeight: '700' as const, color: colors.text, letterSpacing: -0.3 },
-  h3: { fontSize: 18, fontWeight: '600' as const, color: colors.text },
+  h1: { fontSize: 32, fontWeight: '600' as const, color: colors.text, letterSpacing: -0.5 },
+  h2: { fontSize: 24, fontWeight: '600' as const, color: colors.text, letterSpacing: -0.3 },
+  h3: { fontSize: 18, fontWeight: '500' as const, color: colors.text },
   body: { fontSize: 16, color: colors.text, lineHeight: 24 },
   bodySm: { fontSize: 14, color: colors.text, lineHeight: 20 },
   caption: { fontSize: 13, color: colors.muted },
   small: { fontSize: 12, color: colors.mutedLight },
-  label: { fontSize: 12, fontWeight: '600' as const, color: colors.muted, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
+  label: { fontSize: 12, fontWeight: '500' as const, color: colors.muted, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
 } as const;

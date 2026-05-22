@@ -1,13 +1,33 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert,
+  View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, RefreshControl, TextInput,
 } from 'react-native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
+import api from '../services/api';
 import { colors, borderRadius, spacing, shadow, typography } from '../theme';
 import { AppCard, Avatar, ScreenShell, MiniIcon } from '../components/IosKit';
+import type { OfficeLocation } from '../types';
 
 export default function SettingsScreen() {
   const { user, logout } = useAuth();
+  const navigation = useNavigation<any>();
+  const [settings, setSettings] = useState<Record<string, unknown>>({});
+  const [locations, setLocations] = useState<OfficeLocation[]>([]);
+  const [locationName, setLocationName] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async () => {
+    const [settingsResult, locationResult] = await Promise.all([
+      api.getSettings(),
+      api.getLocations(),
+    ]);
+    setSettings(settingsResult.ok && settingsResult.data ? settingsResult.data : {});
+    setLocations(locationResult.ok && Array.isArray(locationResult.data) ? locationResult.data : []);
+    setRefreshing(false);
+  }, []);
+
+  useFocusEffect(useCallback(() => { void load(); }, [load]));
 
   const handleLogout = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
@@ -16,9 +36,27 @@ export default function SettingsScreen() {
     ]);
   };
 
+  const addLocation = async () => {
+    if (!locationName.trim()) {
+      Alert.alert('Location name required', 'Enter office or branch name.');
+      return;
+    }
+    const result = await api.saveLocation({ name: locationName.trim(), radiusMeters: 150 });
+    if (!result.ok) {
+      Alert.alert('Unable to save location', result.message || 'Please try again.');
+      return;
+    }
+    setLocationName('');
+    void load();
+  };
+
   return (
     <ScreenShell>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} tintColor={colors.brand} />}
+      >
         <Text style={styles.title}>Settings</Text>
 
         <AppCard style={styles.profileCard}>
@@ -46,6 +84,48 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Workspace Controls</Text>
+          <MenuLink label="Screenshots" icon="image" onPress={() => navigation.navigate('Screenshots')} />
+          <MenuLink label="Screen Recordings" icon="camera" onPress={() => navigation.navigate('Recordings')} />
+          <MenuLink label="Productivity Labels" icon="target" onPress={() => navigation.navigate('ProductivityLabels')} />
+          <MenuLink label="Reports" icon="document" onPress={() => navigation.navigate('Reports')} />
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Office Locations</Text>
+          <AppCard style={styles.locationForm}>
+            <TextInput
+              value={locationName}
+              onChangeText={setLocationName}
+              placeholder="Office name"
+              placeholderTextColor={colors.mutedLight}
+              style={styles.locationInput}
+            />
+            <TouchableOpacity style={styles.locationButton} onPress={addLocation}>
+              <MiniIcon name="add" color={colors.white} size={20} />
+            </TouchableOpacity>
+          </AppCard>
+          {locations.map((location) => (
+            <View key={location.id} style={styles.locationRow}>
+              <View style={styles.menuLeft}>
+                <View style={styles.menuIcon}><MiniIcon name="location" color={colors.brand} size={18} /></View>
+                <View>
+                  <Text style={styles.menuLabel}>{location.name}</Text>
+                  <Text style={styles.locationMeta}>{location.address || `${location.radiusMeters || 0}m radius`}</Text>
+                </View>
+              </View>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Public Settings</Text>
+          {Object.keys(settings).slice(0, 6).map((key) => (
+            <MenuLink key={key} label={key} icon="settings" value={String(settings[key] ?? '')} />
+          ))}
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>Support</Text>
           <MenuLink label="Help Center" icon="help-circle" />
           <MenuLink label="About TeamLens" icon="brain" value="v1.0.0" />
@@ -62,9 +142,9 @@ export default function SettingsScreen() {
   );
 }
 
-function MenuLink({ label, icon, value }: any) {
+function MenuLink({ label, icon, value, onPress }: any) {
   return (
-    <TouchableOpacity style={styles.menuItem}>
+    <TouchableOpacity style={styles.menuItem} onPress={onPress}>
       <View style={styles.menuLeft}>
         <View style={styles.menuIcon}>
           <MiniIcon name={icon} size={18} color={colors.muted} />
@@ -115,7 +195,7 @@ const styles = StyleSheet.create({
   },
   orgBadgeText: {
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '600',
     color: colors.muted,
   },
   section: {
@@ -136,6 +216,43 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  locationForm: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.sm,
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  locationInput: {
+    flex: 1,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    color: colors.text,
+  },
+  locationButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: colors.brand,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  locationRow: {
+    backgroundColor: colors.card,
+    padding: spacing.md,
+    borderRadius: borderRadius.lg,
+    marginBottom: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  locationMeta: {
+    ...typography.small,
+    maxWidth: 230,
   },
   menuLeft: {
     flexDirection: 'row',
@@ -178,7 +295,7 @@ const styles = StyleSheet.create({
   logoutText: {
     ...typography.body,
     color: colors.danger,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   footerText: {
     ...typography.small,

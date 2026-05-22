@@ -43,6 +43,53 @@ const DATE_RANGE_STORAGE_KEY = "teamlens_date_range";
 const TEAM_SELECTION_STORAGE_KEY = "teamlens_selected_team";
 const ACCESS_TOKEN_STORAGE_KEY = "teamlens_access_token";
 
+const uniqueBases = (values: Array<string | null | undefined>) =>
+  [...new Set(values.map((value) => value?.trim().replace(/\/$/, "")).filter((value): value is string => Boolean(value)))];
+
+const getRuntimeApiBases = () => {
+  const envBase = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (typeof window === "undefined") {
+    return uniqueBases([envBase, "http://localhost:5000"]);
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const queryBase = params.get("mobileApiBase");
+  const protocol = window.location.protocol;
+  const hostname = window.location.hostname;
+  const isLocalHost = ["localhost", "127.0.0.1"].includes(hostname);
+
+  return uniqueBases([
+    queryBase,
+    isLocalHost ? envBase : undefined,
+    isLocalHost ? undefined : `${protocol}//${hostname}`,
+    isLocalHost ? undefined : `${protocol}//${hostname}:5000`,
+    envBase,
+    "http://localhost:5000",
+  ]);
+};
+
+const getRuntimeWsBases = () => {
+  const envBase = process.env.NEXT_PUBLIC_WS_URL?.trim();
+  if (typeof window === "undefined") {
+    return uniqueBases([envBase, "http://localhost:4000"]);
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const queryBase = params.get("mobileWsBase");
+  const protocol = window.location.protocol;
+  const hostname = window.location.hostname;
+  const isLocalHost = ["localhost", "127.0.0.1"].includes(hostname);
+
+  return uniqueBases([
+    queryBase,
+    isLocalHost ? envBase : undefined,
+    isLocalHost ? undefined : `${protocol}//${hostname}`,
+    isLocalHost ? undefined : `${protocol}//${hostname}:4000`,
+    envBase,
+    "http://localhost:4000",
+  ]);
+};
+
 const getInitialDateRange = (): DateRange => {
   const fallback = getPresetRange("Today");
   if (typeof window === "undefined") {
@@ -132,15 +179,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const apiBase = useMemo(() => {
-    const envBase = process.env.NEXT_PUBLIC_API_URL?.trim();
-    return envBase && envBase.length > 0 ? envBase.replace(/\/$/, "") : "http://localhost:5000";
-  }, []);
-
-  const wsBase = useMemo(() => {
-    const envBase = process.env.NEXT_PUBLIC_WS_URL?.trim();
-    return envBase && envBase.length > 0 ? envBase.replace(/\/$/, "") : "http://localhost:4000";
-  }, []);
+  const apiBaseCandidates = useMemo(() => getRuntimeApiBases(), []);
+  const wsBaseCandidates = useMemo(() => getRuntimeWsBases(), []);
+  const [resolvedApiBase, setResolvedApiBase] = useState(apiBaseCandidates[0] ?? "http://localhost:5000");
+  const apiBase = resolvedApiBase;
+  const wsBase = wsBaseCandidates[0] ?? "http://localhost:4000";
 
   const authHeaders = useMemo(() => {
     if (!user) return null;
@@ -153,17 +196,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const restoreSession = async () => {
       try {
-        const storedToken = typeof window !== "undefined" ? window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY) ?? "" : "";
-        const response = await fetch(`${apiBase}/api/web/auth/me`, {
-          method: "GET",
-          headers: storedToken ? { Authorization: `Bearer ${storedToken}` } : undefined,
-          credentials: "include",
-          cache: "no-store",
-        });
+        let storedToken = typeof window !== "undefined" ? window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY) ?? "" : "";
+        if (typeof window !== "undefined") {
+          const params = new URLSearchParams(window.location.search);
+          const mobileToken = params.get("mobileToken") || params.get("teamlensToken");
+          if (mobileToken) {
+            storedToken = mobileToken;
+            window.localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, mobileToken);
+            params.delete("mobileToken");
+            params.delete("teamlensToken");
+            const nextSearch = params.toString();
+            const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`;
+            window.history.replaceState(null, "", nextUrl);
+          }
+        }
+        let response: Response | null = null;
+        let payload: { success?: boolean; data?: { id: string; fullName: string; email: string; role: Role; organization: Organization } } | null = null;
+        let workingBase = apiBaseCandidates[0] ?? apiBase;
 
-        const payload = await response.json();
+        for (const candidate of apiBaseCandidates) {
+          try {
+            const candidateResponse = await fetch(`${candidate}/api/web/auth/me`, {
+              method: "GET",
+              headers: storedToken ? { Authorization: `Bearer ${storedToken}` } : undefined,
+              credentials: "include",
+              cache: "no-store",
+            });
+            const candidatePayload = await candidateResponse.json().catch(() => null);
+            if (candidateResponse.ok && candidatePayload?.success) {
+              response = candidateResponse;
+              payload = candidatePayload;
+              workingBase = candidate;
+              break;
+            }
+            response = candidateResponse;
+            payload = candidatePayload;
+          } catch {
+            // Try the next possible base. Mobile WebView may not have gateway :80 running.
+          }
+        }
 
-        if (response.ok && payload.success) {
+        if (response?.ok && payload?.success && payload.data) {
+          setResolvedApiBase(workingBase);
           setUser({
             id: payload.data.id,
             fullName: payload.data.fullName,
@@ -193,7 +267,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     void restoreSession();
-  }, [apiBase, selectedUserId]);
+  }, [apiBase, apiBaseCandidates, selectedUserId]);
 
   const setDateRange = (range: DateRange) => {
     setDateRangeState(range);

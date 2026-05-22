@@ -13,6 +13,31 @@ import TeamLensLogo from "../../../components/TeamLensLogo";
 
 const ACCESS_TOKEN_STORAGE_KEY = "teamlens_access_token";
 
+const uniqueBases = (values: Array<string | null | undefined>) =>
+  [...new Set(values.map((value) => value?.trim().replace(/\/$/, "")).filter((value): value is string => Boolean(value)))];
+
+const getRuntimeApiBases = () => {
+  const envBase = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (typeof window === "undefined") {
+    return uniqueBases([envBase, "http://localhost:5000"]);
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const queryBase = params.get("mobileApiBase");
+  const protocol = window.location.protocol;
+  const hostname = window.location.hostname;
+  const isLocalHost = ["localhost", "127.0.0.1"].includes(hostname);
+
+  return uniqueBases([
+    queryBase,
+    isLocalHost ? envBase : undefined,
+    isLocalHost ? undefined : `${protocol}//${hostname}`,
+    isLocalHost ? undefined : `${protocol}//${hostname}:5000`,
+    envBase,
+    "http://localhost:5000",
+  ]);
+};
+
 export default function ManagerSignInPage() {
   const router = useRouter();
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
@@ -29,27 +54,53 @@ export default function ManagerSignInPage() {
   const [statusMessage, setStatusMessage] = useState("");
   const [isCheckingSession, setIsCheckingSession] = useState(true);
 
-  const apiBase = useMemo(() => {
-    const envBase = process.env.NEXT_PUBLIC_API_URL?.trim();
-    return envBase && envBase.length > 0 ? envBase.replace(/\/$/, "") : "http://localhost:5000";
-  }, []);
+  const apiBases = useMemo(() => getRuntimeApiBases(), []);
+  const [apiBase, setApiBase] = useState(apiBases[0] ?? "http://localhost:5000");
 
   useEffect(() => {
-    const storedToken = window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY) ?? "";
-    fetch(`${apiBase}/api/web/auth/me`, {
-      headers: storedToken ? { Authorization: `Bearer ${storedToken}` } : undefined,
-      credentials: "include",
-      cache: "no-store",
-    })
-      .then((res) => {
-        if (res.ok) {
-          router.replace("/dashboard");
-          return;
+    const params = new URLSearchParams(window.location.search);
+    const mobileToken = params.get("mobileToken") || params.get("teamlensToken");
+    const employeeId = params.get("employeeId") || "";
+    const mobileApiBase = params.get("mobileApiBase") || "";
+    const mobileWsBase = params.get("mobileWsBase") || "";
+    let storedToken = window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY) ?? "";
+
+    if (mobileToken) {
+      storedToken = mobileToken;
+      window.localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, mobileToken);
+      params.delete("mobileToken");
+      params.delete("teamlensToken");
+      const nextSearch = params.toString();
+      window.history.replaceState(null, "", `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`);
+    }
+
+    const checkSession = async () => {
+      for (const candidate of apiBases) {
+        try {
+          const res = await fetch(`${candidate}/api/web/auth/me`, {
+            headers: storedToken ? { Authorization: `Bearer ${storedToken}` } : undefined,
+            credentials: "include",
+            cache: "no-store",
+          });
+          const payload = await res.json().catch(() => null);
+          if (res.ok && payload?.success) {
+            setApiBase(candidate);
+            const nextParams = new URLSearchParams();
+            if (employeeId) nextParams.set("employeeId", employeeId);
+            if (mobileApiBase || candidate) nextParams.set("mobileApiBase", mobileApiBase || candidate);
+            if (mobileWsBase) nextParams.set("mobileWsBase", mobileWsBase);
+            router.replace(`/dashboard${employeeId ? "/live" : ""}${nextParams.toString() ? `?${nextParams.toString()}` : ""}`);
+            return;
+          }
+        } catch {
+          // Try the next base.
         }
-        setIsCheckingSession(false);
-      })
-      .catch(() => setIsCheckingSession(false));
-  }, [apiBase, router]);
+      }
+      setIsCheckingSession(false);
+    };
+
+    void checkSession();
+  }, [apiBases, router]);
 
   const onAuthSuccess = () => {
     setStatusMessage("Synchronization complete. Access granted.");
@@ -61,16 +112,29 @@ export default function ManagerSignInPage() {
     setStatusMessage("");
 
     try {
-      const response = await fetch(`${apiBase}/api/web/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
-      });
+      let response: Response | null = null;
+      let payload: { success?: boolean; data?: { accessToken?: string }; message?: string } | null = null;
+      for (const candidate of apiBases) {
+        try {
+          const candidateResponse = await fetch(`${candidate}/api/web/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+          });
+          const candidatePayload = await candidateResponse.json().catch(() => null);
+          response = candidateResponse;
+          payload = candidatePayload;
+          if (candidateResponse.ok && candidatePayload?.success) {
+            setApiBase(candidate);
+            break;
+          }
+        } catch {
+          // Try the next base.
+        }
+      }
 
-      const payload = await response.json();
-
-      if (response.ok && payload.success) {
+      if (response?.ok && payload?.success) {
         if (payload.data?.accessToken) {
           window.localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, payload.data.accessToken);
         }
@@ -80,7 +144,7 @@ export default function ManagerSignInPage() {
         setLoadingAuth(false);
       }
     } catch {
-      setStatusMessage("Failed to connect to the intelligence pipeline.");
+      setStatusMessage(`Unable to connect to API. Tried: ${apiBases.join(", ")}`);
       setLoadingAuth(false);
     }
   };

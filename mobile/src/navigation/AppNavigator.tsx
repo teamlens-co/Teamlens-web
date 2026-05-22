@@ -9,19 +9,36 @@ import { MiniIcon } from '../components/IosKit';
 
 import LoginScreen from '../screens/LoginScreen';
 import HomeScreen from '../screens/HomeScreen';
+import DashboardScreen from '../screens/DashboardScreen';
 import TeamScreen from '../screens/TeamScreen';
 import InsightsScreen from '../screens/InsightsScreen';
 import AlertsScreen from '../screens/AlertsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import ActivitiesScreen from '../screens/ActivitiesScreen';
 import LiveScreen from '../screens/LiveScreen';
+import AttendanceScreen from '../screens/AttendanceScreen';
+import ReportsScreen from '../screens/ReportsScreen';
+import ScreenshotsScreen from '../screens/ScreenshotsScreen';
+import RecordingsScreen from '../screens/RecordingsScreen';
+import ManualTimeScreen from '../screens/ManualTimeScreen';
+import ProductivityLabelsScreen from '../screens/ProductivityLabelsScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 function TabIcon({ label, focused }: { label: string; focused: boolean }) {
   const tone = focused ? colors.tabActive : colors.tabInactive;
-  const iconName = label === 'Home' ? 'grid' : label === 'Team' ? 'team' : label === 'AI' ? 'brain' : label === 'Alerts' ? 'bell' : 'settings';
+  const iconName = label === 'Home'
+    ? 'grid'
+    : label === 'Team'
+      ? 'team'
+      : label === 'Attendance'
+        ? 'clock'
+      : label === 'Calendar'
+        ? 'calendar'
+        : label === 'Alerts'
+          ? 'bell'
+          : 'settings';
 
   return (
     <View style={styles.iconBox}>
@@ -58,7 +75,7 @@ function MainTabs() {
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Team" component={TeamScreen} />
-      <Tab.Screen name="AI" component={InsightsScreen} />
+      <Tab.Screen name="Attendance" component={AttendanceScreen} />
       <Tab.Screen name="Alerts" component={AlertsScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
@@ -86,8 +103,15 @@ export default function AppNavigator() {
         {isAuthenticated ? (
           <>
             <Stack.Screen name="Main" component={MainTabs} />
+            <Stack.Screen name="Dashboard" component={DashboardScreen} />
             <Stack.Screen name="Activities" component={ActivitiesScreen} />
+            <Stack.Screen name="AI" component={InsightsScreen} />
             <Stack.Screen name="Live" component={LiveScreen} />
+            <Stack.Screen name="Reports" component={ReportsScreen} />
+            <Stack.Screen name="Screenshots" component={ScreenshotsScreen} />
+            <Stack.Screen name="Recordings" component={RecordingsScreen} />
+            <Stack.Screen name="ManualTime" component={ManualTimeScreen} />
+            <Stack.Screen name="ProductivityLabels" component={ProductivityLabelsScreen} />
           </>
         ) : (
           <Stack.Screen name="Login" component={LoginScreen} />

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Maximize2, MonitorPlay, Users, X } from "lucide-react";
 import Image from "next/image";
+import { useSearchParams } from "next/navigation";
 import { useAuth, type Role } from "../../../contexts/AuthContext";
 import LiveScreenViewer from "../../../components/LiveScreenViewer";
 import DashboardDateFilter from "../../../components/DashboardDateFilter";
@@ -133,6 +134,8 @@ function LiveCard({ employee, apiBase, onOpen }: { employee: LiveEmployee; apiBa
 
 export default function LiveStreamPage() {
   const { apiBase, authHeaders, user, dateRange } = useAuth();
+  const searchParams = useSearchParams();
+  const requestedEmployeeId = searchParams.get("employeeId") || "";
   const [employees, setEmployees] = useState<LiveEmployee[]>([]);
   const [teams, setTeams] = useState<ApiTeam[]>([]);
   const [teamFilter, setTeamFilter] = useState("");
@@ -227,6 +230,14 @@ export default function LiveStreamPage() {
 
   const onlineCount = employees.filter((employee) => employee.online).length;
   const gridClass = gridSize === "2" ? "xl:grid-cols-2" : gridSize === "4" ? "xl:grid-cols-4" : "xl:grid-cols-3";
+
+  useEffect(() => {
+    if (!requestedEmployeeId || selectedEmployee || employees.length === 0) return;
+    const employee = employees.find((item) => item.id === requestedEmployeeId);
+    if (employee) {
+      setSelectedEmployee(employee);
+    }
+  }, [employees, requestedEmployeeId, selectedEmployee]);
 
   return (
     <div className="space-y-5">

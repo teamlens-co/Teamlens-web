@@ -1,621 +1,336 @@
-import React, { useState, useCallback } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet, RefreshControl, ActivityIndicator, TouchableOpacity, Dimensions,
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import api from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-import { colors, borderRadius, spacing, shadow, typography } from '../theme';
-import { AppCard, Avatar, MiniIcon, ScreenShell } from '../components/IosKit';
-import type { DashboardAnalytics, CalendarDay } from '../types';
+import { Avatar, MiniIcon, ScreenShell } from '../components/IosKit';
+import { borderRadius, colors, shadow, spacing, typography } from '../theme';
+import type { DashboardAnalytics, ManualTimeRequest, Screenshot, Team, User } from '../types';
 
-const { width } = Dimensions.get('window');
+type ModuleRoute =
+  | 'Dashboard'
+  | 'Team'
+  | 'Activities'
+  | 'Attendance'
+  | 'Live'
+  | 'Screenshots'
+  | 'Recordings'
+  | 'ManualTime'
+  | 'Reports'
+  | 'AI'
+  | 'ProductivityLabels'
+  | 'Alerts'
+  | 'Settings';
 
-type HomeMode = 'launcher' | 'dashboard';
-type LauncherItem = {
-  label: string;
-  icon: string;
-  color: string;
-  action?: 'dashboard';
-  route?: 'Team' | 'AI' | 'Alerts' | 'Settings' | 'Activities' | 'Live';
+const dashboardModule: { label: string; subtitle: string; icon: string; route: ModuleRoute; tone: string } = {
+  label: 'Dashboard',
+  subtitle: 'Main overview',
+  icon: 'grid',
+  route: 'Dashboard',
+  tone: colors.brand,
 };
 
-const fallbackTeam = [
-  { name: 'Sarah Chen', app: 'VS Code', hours: '6.5h', score: 92, online: true },
-  { name: 'Marcus Johnson', app: 'Zoom', hours: '5.2h', score: 78, online: true },
-  { name: 'Emily Rodriguez', app: 'Figma', hours: '7.1h', score: 88, online: true },
-  { name: 'David Kim', app: 'Chrome', hours: '3.8h', score: 12, online: false },
-  { name: 'Priya Patel', app: 'Google Docs', hours: '6.8h', score: 95, online: true },
+const launcherModules: Array<{ label: string; subtitle: string; icon: string; route: ModuleRoute; tone: string }> = [
+  { label: 'Employees', subtitle: 'People', icon: 'team', route: 'Team', tone: colors.brand },
+  { label: 'Attendance', subtitle: 'Status', icon: 'clock', route: 'Attendance', tone: colors.warning },
+  { label: 'Reports', subtitle: 'Usage', icon: 'bars', route: 'Reports', tone: '#0F766E' },
+  { label: 'Screenshots', subtitle: 'Proof', icon: 'image', route: 'Screenshots', tone: '#2563EB' },
+  { label: 'Activities', subtitle: 'Timeline', icon: 'target', route: 'Activities', tone: '#6B5DD3' },
+  { label: 'Manual Time', subtitle: 'Requests', icon: 'card-text', route: 'ManualTime', tone: colors.danger },
+  { label: 'Recordings', subtitle: 'Videos', icon: 'camera', route: 'Recordings', tone: '#7C3AED' },
+  { label: 'Live View', subtitle: 'Screens', icon: 'play', route: 'Live', tone: colors.success },
+  { label: 'AI Center', subtitle: 'Insights', icon: 'brain', route: 'AI', tone: '#9333EA' },
+  { label: 'Productivity', subtitle: 'Labels', icon: 'shield', route: 'ProductivityLabels', tone: '#16A34A' },
+  { label: 'Alerts', subtitle: 'Signals', icon: 'bell', route: 'Alerts', tone: '#EA580C' },
+  { label: 'Settings', subtitle: 'Account', icon: 'settings', route: 'Settings', tone: '#7E6F65' },
 ];
 
-const productivityBars = [86, 72, 90, 84, 38, 66, 91, 78, 70, 47];
-const redBars = [12, 18, 7, 10, 44, 20, 8, 13, 24, 31];
-const hourLabels = ['8A', '9A', '10A', '11A', '12P', '1P', '2P', '3P', '4P', '5P'];
+const activityBars = [6, 8, 5, 7, 6, 9, 28, 42, 54, 66, 62, 72, 58, 68, 76, 61, 52, 12, 6, 5, 8, 6, 11, 7];
 
-const launcherItems: LauncherItem[] = [
-  { label: 'Dashboard', icon: 'grid', color: colors.brand, action: 'dashboard' },
-  { label: 'Employees', icon: 'team', color: colors.info, route: 'Team' },
-  { label: 'Live View', icon: 'play', color: colors.success, route: 'Live' },
-  { label: 'Projects', icon: 'folder', color: '#7C3FD1', action: 'dashboard' },
-  { label: 'AI Center', icon: 'brain', color: '#7C3FD1', route: 'AI' },
-  { label: 'Reports', icon: 'bars', color: colors.brand, action: 'dashboard' },
-  { label: 'Alerts', icon: 'warn', color: colors.warning, route: 'Alerts' },
-  { label: 'Settings', icon: 'settings', color: colors.muted, route: 'Settings' },
-  { label: 'Timeline', icon: 'bars', color: colors.warning, route: 'Activities' },
-  { label: 'Help', icon: 'help-circle', color: colors.success, route: 'Settings' },
-];
+const dateRange = () => {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return { start: start.toISOString(), end: now.toISOString() };
+};
+
+const hours = (seconds?: number, minutes?: number) => {
+  const totalSeconds = seconds ?? (minutes ?? 0) * 60;
+  return `${(totalSeconds / 3600).toFixed(1)}h`;
+};
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
-  const [mode, setMode] = useState<HomeMode>('launcher'); // Default to launcher as requested
   const [analytics, setAnalytics] = useState<DashboardAnalytics | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
+  const [manualRequests, setManualRequests] = useState<ManualTimeRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchData = useCallback(async () => {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString();
-
-    const [analyticsResult] = await Promise.all([
-      api.getDashboardAnalytics(startOfMonth, endOfMonth),
+  const load = useCallback(async () => {
+    const range = dateRange();
+    const [analyticsResult, usersResult, teamsResult, screenshotsResult, manualResult] = await Promise.all([
+      api.getDashboardAnalytics(range.start, range.end),
+      api.getUsers(),
+      api.getTeams(),
+      api.getScreenshots({ startDate: range.start, endDate: range.end, limit: 6 }),
+      api.getManualTimeRequests(),
     ]);
 
-    if (analyticsResult.ok && analyticsResult.data) setAnalytics(analyticsResult.data);
+    setAnalytics(analyticsResult.ok ? analyticsResult.data ?? null : null);
+    setUsers(usersResult.ok && Array.isArray(usersResult.data) ? usersResult.data : []);
+    setTeams(teamsResult.ok && Array.isArray(teamsResult.data) ? teamsResult.data : []);
+    setScreenshots(screenshotsResult.ok && Array.isArray(screenshotsResult.data) ? screenshotsResult.data : []);
+    setManualRequests(manualResult.ok && Array.isArray(manualResult.data) ? manualResult.data : []);
     setLoading(false);
     setRefreshing(false);
   }, []);
 
-  useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
+  useFocusEffect(useCallback(() => { void load(); }, [load]));
 
-  const onRefresh = () => { setRefreshing(true); fetchData(); };
-  const activeMinutes = (analytics?.totalActiveMinutes ?? Math.round((analytics?.activeSeconds ?? 0) / 60)) || 2832;
-  const productivePercent = Math.round(analytics?.activePercentage ?? analytics?.productivityPercent ?? 83);
-  const hoursToday = (activeMinutes / 60).toFixed(1);
-  const screenshots = analytics?.sessionCount ? analytics.sessionCount * 96 : 1248;
-  const firstName = user?.fullName?.split(' ')[0] || 'there';
+  const productive = Math.min(100, Math.max(0, Math.round(analytics?.productivityPercent ?? analytics?.activePercentage ?? 0)));
+  const activeToday = hours(analytics?.activeSeconds, analytics?.totalActiveMinutes);
+  const pendingCount = manualRequests.filter((item) => item.status?.toLowerCase() === 'pending').length;
+  const activeUsers = users.filter((item) => item.status?.toLowerCase() === 'active').length || users.length;
+  const glance = useMemo(() => [
+    { label: 'Active now', value: String(activeUsers), note: 'employees online', tone: colors.success },
+    { label: 'Hours today', value: activeToday, note: 'team total', tone: colors.brand },
+    { label: 'Productivity', value: `${productive}%`, note: `${teams.length} teams tracked`, tone: colors.info },
+    { label: 'Needs review', value: String(pendingCount), note: 'manual requests', tone: colors.warning },
+  ], [activeToday, activeUsers, pendingCount, productive, teams.length]);
 
-  const openLauncherItem = (item: LauncherItem) => {
-    if (item.action === 'dashboard') {
-      setMode('dashboard');
-      return;
-    }
-    if (item.route) navigation.navigate(item.route);
+  const onRefresh = () => {
+    setRefreshing(true);
+    void load();
   };
 
-  if (mode === 'launcher') {
-    return (
-      <LauncherView
-        firstName={firstName}
-        refreshing={refreshing}
-        onRefresh={onRefresh}
-        onBack={() => setMode('dashboard')}
-        openItem={openLauncherItem}
-        hoursToday={hoursToday}
-        productivePercent={productivePercent}
-      />
-    );
-  }
-
   return (
-    <DashboardView
-      firstName={firstName}
-      hoursToday={hoursToday}
-      productivePercent={productivePercent}
-      screenshots={screenshots}
-      refreshing={refreshing}
-      onRefresh={onRefresh}
-      onLauncher={() => setMode('launcher')}
-      loading={loading}
-    />
-  );
-}
-
-function LauncherView({
-  firstName,
-  refreshing,
-  onRefresh,
-  onBack,
-  openItem,
-  hoursToday,
-  productivePercent,
-}: any) {
-  return (
-    <ScreenShell>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand} />}
-      >
-        <View style={styles.launcherHeader}>
-          <View>
-            <Text style={styles.greeting}>Good morning,</Text>
-            <Text style={styles.brandTitle}>TeamLens</Text>
-          </View>
-          <TouchableOpacity style={styles.dashboardToggle} onPress={onBack}>
-            <MiniIcon name="eye" color={colors.white} size={24} />
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.previewTitle}>iOS App Screens Preview</Text>
-        <Text style={styles.previewCopy}>Tap any screen below to preview its mobile layout</Text>
-
-        <View style={styles.launcherGrid}>
-          {launcherItems.map((item) => (
-            <TouchableOpacity
-              key={item.label}
-              style={styles.launcherItem}
-              activeOpacity={0.7}
-              onPress={() => openItem(item)}
-            >
-              <View style={[styles.launcherIcon, { backgroundColor: item.color }]}>
-                <MiniIcon name={item.icon} color={colors.white} size={32} />
-              </View>
-              <Text style={styles.launcherLabel}>{item.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>QUICK GLANCE</Text>
-        </View>
-
-        <View style={styles.glanceGrid}>
-          <GlanceCard label="Active Now" value="8" sub="employees online" color={colors.brand} />
-          <GlanceCard label="Hours Today" value={hoursToday} sub="team total" color={colors.brand} />
-          <GlanceCard label="Productivity" value={`${productivePercent}%`} sub="+5% vs last week" color={colors.brand} />
-          <GlanceCard label="AI Insights" value="6" sub="1 critical" color={colors.brand} />
-        </View>
-
-        <TouchableOpacity style={styles.websiteLink}>
-          <Text style={styles.websiteLinkText}>← Back to Website</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </ScreenShell>
-  );
-}
-
-function GlanceCard({ label, value, sub, color }: any) {
-  return (
-    <AppCard style={styles.glanceCard}>
-      <Text style={styles.glanceValue}>{value}</Text>
-      <Text style={styles.glanceLabel}>{label}</Text>
-      <Text style={[styles.glanceSub, { color }]}>{sub}</Text>
-    </AppCard>
-  );
-}
-
-function DashboardView({
-  firstName,
-  hoursToday,
-  productivePercent,
-  screenshots,
-  refreshing,
-  onRefresh,
-  onLauncher,
-  loading,
-}: any) {
-  return (
-    <ScreenShell>
+    <ScreenShell style={styles.shell}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand} />}
       >
         <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Dashboard</Text>
-            <Text style={styles.brandTitle}>Hello, {firstName}</Text>
+          <View style={styles.brandBlock}>
+            <Text style={styles.greeting}>Good morning,</Text>
+            <Text style={styles.title}>TeamLens</Text>
           </View>
-          <TouchableOpacity style={styles.profileButton} onPress={onLauncher}>
-            <Avatar name={firstName} size={44} />
+          <TouchableOpacity onPress={() => navigation.navigate('Settings')} activeOpacity={0.82}>
+            <Avatar name={user?.fullName || 'User'} size={48} online />
           </TouchableOpacity>
         </View>
 
-        <View style={styles.metricRow}>
-          <MetricCard label="Hours" value={hoursToday} icon="clock" color={colors.brand} trend="+12%" />
-          <MetricCard label="Focus" value={`${productivePercent}%`} icon="target" color={colors.success} trend="+4%" />
-        </View>
-        <View style={styles.metricRow}>
-          <MetricCard label="Captures" value={screenshots.toLocaleString()} icon="camera" color={colors.info} />
-          <MetricCard label="Activity" value="High" icon="bars" color={colors.warning} />
-        </View>
+        <Text style={styles.sectionKicker}>App screens</Text>
+        <Text style={styles.sectionHint}>Tap any module below to open the mobile view.</Text>
 
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Team Status</Text>
-          <TouchableOpacity><Text style={styles.linkText}>View All</Text></TouchableOpacity>
-        </View>
+        <TouchableOpacity style={styles.dashboardTile} activeOpacity={0.84} onPress={() => navigation.navigate(dashboardModule.route)}>
+          <View style={[styles.dashboardIcon, { backgroundColor: dashboardModule.tone }]}>
+            <MiniIcon name={dashboardModule.icon} color={colors.white} size={28} />
+          </View>
+          <View style={styles.dashboardText}>
+            <Text style={styles.dashboardTitle}>{dashboardModule.label}</Text>
+            <Text style={styles.dashboardSubtitle}>{dashboardModule.subtitle}</Text>
+          </View>
+          <MiniIcon name="forward" color={colors.mutedLight} size={18} />
+        </TouchableOpacity>
 
-        {fallbackTeam.slice(0, 3).map((member) => (
-          <AppCard key={member.name} style={styles.memberCard}>
-            <Avatar name={member.name} size={40} online={member.online} />
-            <View style={styles.memberInfo}>
-              <Text style={styles.memberName}>{member.name}</Text>
-              <Text style={styles.memberApp}>{member.app} • {member.hours}</Text>
-            </View>
-            <View style={styles.memberScore}>
-              <Text style={[styles.scoreText, { color: member.score > 80 ? colors.success : colors.warning }]}>
-                {member.score}%
-              </Text>
-              <View style={styles.scoreBarContainer}>
-                <View style={[styles.scoreBar, { width: `${member.score}%`, backgroundColor: member.score > 80 ? colors.success : colors.warning }]} />
+        <View style={styles.launcherGrid}>
+          {launcherModules.map((item) => (
+            <TouchableOpacity key={item.label} style={styles.launcherItem} activeOpacity={0.82} onPress={() => navigation.navigate(item.route)}>
+              <View style={[styles.launcherIcon, { backgroundColor: item.tone }]}>
+                <MiniIcon name={item.icon} color={colors.white} size={28} />
               </View>
-            </View>
-          </AppCard>
-        ))}
+              <Text style={styles.launcherLabel} numberOfLines={1}>{item.label}</Text>
+              <Text style={styles.launcherSub} numberOfLines={1}>{item.subtitle}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
 
-        <AppCard style={styles.chartCard}>
-          <Text style={styles.chartTitle}>Activity Timeline</Text>
-          <View style={styles.chartContainer}>
-            {productivityBars.map((height, index) => (
-              <View key={index} style={styles.barGroup}>
-                <View style={styles.barWrapper}>
-                  <View style={[styles.barBase, { height: (height / 100) * 80, backgroundColor: colors.brand }]} />
-                </View>
-                <Text style={styles.barLabel}>{hourLabels[index]}</Text>
+        <View style={styles.sectionRow}>
+          <Text style={styles.quickTitle}>Quick glance</Text>
+          {loading ? <ActivityIndicator color={colors.brand} /> : null}
+        </View>
+
+        <View style={styles.glanceGrid}>
+          {glance.map((item) => (
+            <View key={item.label} style={styles.glanceCard}>
+              <Text style={styles.glanceValue}>{item.value}</Text>
+              <Text style={styles.glanceLabel}>{item.label}</Text>
+              <Text style={[styles.glanceNote, { color: item.tone }]}>{item.note}</Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.chartCard}>
+          <View style={styles.chartHeader}>
+            <Text style={styles.chartTitle}>Activity timeline</Text>
+            <Text style={styles.chartMeta}>Today</Text>
+          </View>
+          <View style={styles.barChart}>
+            {activityBars.map((value, index) => (
+              <View key={`${value}-${index}`} style={styles.barSlot}>
+                <View style={[styles.bar, { height: Math.max(5, value), backgroundColor: value > 50 ? colors.brand : colors.success }]} />
               </View>
             ))}
           </View>
-        </AppCard>
-      </ScrollView>
-      {loading && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator color={colors.brand} />
+          <View style={styles.axisRow}>
+            <Text style={styles.axisText}>0</Text>
+            <Text style={styles.axisText}>8</Text>
+            <Text style={styles.axisText}>12</Text>
+            <Text style={styles.axisText}>16</Text>
+            <Text style={styles.axisText}>20</Text>
+          </View>
         </View>
-      )}
+
+        <View style={styles.mixCard}>
+          <Text style={styles.chartTitle}>Productivity mix</Text>
+          <View style={styles.mixTrack}>
+            <View style={[styles.mixFill, { flex: productive || 1, backgroundColor: colors.success }]} />
+            <View style={[styles.mixFill, { flex: 20, backgroundColor: colors.warning }]} />
+            <View style={[styles.mixFill, { flex: Math.max(5, 100 - productive - 20), backgroundColor: colors.danger }]} />
+          </View>
+          <View style={styles.mixLegend}>
+            <LegendItem label="Productive" value={`${productive}%`} color={colors.success} />
+            <LegendItem label="Neutral" value="20%" color={colors.warning} />
+            <LegendItem label="Unproductive" value={`${Math.max(0, 100 - productive - 20)}%`} color={colors.danger} />
+          </View>
+        </View>
+
+        <View style={styles.currentCard}>
+          <View style={styles.currentIcon}>
+            <MiniIcon name="image" color={colors.brand} size={20} />
+          </View>
+          <View style={styles.currentText}>
+            <Text style={styles.currentTitle}>Current signal</Text>
+            <Text style={styles.currentMeta}>
+              {screenshots[0]?.employeeName || screenshots[0]?.activeApplication || 'No recent capture'} • {screenshots.length} captures today
+            </Text>
+          </View>
+        </View>
+      </ScrollView>
     </ScreenShell>
   );
 }
 
-function MetricCard({ label, value, icon, color, trend }: any) {
+function LegendItem({ label, value, color }: { label: string; value: string; color: string }) {
   return (
-    <AppCard style={styles.metricCard}>
-      <View style={[styles.metricIcon, { backgroundColor: color + '20' }]}>
-        <MiniIcon name={icon} color={color} size={20} />
-      </View>
-      <View style={styles.metricData}>
-        <Text style={styles.metricValue}>{value}</Text>
-        <Text style={styles.metricLabel}>{label}</Text>
-      </View>
-      {trend && (
-        <View style={styles.trendTag}>
-          <Text style={styles.trendText}>{trend}</Text>
-        </View>
-      )}
-    </AppCard>
+    <View style={styles.legendItem}>
+      <View style={[styles.legendDot, { backgroundColor: color }]} />
+      <Text style={styles.legendText}>{label}: {value}</Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  content: {
-    paddingBottom: spacing.xxl,
-  },
-  header: {
+  shell: { backgroundColor: '#F8F5F2' },
+  content: { paddingBottom: spacing.xxl + 8 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.lg },
+  brandBlock: { flex: 1, paddingRight: spacing.md },
+  greeting: { fontSize: 18, color: colors.muted, marginBottom: 2 },
+  title: { fontSize: 34, lineHeight: 38, fontWeight: '600', color: colors.text, letterSpacing: 0 },
+  sectionKicker: { ...typography.label, color: colors.mutedLight, marginBottom: 4 },
+  sectionHint: { fontSize: 14, fontWeight: '400', color: colors.muted, marginBottom: spacing.md },
+  dashboardTile: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  greeting: {
-    ...typography.bodySm,
-    color: colors.muted,
-    fontWeight: '600',
-  },
-  brandTitle: {
-    ...typography.h2,
-    color: colors.text,
-  },
-  profileButton: {
-    ...shadow.sm,
-  },
-  launcherHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.xl,
-  },
-  dashboardToggle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.brand,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...shadow.md,
-  },
-  previewTitle: {
-    ...typography.label,
-    color: colors.muted,
-    marginBottom: spacing.sm,
-    fontSize: 11,
-    letterSpacing: 1.2,
-  },
-  previewCopy: {
-    ...typography.bodySm,
-    color: colors.mutedLight,
-    marginBottom: spacing.xl,
-    fontSize: 13,
-  },
-  launcherGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: spacing.xxl,
-  },
-  launcherItem: {
-    width: (width - spacing.lg * 2 - spacing.md * 3) / 4,
-    alignItems: 'center',
-    marginBottom: spacing.xl,
-  },
-  launcherIcon: {
-    width: 60,
-    height: 60,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.xs,
-    ...shadow.md,
-  },
-  launcherLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.text,
-    textAlign: 'center',
-    marginTop: 2,
-  },
-  glanceGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: spacing.md,
-  },
-  glanceCard: {
-    width: (width - spacing.lg * 2 - spacing.md) / 2,
-    padding: spacing.lg,
-    backgroundColor: colors.surface2,
-    borderWidth: 0,
-    ...shadow.sm,
-  },
-  glanceValue: {
-    ...typography.h2,
-    fontSize: 24,
-    marginBottom: 4,
-    color: colors.brand,
-  },
-  glanceLabel: {
-    ...typography.label,
-    fontSize: 10,
-    color: colors.muted,
-  },
-  glanceSub: {
-    fontSize: 11,
-    color: colors.mutedLight,
-    marginTop: 2,
-  },
-  websiteLink: {
-    alignItems: 'center',
-    paddingVertical: spacing.xxl,
-  },
-  websiteLinkText: {
-    fontSize: 14,
-    color: colors.brand,
-    fontWeight: '600',
-  },
-  promoCard: {
-    flexDirection: 'row',
-    backgroundColor: colors.brandLight,
-    borderColor: colors.brand,
-    borderWidth: 1,
-    padding: spacing.lg,
-  },
-  promoInfo: {
-    flex: 1,
-  },
-  promoTitle: {
-    ...typography.h3,
-    color: colors.brand,
-    marginBottom: 4,
-  },
-  promoText: {
-    ...typography.bodySm,
-    color: colors.muted,
-    marginBottom: spacing.md,
-  },
-  promoButton: {
-    backgroundColor: colors.brand,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 8,
-    borderRadius: borderRadius.full,
-    alignSelf: 'flex-start',
-  },
-  promoButtonText: {
-    color: colors.white,
-    fontWeight: '700',
-    fontSize: 12,
-  },
-  promoIconContainer: {
-    justifyContent: 'center',
-    paddingLeft: spacing.md,
-  },
-  summaryCard: {
-    backgroundColor: colors.brand,
-    padding: spacing.lg,
-    marginBottom: spacing.lg,
-    borderWidth: 0,
-    ...shadow.md,
-  },
-  summaryTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  summaryBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-    gap: 4,
-  },
-  summaryBadgeText: {
-    color: colors.white,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  summaryTime: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 12,
-  },
-  summaryContent: {
-    ...typography.body,
-    color: colors.white,
-    lineHeight: 22,
-  },
-  bold: {
-    fontWeight: '800',
-  },
-  mutedText: {
-    opacity: 0.8,
-  },
-  metricRow: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    marginBottom: spacing.md,
-  },
-  metricCard: {
-    flex: 1,
-    padding: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  metricIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.sm,
-  },
-  metricData: {
-    flex: 1,
-  },
-  metricValue: {
-    ...typography.h3,
-    fontSize: 20,
-  },
-  metricLabel: {
-    ...typography.caption,
-    marginTop: -2,
-  },
-  trendTag: {
-    position: 'absolute',
-    top: 6,
-    right: 8,
-  },
-  trendText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: colors.success,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  sectionTitle: {
-    ...typography.h3,
-    color: colors.text,
-  },
-  linkText: {
-    ...typography.bodySm,
-    color: colors.brand,
-    fontWeight: '600',
-  },
-  memberCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  memberInfo: {
-    flex: 1,
-    marginLeft: spacing.md,
-  },
-  memberName: {
-    ...typography.body,
-    fontWeight: '700',
-  },
-  memberApp: {
-    ...typography.caption,
-  },
-  memberScore: {
-    alignItems: 'flex-end',
-    width: 60,
-  },
-  scoreText: {
-    ...typography.bodySm,
-    fontWeight: '800',
-    marginBottom: 4,
-  },
-  scoreBarContainer: {
-    width: '100%',
-    height: 4,
-    backgroundColor: colors.divider,
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  scoreBar: {
-    height: '100%',
-    borderRadius: 2,
-  },
-  chartCard: {
-    marginTop: spacing.md,
-    padding: spacing.lg,
-  },
-  chartTitle: {
-    ...typography.h3,
-    marginBottom: spacing.lg,
-  },
-  chartContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    height: 120,
-  },
-  barGroup: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  barWrapper: {
-    height: 80,
-    width: 12,
-    backgroundColor: colors.surface2,
-    borderRadius: 6,
-    justifyContent: 'flex-end',
-    overflow: 'hidden',
-  },
-  barBase: {
-    width: '100%',
-    borderRadius: 6,
-  },
-  barLabel: {
-    fontSize: 9,
-    color: colors.muted,
-    marginTop: 6,
-    fontWeight: '600',
-  },
-  loadingOverlay: {
-    position: 'absolute',
-    top: 20,
-    right: 20,
-    backgroundColor: colors.white,
-    padding: 8,
+    backgroundColor: colors.card,
     borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginBottom: spacing.xl,
     ...shadow.sm,
   },
+  dashboardIcon: { width: 58, height: 58, borderRadius: 18, alignItems: 'center', justifyContent: 'center', ...shadow.sm },
+  dashboardText: { flex: 1 },
+  dashboardTitle: { fontSize: 16, fontWeight: '600', color: colors.text },
+  dashboardSubtitle: { fontSize: 12, fontWeight: '400', color: colors.muted, marginTop: 3 },
+  launcherGrid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: spacing.xl, marginBottom: spacing.xl },
+  launcherItem: { width: '33.333%', alignItems: 'center', paddingHorizontal: 4 },
+  launcherIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 9,
+    ...shadow.md,
+  },
+  launcherLabel: { fontSize: 13, fontWeight: '600', color: colors.text, textAlign: 'center' },
+  launcherSub: { fontSize: 11, fontWeight: '400', color: colors.muted, textAlign: 'center', marginTop: 2 },
+  sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
+  quickTitle: { fontSize: 18, fontWeight: '600', color: colors.text },
+  glanceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg },
+  glanceCard: {
+    width: '48.7%',
+    minHeight: 116,
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    ...shadow.sm,
+  },
+  glanceValue: { fontSize: 25, fontWeight: '600', color: colors.text },
+  glanceLabel: { fontSize: 13, color: colors.muted, marginTop: 7 },
+  glanceNote: { fontSize: 12, fontWeight: '600', marginTop: 6 },
+  chartCard: {
+    backgroundColor: colors.card,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    ...shadow.sm,
+  },
+  chartHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md },
+  chartTitle: { fontSize: 17, fontWeight: '600', color: colors.text },
+  chartMeta: { fontSize: 12, fontWeight: '600', color: colors.mutedLight },
+  barChart: { height: 104, flexDirection: 'row', alignItems: 'flex-end', gap: 4, paddingTop: spacing.md },
+  barSlot: { flex: 1, height: '100%', justifyContent: 'flex-end', alignItems: 'center' },
+  bar: { width: 7, borderRadius: 8 },
+  axisRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 8, marginTop: 8 },
+  axisText: { fontSize: 10, color: colors.mutedLight, fontWeight: '600' },
+  mixCard: {
+    backgroundColor: colors.card,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    ...shadow.sm,
+  },
+  mixTrack: { height: 18, flexDirection: 'row', overflow: 'hidden', borderRadius: borderRadius.full, marginTop: spacing.md, marginBottom: spacing.md },
+  mixFill: { height: '100%' },
+  mixLegend: { gap: spacing.sm },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  legendDot: { width: 12, height: 12, borderRadius: 6 },
+  legendText: { fontSize: 13, color: colors.text, fontWeight: '600' },
+  currentCard: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    ...shadow.sm,
+  },
+  currentIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.brandLight },
+  currentText: { flex: 1 },
+  currentTitle: { fontSize: 16, fontWeight: '600', color: colors.text },
+  currentMeta: { fontSize: 13, color: colors.muted, marginTop: 4 },
 });

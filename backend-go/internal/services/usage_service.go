@@ -306,23 +306,23 @@ func (s *UsageService) GetUsageReport(ctx context.Context, params struct {
 }) (*models.UsageReport, error) {
 	// Build a simplified usage report
 	rows, err := s.pool.Query(ctx,
-		`SELECT COALESCE(NULLIF(domain, ''), app_name) AS name,
-		        MAX(target_type::text) AS target_type,
-		        MAX(app_name) AS app_name,
-		        MAX(domain) AS domain,
-		        MAX(category::text) AS category,
-		        SUM(duration_seconds)::int AS duration_seconds,
+		`SELECT COALESCE(NULLIF(aul.domain, ''), aul.app_name) AS name,
+		        COALESCE(MAX(aul.target_type::text), 'APP') AS target_type,
+		        COALESCE(MAX(aul.app_name), '') AS app_name,
+		        COALESCE(MAX(aul.domain), '') AS domain,
+		        MAX(aul.category::text) AS category,
+		        SUM(aul.duration_seconds)::int AS duration_seconds,
 		        COUNT(*)::int AS samples
-		 FROM activity_usage_logs
-		 WHERE organization_id = $1
-		   AND captured_at >= $2
-		   AND captured_at <= $3
-		   AND ($4::text IS NULL OR user_id = $4::text)
+		 FROM activity_usage_logs aul
+		 WHERE aul.organization_id = $1
+		   AND aul.captured_at >= $2
+		   AND aul.captured_at <= $3
+		   AND ($4::text IS NULL OR aul.user_id = $4::text)
 		   AND ($5::text IS NULL OR EXISTS(
-		       SELECT 1 FROM team_memberships tm WHERE tm.user_id = user_id AND tm.team_id = $5::text
+		       SELECT 1 FROM team_memberships tm WHERE tm.user_id = aul.user_id AND tm.team_id = $5::text
 		   ))
-		 GROUP BY COALESCE(NULLIF(domain, ''), app_name)
-		 ORDER BY SUM(duration_seconds) DESC
+		 GROUP BY COALESCE(NULLIF(aul.domain, ''), aul.app_name)
+		 ORDER BY SUM(aul.duration_seconds) DESC
 		 LIMIT 100`,
 		params.OrganizationID, params.Start, params.End, params.UserID, params.TeamID,
 	)
@@ -345,10 +345,82 @@ func (s *UsageService) GetUsageReport(ctx context.Context, params struct {
 		items = []models.UsageReportItem{}
 	}
 
+	categoryRows, err := s.pool.Query(ctx,
+		`SELECT aul.category::text AS name,
+		        MAX(aul.category::text) AS category,
+		        SUM(aul.duration_seconds)::int AS duration_seconds
+		 FROM activity_usage_logs aul
+		 WHERE aul.organization_id = $1
+		   AND aul.captured_at >= $2
+		   AND aul.captured_at <= $3
+		   AND ($4::text IS NULL OR aul.user_id = $4::text)
+		   AND ($5::text IS NULL OR EXISTS(
+		       SELECT 1 FROM team_memberships tm WHERE tm.user_id = aul.user_id AND tm.team_id = $5::text
+		   ))
+		 GROUP BY aul.category
+		 ORDER BY SUM(aul.duration_seconds) DESC`,
+		params.OrganizationID, params.Start, params.End, params.UserID, params.TeamID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query usage categories: %w", err)
+	}
+	defer categoryRows.Close()
+
+	var categories []models.UsageCategoryBreakdown
+	for categoryRows.Next() {
+		var item models.UsageCategoryBreakdown
+		if err := categoryRows.Scan(&item.Name, &item.Category, &item.DurationSeconds); err != nil {
+			return nil, fmt.Errorf("scan usage category: %w", err)
+		}
+		categories = append(categories, item)
+	}
+	if categories == nil {
+		categories = []models.UsageCategoryBreakdown{}
+	}
+
+	breakdownRows, err := s.pool.Query(ctx,
+		`SELECT COALESCE(NULLIF(aul.domain, ''), aul.app_name) AS name,
+		        COALESCE(u.full_name, 'Unknown employee') AS employee_name,
+		        COALESCE(t.name, 'No team') AS team_name,
+		        COALESCE(NULLIF(ws.location_type, ''), 'Unknown') AS location_name,
+		        SUM(aul.duration_seconds)::int AS duration_seconds,
+		        COUNT(*)::int AS samples
+		 FROM activity_usage_logs aul
+		 LEFT JOIN users u ON u.id = aul.user_id
+		 LEFT JOIN work_sessions ws ON ws.id = aul.session_id
+		 LEFT JOIN team_memberships tm ON tm.user_id = aul.user_id
+		 LEFT JOIN teams t ON t.id = tm.team_id
+		 WHERE aul.organization_id = $1
+		   AND aul.captured_at >= $2
+		   AND aul.captured_at <= $3
+		   AND ($4::text IS NULL OR aul.user_id = $4::text)
+		   AND ($5::text IS NULL OR tm.team_id = $5::text)
+		 GROUP BY COALESCE(NULLIF(aul.domain, ''), aul.app_name), u.full_name, t.name, ws.location_type
+		 ORDER BY SUM(aul.duration_seconds) DESC
+		 LIMIT 500`,
+		params.OrganizationID, params.Start, params.End, params.UserID, params.TeamID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query usage breakdowns: %w", err)
+	}
+	defer breakdownRows.Close()
+
+	var breakdowns []models.UsageBreakdownItem
+	for breakdownRows.Next() {
+		var item models.UsageBreakdownItem
+		if err := breakdownRows.Scan(&item.Name, &item.EmployeeName, &item.TeamName, &item.LocationName, &item.DurationSeconds, &item.Samples); err != nil {
+			return nil, fmt.Errorf("scan usage breakdown: %w", err)
+		}
+		breakdowns = append(breakdowns, item)
+	}
+	if breakdowns == nil {
+		breakdowns = []models.UsageBreakdownItem{}
+	}
+
 	return &models.UsageReport{
 		Items:      items,
-		Categories: []models.UsageCategoryBreakdown{},
-		Breakdowns: []models.UsageBreakdownItem{},
+		Categories: categories,
+		Breakdowns: breakdowns,
 		GroupBy:    params.GroupBy,
 	}, nil
 }

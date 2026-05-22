@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
   rowCard: { flexDirection: 'row', padding: 0, overflow: 'hidden', marginBottom: spacing.sm },
   statusIndicator: { width: 4, height: '100%' },
   rowBody: { flex: 1, padding: spacing.md },
-  rowTitle: { ...typography.body, fontWeight: '700', marginBottom: 2 },
+  rowTitle: { ...typography.body, fontWeight: '600', marginBottom: 2 },
   rowMeta: { ...typography.bodySm, color: colors.muted, marginBottom: 8 },
   rowFooter: { flexDirection: 'row', alignItems: 'center' },
   rowTime: { ...typography.small, opacity: 0.7 },

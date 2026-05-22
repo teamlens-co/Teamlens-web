@@ -33,8 +33,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "teamlens-mobile"
+        "projectId": "ce8ba35f-702f-4b66-a16c-42d0389fba2b"
       }
-    }
+    },
+    "owner": "piyush10025"
   }
 }
