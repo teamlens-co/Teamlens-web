@@ -20,16 +20,10 @@ jobs:
         include:
           - os: ubuntu-latest
             target: linux
-            artifact: "teamlens-desktop-agent_*.AppImage"
-            artifactName: linux
           - os: windows-latest
             target: windows
-            artifact: "teamlens-desktop-agent_*.msi"
-            artifactName: windows
           - os: macos-latest
             target: macos
-            artifact: "teamlens-desktop-agent_*.dmg"
-            artifactName: macos
 
     defaults:
       run:
@@ -52,11 +46,8 @@ jobs:
           sudo apt-get install -y \
             libwebkit2gtk-4.0-dev \
             build-essential \
-            curl \
-            wget \
-            file \
-            libssl-dev \
-            libgtk-3-dev \
+            curl wget file \
+            libssl-dev libgtk-3-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev
 
@@ -74,9 +65,9 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifactName }}-build
+          name: ${{ matrix.target }}-build
           path: |
-            agent/src-tauri/target/release/bundle/**/*.${{ matrix.artifactName == 'linux' && 'AppImage' || matrix.artifactName == 'windows' && 'msi' || 'dmg' }}
+            agent/src-tauri/target/release/bundle/
             agent/src-tauri/target/release/teamlens-agent-latest.json
           retention-days: 7
 
@@ -93,12 +84,10 @@ jobs:
         with:
           path: artifacts
 
-      - name: Find all release files
+      - name: Collect release files
         run: |
           mkdir -p release-files
-          find artifacts -type f | while read f; do
-            cp "$f" release-files/
-          done
+          find artifacts -type f | while read f; do cp "$f" release-files/; done
           ls -la release-files/
 
       - name: Create GitHub Release
@@ -112,9 +101,6 @@ jobs:
             **Build:** ${{ github.run_number }}
             **Commit:** ${{ github.sha }}
             
-            This release was automatically built from the main branch.
-            
             Agents will auto-update within 6 hours.
-          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

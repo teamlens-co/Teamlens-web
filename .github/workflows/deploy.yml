@@ -1,4 +1,4 @@
-name: Server - Build & Deploy
+name: Server - Build & Deploy (v2 Test)
 
 on:
   push:
@@ -11,9 +11,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
-
+    if: ${{ secrets.VPS_HOST != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -28,7 +28,6 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'DEPLOY'
             cd /root/teamlens/teamlens-web-server-v2
-            
             echo "=== Pulling latest code ==="
             git pull origin main
             
@@ -64,6 +63,12 @@ jobs:
             
             echo "=== Nginx reload ==="
             nginx -s reload
-            
             echo "=== Deployment complete ==="
 DEPLOY
+
+  notify-missing:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.VPS_HOST == '' }}
+    steps:
+      - name: Skip - SSH keys not configured
+        run: echo "⚠️ Deploy workflow skipped - set VPS_SSH_KEY, VPS_HOST, VPS_USER secrets"
