@@ -1,0 +1,69 @@
+name: Server - Build & Deploy
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'agent/**'
+      - 'mobile/**'
+      - '**.md'
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SSH key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.VPS_SSH_KEY }}
+          known_hosts: ${{ secrets.VPS_HOST }}
+          if_key_exists: replace
+
+      - name: Build and deploy via SSH
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'DEPLOY'
+            cd /root/teamlens/teamlens-web-server-v2
+            
+            echo "=== Pulling latest code ==="
+            git pull origin main
+            
+            echo "=== Rebuilding Go backend ==="
+            cd backend-go
+            docker build -t teamlens-api-go:latest .
+            docker rm -f teamlens-api-go-test 2>/dev/null
+            docker run -d --name teamlens-api-go-test --restart unless-stopped \
+              --network teamlens-web-server_default \
+              -p 5002:5002 \
+              -v /root/teamlens/teamlens-web-server/uploads:/app/uploads \
+              --env-file .env \
+              teamlens-api-go:latest
+            
+            echo "=== Rebuilding WebSocket ==="
+            cd ../backend-ws
+            docker build -t teamlens-ws:latest .
+            docker rm -f teamlens-ws-test 2>/dev/null
+            docker run -d --name teamlens-ws-test --restart unless-stopped \
+              --network teamlens-web-server_default \
+              -p 4001:4001 \
+              --env-file .env \
+              teamlens-ws:latest
+            
+            echo "=== Rebuilding Frontend ==="
+            cd ../frontend
+            docker build -t teamlens-frontend-v2:test .
+            docker rm -f teamlens-frontend-v2-test 2>/dev/null
+            docker run -d --name teamlens-frontend-v2-test --restart unless-stopped \
+              --network teamlens-web-server_default \
+              -p 3002:3002 \
+              teamlens-frontend-v2:test
+            
+            echo "=== Nginx reload ==="
+            nginx -s reload
+            
+            echo "=== Deployment complete ==="
+DEPLOY

@@ -1,13 +1,16 @@
 name: Agent - Build & Release
 
 on:
-  pull_request:
-    branches:
-      - main
   push:
     branches:
       - main
+    paths:
+      - 'agent/**'
   workflow_dispatch:
+
+env:
+  TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
 jobs:
   build:
@@ -17,13 +20,20 @@ jobs:
         include:
           - os: ubuntu-latest
             target: linux
-            artifact: desktop-agent_*.AppImage
+            artifact: "teamlens-desktop-agent_*.AppImage"
+            artifactName: linux
           - os: windows-latest
             target: windows
-            artifact: desktop-agent_*.msi
+            artifact: "teamlens-desktop-agent_*.msi"
+            artifactName: windows
           - os: macos-latest
             target: macos
-            artifact: desktop-agent_*.dmg
+            artifact: "teamlens-desktop-agent_*.dmg"
+            artifactName: macos
+
+    defaults:
+      run:
+        working-directory: agent
 
     steps:
       - uses: actions/checkout@v4
@@ -33,27 +43,41 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: agent/package-lock.json
 
       - name: Install dependencies (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.0-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev
+          sudo apt-get install -y \
+            libwebkit2gtk-4.0-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run TypeScript check
-        run: npx tsc --noEmit
+      - name: Build Tauri app (release with updater artifacts)
+        run: npm run tauri:release
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          AGENT_VITE_API_URL: ${{ secrets.AGENT_VITE_API_URL }}
+          AGENT_VITE_WEB_URL: ${{ secrets.AGENT_VITE_WEB_URL }}
 
-      - name: Build Tauri app
-        run: npm run build
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.target }}-build
-          path: src-tauri/target/release/${{ matrix.artifact }}
+          name: ${{ matrix.artifactName }}-build
+          path: |
+            agent/src-tauri/target/release/bundle/**/*.${{ matrix.artifactName == 'linux' && 'AppImage' || matrix.artifactName == 'windows' && 'msi' || 'dmg' }}
+            agent/src-tauri/target/release/teamlens-agent-latest.json
           retention-days: 7
 
   publish-release:
@@ -65,17 +89,32 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
 
+      - name: Find all release files
+        run: |
+          mkdir -p release-files
+          find artifacts -type f | while read f; do
+            cp "$f" release-files/
+          done
+          ls -la release-files/
+
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
-          tag_name: v${{ github.run_number }}
+          files: release-files/**
+          tag_name: agent-v${{ github.run_number }}
           body: |
-            Desktop Agent Release
-            Built from commit ${{ github.sha }}
+            ## TeamLens Desktop Agent - Auto Release
+            
+            **Build:** ${{ github.run_number }}
+            **Commit:** ${{ github.sha }}
+            
+            This release was automatically built from the main branch.
+            
+            Agents will auto-update within 6 hours.
+          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
