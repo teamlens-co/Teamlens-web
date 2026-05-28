@@ -140,7 +140,7 @@ export default function ManagerSignInPage() {
         }
         onAuthSuccess();
       } else {
-        setStatusMessage(`Error: ${payload.message ?? "Invalid credentials"}`);
+        setStatusMessage(`Error: ${payload?.message ?? "Invalid credentials"}`);
         setLoadingAuth(false);
       }
     } catch {
