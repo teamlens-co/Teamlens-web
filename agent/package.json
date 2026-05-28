@@ -8,8 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "set CARGO_TARGET_DIR=C:\\tmp\\teamlens-tauri-target&& tauri",
-    "tauri:dev": "set CARGO_TARGET_DIR=C:\\tmp\\teamlens-tauri-target&& tauri dev --no-watch",
-    "tauri:release": "set CARGO_TARGET_DIR=C:\\tmp\\teamlens-tauri-target&& tauri build --config src-tauri/tauri.release.conf.json"
+    "tauri:dev": "tauri dev --no-watch",
+    "tauri:release": "tauri build --config src-tauri/tauri.release.conf.json"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

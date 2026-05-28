@@ -14,9 +14,14 @@ env:
   AGENT_VITE_API_URL: ${{ secrets.AGENT_VITE_API_URL }}
   AGENT_VITE_WEB_URL: ${{ secrets.AGENT_VITE_WEB_URL }}
 
+concurrency:
+  group: agent-build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
       matrix:
         include:
@@ -41,25 +46,35 @@ jobs:
           cache: 'npm'
           cache-dependency-path: agent/package-lock.json
 
-      - name: Install dependencies (Ubuntu)
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: agent/src-tauri
+
+      - name: Install Linux dependencies
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libwebkit2gtk-4.0-dev \
+            libwebkit2gtk-4.1-dev \
             build-essential \
             curl wget file \
             libssl-dev libgtk-3-dev \
             libayatana-appindicator3-dev \
-            librsvg2-dev
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
 
-      - name: Install Tauri CLI + dependencies
+      - name: Install dependencies
         run: npm ci
 
-      - name: Build Tauri app (release with updater artifacts)
+      - name: Build Tauri app (release)
         run: npm run tauri:release
 
-      - name: Upload build artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}-build
@@ -71,6 +86,7 @@ jobs:
   publish-release:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
@@ -93,11 +109,12 @@ jobs:
           files: release-files/**
           tag_name: agent-v${{ github.run_number }}
           body: |
-            ## TeamLens Desktop Agent - Auto Release
+            ## TeamLens Desktop Agent
             
             **Build:** ${{ github.run_number }}
             **Commit:** ${{ github.sha }}
             
+            Auto-release from main branch push.
             Agents will auto-update within 6 hours.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
