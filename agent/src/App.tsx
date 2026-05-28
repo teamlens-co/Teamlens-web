@@ -946,7 +946,7 @@ function App() {
   if (!isAuthenticated || !authToken) {
     return (
       <div className="agent-shell">
-        <header className="top-bar">
+        <header className="top-bar" data-tauri-drag-region>
           <div className="window-controls">
             <button className="control-dot red" onClick={() => void handleClose()} aria-label="Close window" />
             <button
@@ -960,7 +960,7 @@ function App() {
               aria-label="Window size locked"
             />
           </div>
-          <div className="brand-name" data-tauri-drag-region>
+          <div className="brand-name">
             <span className="tl-brand-mark" aria-hidden="true">
               <span></span>
               <span></span>
@@ -969,10 +969,10 @@ function App() {
             </span>{" "}
             TeamLens
           </div>
-          <div className="bar-spacer" data-tauri-drag-region />
+          <div className="bar-spacer" />
         </header>
 
-        <div className="auth-shell" data-tauri-drag-region>
+        <div className="auth-shell">
           <section className="auth-card">
             <h1>TeamLens Agent Login</h1>
             <p>Sign in to start secure desktop activity tracking.</p>
@@ -1015,7 +1015,7 @@ function App() {
   return (
     <div className="agent-shell">
       <section className="top-card">
-        <header className="top-bar">
+        <header className="top-bar" data-tauri-drag-region>
           <div className="window-controls">
             <button className="control-dot red" onClick={() => void handleClose()} aria-label="Close window" />
             <button
@@ -1029,7 +1029,7 @@ function App() {
               aria-label="Window size locked"
             />
           </div>
-          <div className="brand-name" data-tauri-drag-region>
+          <div className="brand-name">
             <span className="tl-brand-mark" aria-hidden="true">
               <span></span>
               <span></span>

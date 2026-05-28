@@ -44,6 +44,8 @@ body {
   align-items: center;
   justify-content: center;
   padding: 24px;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
 }
 
 .auth-card {
@@ -56,6 +58,13 @@ body {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   display: grid;
   gap: 20px;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
+.auth-card * {
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
 }
 
 .auth-card h1 {
@@ -110,6 +119,7 @@ body {
   user-select: none;
   -webkit-user-select: none;
   border-bottom: 1px solid var(--border-color);
+  -webkit-app-region: drag;
 }
 
 .window-controls {

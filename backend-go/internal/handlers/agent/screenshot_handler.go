@@ -282,12 +282,17 @@ func (h *ScreenshotHandler) safeUploadPath(storedPath string) (string, error) {
 	}
 
 	cleanPath := filepath.Clean(storedPath)
-	if !filepath.IsAbs(cleanPath) {
-		cleanPath = filepath.Join(cleanUploadDir, cleanPath)
-	}
 	absPath, err := filepath.Abs(cleanPath)
 	if err != nil {
 		return "", err
+	}
+	if !filepath.IsAbs(cleanPath) {
+		if rel, relErr := filepath.Rel(cleanUploadDir, absPath); relErr != nil || rel == "." || rel == ".." || len(rel) >= 3 && rel[:3] == ".."+string(filepath.Separator) {
+			absPath, err = filepath.Abs(filepath.Join(cleanUploadDir, cleanPath))
+			if err != nil {
+				return "", err
+			}
+		}
 	}
 
 	rel, err := filepath.Rel(cleanUploadDir, absPath)
