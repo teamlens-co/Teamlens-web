@@ -20,17 +20,13 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
-            target: linux
           - os: windows-latest
             target: windows
-          - os: macos-latest
-            target: macos
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
 
     defaults:
       run:
@@ -54,20 +50,6 @@ jobs:
         with:
           workspaces: agent/src-tauri
 
-      - name: Install Linux dependencies
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl wget file \
-            libssl-dev libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev
-
       - name: Install dependencies
         run: npm ci
 
@@ -77,7 +59,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.target }}-build
+          name: windows-build
           path: |
             agent/src-tauri/target/release/bundle/
             agent/src-tauri/target/release/teamlens-agent-latest.json
@@ -92,7 +74,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -101,6 +83,7 @@ jobs:
         run: |
           mkdir -p release-files
           find artifacts -type f | while read f; do cp "$f" release-files/; done
+          echo "=== Release files ==="
           ls -la release-files/
 
       - name: Create GitHub Release
