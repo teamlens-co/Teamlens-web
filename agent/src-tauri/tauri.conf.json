@@ -27,10 +27,6 @@
     ],
     "security": {
       "csp": null
-    },
-    "env": {
-      "AGENT_VITE_API_URL": "https://api.teamlens.co",
-      "AGENT_VITE_WEB_URL": "https://test.teamlens.co"
     }
   },
   "bundle": {
