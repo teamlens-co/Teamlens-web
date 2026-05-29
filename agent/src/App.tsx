@@ -430,7 +430,7 @@ function App() {
       setPassword("");
     } catch (error) {
       console.error("Agent login failed", error);
-      setAuthError(`Error: ${error?.message ?? error ?? "Unknown error"}`);
+      setAuthError(`Error: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsLoginLoading(false);
     }
