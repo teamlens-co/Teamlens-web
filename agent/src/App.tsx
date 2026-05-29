@@ -426,7 +426,11 @@ function App() {
       console.log("Body last 20 chars:", JSON.stringify(bodyText.slice(-20)));
       let payload: { success: boolean; message?: string; data: AgentLoginData };
       try {
-        payload = JSON.parse(bodyText.trim());
+        // Extract clean JSON from body (handles trailing garbage from plugin-http)
+        const jsonStart = bodyText.indexOf('{');
+        const jsonEnd = bodyText.lastIndexOf('}') + 1;
+        const cleanJson = bodyText.slice(jsonStart, jsonEnd);
+        payload = JSON.parse(cleanJson);
       } catch (parseError) {
         console.error("JSON parse failed, raw body:", bodyText);
         console.error("Parse error object:", parseError);
