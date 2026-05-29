@@ -2,6 +2,9 @@
 """Generate teamlens-agent-latest.json for Tauri updater."""
 import json, os, datetime, glob, re, sys
 
+# Force UTF-8 for stdout on Windows
+sys.stdout.reconfigure(encoding='utf-8')
+
 run_number = sys.argv[1] if len(sys.argv) > 1 else '0'
 
 # Read version from package.json
@@ -41,5 +44,5 @@ with open('src-tauri/target/release/teamlens-agent-latest.json', 'w') as f:
 with open('src-tauri/target/release/bundle/teamlens-agent-latest.json', 'w') as f:
     json.dump(data, f, indent=2)
 
-print('✅ Generated updater JSON')
+print('[OK] Generated updater JSON')
 print(json.dumps(data, indent=2))
