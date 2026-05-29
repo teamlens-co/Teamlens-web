@@ -60,14 +60,31 @@ jobs:
         shell: bash
         run: |
           npm run tauri:release
-          # Copy updater JSON into bundle dir for artifact upload
-          if [ -f src-tauri/target/release/teamlens-agent-latest.json ]; then
-            cp src-tauri/target/release/teamlens-agent-latest.json src-tauri/target/release/bundle/
-            echo "✅ Copied teamlens-agent-latest.json to bundle/"
-          else
-            echo "⚠️ updater JSON not found at expected path"
-            ls -la src-tauri/target/release/*.json 2>/dev/null || true
-          fi
+          # Generate updater JSON (Tauri v2 only creates .sig files, not the JSON)
+          echo "Generating updater JSON..."
+          VERSION=$(node -e "console.log(require('./package.json').version)")
+          echo "App version: $VERSION"
+          
+          # Read MSI signature
+          MSI_SIG=$(cat src-tauri/target/release/bundle/msi/*.msi.sig 2>/dev/null)
+          NSIS_SIG=$(cat src-tauri/target/release/bundle/nsis/*.exe.sig 2>/dev/null)
+          
+          # Generate JSON
+          jq -n             --arg ver "$VERSION"             --arg msi_sig "$MSI_SIG"             --arg exe_sig "$NSIS_SIG"             --arg run_number "${{ github.run_number }}"             '{
+              version: $ver,
+              notes: "TeamLens Desktop Agent - Build #" + $run_number,
+              pub_date: (now | strftime("%Y-%m-%dT%H:%M:%SZ")),
+              platforms: {
+                "windows-x86_64": {
+                  signature: $exe_sig,
+                  url: ("https://github.com/teamlens-co/teamlens-web-server/releases/download/agent-v" + $run_number + "/TeamLens_" + $ver + "_x64-setup.exe")
+                }
+              }
+            }' > src-tauri/target/release/teamlens-agent-latest.json
+          
+          echo "✅ Generated updater JSON"
+          cat src-tauri/target/release/teamlens-agent-latest.json
+          cp src-tauri/target/release/teamlens-agent-latest.json src-tauri/target/release/bundle/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
