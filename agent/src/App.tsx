@@ -426,10 +426,23 @@ function App() {
       console.log("Body last 20 chars:", JSON.stringify(bodyText.slice(-20)));
       let payload: { success: boolean; message?: string; data: AgentLoginData };
       try {
-        // Extract clean JSON from body (handles trailing garbage from plugin-http)
-        const jsonStart = bodyText.indexOf('{');
-        const jsonEnd = bodyText.lastIndexOf('}') + 1;
-        const cleanJson = bodyText.slice(jsonStart, jsonEnd);
+        // Extract first complete JSON object using brace-depth tracking
+        let depth = 0;
+        let jsonStart = -1;
+        let cleanJson = "";
+        for (let i = 0; i < bodyText.length; i++) {
+          if (bodyText[i] === '{') {
+            if (depth === 0) jsonStart = i;
+            depth++;
+          } else if (bodyText[i] === '}') {
+            depth--;
+            if (depth === 0 && jsonStart !== -1) {
+              cleanJson = bodyText.slice(jsonStart, i + 1);
+              break;
+            }
+          }
+        }
+        if (!cleanJson) throw new Error("No valid JSON object found in response");
         payload = JSON.parse(cleanJson);
       } catch (parseError) {
         console.error("JSON parse failed, raw body:", bodyText);
