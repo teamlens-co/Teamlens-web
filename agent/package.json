@@ -12,7 +12,7 @@
     "tauri:release": "tauri build --config src-tauri/tauri.release.conf.json"
   },
   "dependencies": {
-    "@tauri-apps/api": "2.10.3",
+    "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-http": "^2.0.0",
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-process": "^2.3.1",
