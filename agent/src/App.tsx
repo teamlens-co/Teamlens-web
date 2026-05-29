@@ -422,12 +422,15 @@ function App() {
 
       const bodyText = await response.text();
       console.log("Login response body:", bodyText.substring(0, 200));
+      console.log("Body length:", bodyText.length);
+      console.log("Body last 20 chars:", JSON.stringify(bodyText.slice(-20)));
       let payload: { success: boolean; message?: string; data: AgentLoginData };
       try {
-        payload = JSON.parse(bodyText);
+        payload = JSON.parse(bodyText.trim());
       } catch (parseError) {
         console.error("JSON parse failed, raw body:", bodyText);
-        setAuthError(`Parse error: body starts with "${bodyText.substring(0, 50)}"`);
+        console.error("Parse error object:", parseError);
+        setAuthError(`Parse error (len=${bodyText.length}): "${bodyText.substring(0, 40)}...${bodyText.slice(-10)}"`);
         return;
       }
       if (!response.ok || !payload.success) {
