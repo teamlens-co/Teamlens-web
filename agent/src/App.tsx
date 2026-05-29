@@ -430,7 +430,7 @@ function App() {
       setPassword("");
     } catch (error) {
       console.error("Agent login failed", error);
-      setAuthError("Unable to login. Check backend connectivity.");
+      setAuthError(`Error: ${error?.message ?? error ?? "Unknown error"}`);
     } finally {
       setIsLoginLoading(false);
     }
