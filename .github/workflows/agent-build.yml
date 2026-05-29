@@ -57,15 +57,23 @@ jobs:
         run: npm ci
 
       - name: Build Tauri app (release)
-        run: npm run tauri:release
+        shell: bash
+        run: |
+          npm run tauri:release
+          # Copy updater JSON into bundle dir for artifact upload
+          if [ -f src-tauri/target/release/teamlens-agent-latest.json ]; then
+            cp src-tauri/target/release/teamlens-agent-latest.json src-tauri/target/release/bundle/
+            echo "✅ Copied teamlens-agent-latest.json to bundle/"
+          else
+            echo "⚠️ updater JSON not found at expected path"
+            ls -la src-tauri/target/release/*.json 2>/dev/null || true
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
-          path: |
-            agent/src-tauri/target/release/bundle/
-            agent/src-tauri/target/release/teamlens-agent-latest.json
+          path: agent/src-tauri/target/release/bundle/
           retention-days: 7
 
   publish-release:
