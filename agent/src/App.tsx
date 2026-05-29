@@ -420,7 +420,16 @@ function App() {
         }),
       });
 
-      const payload = (await response.json()) as { success: boolean; message?: string; data: AgentLoginData };
+      const bodyText = await response.text();
+      console.log("Login response body:", bodyText.substring(0, 200));
+      let payload: { success: boolean; message?: string; data: AgentLoginData };
+      try {
+        payload = JSON.parse(bodyText);
+      } catch (parseError) {
+        console.error("JSON parse failed, raw body:", bodyText);
+        setAuthError(`Parse error: body starts with "${bodyText.substring(0, 50)}"`);
+        return;
+      }
       if (!response.ok || !payload.success) {
         setAuthError(payload.message ?? "Login failed");
         return;
