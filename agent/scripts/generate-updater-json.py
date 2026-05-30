@@ -27,13 +27,13 @@ if not sig:
             sig = f.read().strip()
 
 data = {
-    'version': ver,
+    'version': '0.1.{}'.format(run_number),
     'notes': 'TeamLens Desktop Agent - Build #{}'.format(run_number),
     'pub_date': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
     'platforms': {
         'windows-x86_64': {
             'signature': sig,
-            'url': 'https://github.com/teamlens-co/teamlens-web-server/releases/download/agent-v{}/TeamLens_{}_x64-setup.exe'.format(run_number, ver)
+            'url': 'https://github.com/teamlens-co/teamlens-web-server/releases/download/agent-v{}/TeamLens_0.1.1_x64-setup.exe'.format(run_number)
         }
     }
 }
