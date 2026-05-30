@@ -58,6 +58,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Set dynamic version
+        shell: bash
+        run: |
+          BUILD_VER="0.1.${{ github.run_number }}"
+          echo "Setting version to: $BUILD_VER"
+          python3 -c "
+import json
+for path in ['package.json', 'src-tauri/tauri.conf.json']:
+    with open(path) as f:
+        cfg = json.load(f)
+    cfg['version'] = '$BUILD_VER'
+    with open(path, 'w') as f:
+        json.dump(cfg, f, indent=2)
+    print(f'Updated {path} → {cfg[\"version\"]}')
+          "
+
       - name: Build Tauri app (release)
         shell: bash
         run: |
