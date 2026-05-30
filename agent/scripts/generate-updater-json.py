@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Generate teamlens-agent-latest.json for Tauri updater.
-Also writes version to tauri.conf.json so the MSI/EXE has the correct semver."""
+Detects the built MSI/exe and signature from the filesystem so URLs are always correct."""
 import json, os, datetime, glob, re, sys
 
 # Force UTF-8 for stdout on Windows
@@ -11,40 +11,43 @@ run_number = sys.argv[1] if len(sys.argv) > 1 else '0'
 # Build version from run number
 build_version = '0.1.{}'.format(run_number)
 
-# Write version into tauri.conf.json so the baked-in MSI version matches latest.json
-tauri_conf = 'src-tauri/tauri.conf.json'
-with open(tauri_conf) as f:
-    conf = json.load(f)
-if conf.get('version') != build_version:
-    conf['version'] = build_version
-    with open(tauri_conf, 'w') as f:
-        json.dump(conf, f, indent=2)
-    print('[OK] Updated {} version to {}'.format(tauri_conf, build_version))
+# Update tauri.conf.json & package.json with correct version
+for path in ['src-tauri/tauri.conf.json', 'package.json']:
+    with open(path) as f:
+        cfg = json.load(f)
+    if cfg.get('version') != build_version:
+        cfg['version'] = build_version
+        with open(path, 'w') as f:
+            json.dump(cfg, f, indent=2)
+        print('[OK] Updated {} version to {}'.format(path, build_version))
 
-# Write version into package.json as well
-package_json = 'package.json'
-with open(package_json) as f:
-    pkg = json.load(f)
-if pkg.get('version') != build_version:
-    pkg['version'] = build_version
-    with open(package_json, 'w') as f:
-        json.dump(pkg, f, indent=2)
-    print('[OK] Updated {} version to {}'.format(package_json, build_version))
+# Find the built MSI/exe + sig in the bundle dirs
+bundle_dir = 'src-tauri/target/release/bundle'
+installer_url = ''
+signature = ''
 
-# Read NSIS signature
-sig = ''
-sig_dir = 'src-tauri/target/release/bundle/nsis'
-sig_files = glob.glob(os.path.join(sig_dir, '*.exe.sig'))
-if sig_files:
-    with open(sig_files[0]) as f:
-        sig = f.read().strip()
-
-# Also try .msi.sig as fallback
-if not sig:
-    sig_files = glob.glob(os.path.join(sig_dir.replace('nsis', 'msi'), '*.msi.sig'))
-    if sig_files:
+# Try NSIS installer first (.exe)
+nsis_dir = os.path.join(bundle_dir, 'nsis')
+if os.path.isdir(nsis_dir):
+    exe_files = glob.glob(os.path.join(nsis_dir, '*.exe'))
+    sig_files = glob.glob(os.path.join(nsis_dir, '*.exe.sig'))
+    if exe_files and sig_files:
+        installer_name = os.path.basename(exe_files[0])
         with open(sig_files[0]) as f:
-            sig = f.read().strip()
+            signature = f.read().strip()
+        installer_url = 'https://github.com/teamlens-co/teamlens-web-server/releases/download/agent-v{}/{}'.format(run_number, installer_name)
+
+# Fallback to MSI
+if not installer_url:
+    msi_dir = os.path.join(bundle_dir, 'msi')
+    if os.path.isdir(msi_dir):
+        msi_files = glob.glob(os.path.join(msi_dir, '*.msi'))
+        sig_files = glob.glob(os.path.join(msi_dir, '*.msi.sig'))
+        if msi_files and sig_files:
+            installer_name = os.path.basename(msi_files[0])
+            with open(sig_files[0]) as f:
+                signature = f.read().strip()
+            installer_url = 'https://github.com/teamlens-co/teamlens-web-server/releases/download/agent-v{}/{}'.format(run_number, installer_name)
 
 data = {
     'version': build_version,
@@ -52,8 +55,8 @@ data = {
     'pub_date': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
     'platforms': {
         'windows-x86_64': {
-            'signature': sig,
-            'url': 'https://github.com/teamlens-co/teamlens-web-server/releases/download/agent-v{}/TeamLens_{}_x64-setup.exe'.format(run_number, build_version)
+            'signature': signature,
+            'url': installer_url
         }
     }
 }

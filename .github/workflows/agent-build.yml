@@ -63,15 +63,15 @@ jobs:
         run: |
           BUILD_VER="0.1.${{ github.run_number }}"
           echo "Setting version to: $BUILD_VER"
-          python3 -c "
-import json
-for path in ['package.json', 'src-tauri/tauri.conf.json']:
-    with open(path) as f:
-        cfg = json.load(f)
-    cfg['version'] = '$BUILD_VER'
-    with open(path, 'w') as f:
-        json.dump(cfg, f, indent=2)
-    print(f'Updated {path} → {cfg[\"version\"]}')
+          node -e "
+            const fs = require('fs');
+            const ver = process.env.BUILD_VER || '0.1.0';
+            ['package.json', 'src-tauri/tauri.conf.json'].forEach(p => {
+              const cfg = JSON.parse(fs.readFileSync(p, 'utf8'));
+              cfg.version = ver;
+              fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + '\n');
+              console.log('Updated ' + p + ' → ' + ver);
+            });
           "
 
       - name: Build Tauri app (release)
