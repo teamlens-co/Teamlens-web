@@ -61,16 +61,17 @@ jobs:
       - name: Set dynamic version
         shell: bash
         run: |
-          BUILD_VER="0.1.${{ github.run_number }}"
-          echo "Setting version to: $BUILD_VER"
+          VER="0.1.${{ github.run_number }}"
+          echo "Setting version to: $VER"
           node -e "
             const fs = require('fs');
-            const ver = process.env.BUILD_VER || '0.1.0';
+            const ver = '${{ github.run_number }}';
+            const bv = '0.1.' + ver;
             ['package.json', 'src-tauri/tauri.conf.json'].forEach(p => {
               const cfg = JSON.parse(fs.readFileSync(p, 'utf8'));
-              cfg.version = ver;
+              cfg.version = bv;
               fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + '\n');
-              console.log('Updated ' + p + ' → ' + ver);
+              console.log('Updated ' + p + ' → ' + bv);
             });
           "
 
