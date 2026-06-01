@@ -12,6 +12,14 @@
     "core:window:allow-set-fullscreen",
     "core:window:allow-start-dragging",
     "updater:default",
-    "process:default"
+    "process:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        {
+          "url": "https://test.teamlens.co/**"
+        }
+      ]
+    }
   ]
 }

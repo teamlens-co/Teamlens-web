@@ -186,6 +186,15 @@ func main() {
 
 		// Logout (clear cookie on client side, just acknowledge)
 		r.Post("/auth/logout", func(w http.ResponseWriter, r *http.Request) {
+			http.SetCookie(w, &http.Cookie{
+				Name:     "teamlens_access_token",
+				Value:    "",
+				Path:     "/",
+				MaxAge:   -1,
+				HttpOnly: true,
+				SameSite: http.SameSiteLaxMode,
+				Secure:   true,
+			})
 			middleware.Success(w, http.StatusOK, map[string]string{"status": "logged_out"})
 		})
 

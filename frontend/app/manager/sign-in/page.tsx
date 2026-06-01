@@ -7,6 +7,7 @@ import {
   ArrowRight, 
   Zap, 
   CheckCircle,
+  Download,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import TeamLensLogo from "../../../components/TeamLensLogo";
@@ -140,7 +141,7 @@ export default function ManagerSignInPage() {
         }
         onAuthSuccess();
       } else {
-        setStatusMessage(`Error: ${payload.message ?? "Invalid credentials"}`);
+        setStatusMessage(`Error: ${payload?.message ?? "Invalid credentials"}`);
         setLoadingAuth(false);
       }
     } catch {
@@ -388,7 +389,19 @@ export default function ManagerSignInPage() {
             </button>
           </form>
 
-          <div className="mt-12 text-center">
+          {/* Download Agent Button */}
+          <div className="mt-8 pt-8 border-t border-[#E8E4DF] text-center">
+            <p className="text-[10px] font-medium text-[#8C8780] uppercase tracking-widest mb-3">TeamLens Desktop Agent</p>
+            <a
+              href="/download/agent"
+              className="inline-flex items-center gap-2 bg-[#FCFAF8] border border-[#E8E4DF] rounded-full py-3 px-6 text-[12px] font-medium text-[#2D2A26] hover:bg-white hover:border-brand/20 hover:text-brand transition-all group"
+            >
+              <Download size={14} className="group-hover:text-brand transition-colors" />
+              Download Agent for Windows
+            </a>
+          </div>
+
+          <div className="mt-8 text-center">
              <p className="text-[13px] font-medium text-[#8C8780]">
                {authMode === "login" ? "New to the platform?" : "Established organization?"}
                <button

@@ -1,6 +1,7 @@
 "use client";
+export const dynamic = "force-dynamic";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { io, type Socket } from "socket.io-client";
 
@@ -283,5 +284,9 @@ function MobileLiveInner() {
 }
 
 export default function MobileLivePage() {
-  return <MobileLiveInner />;
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen bg-black text-white">Loading live stream...</div>}>
+      <MobileLiveInner />
+    </Suspense>
+  );
 }

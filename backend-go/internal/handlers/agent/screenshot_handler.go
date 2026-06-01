@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/teamlens/backend-go/internal/middleware"
@@ -281,20 +282,19 @@ func (h *ScreenshotHandler) safeUploadPath(storedPath string) (string, error) {
 		return "", err
 	}
 
-	cleanPath := filepath.Clean(storedPath)
-	absPath, err := filepath.Abs(cleanPath)
+	// DB stores paths like "uploads/screenshots/..." but uploadDir is "/app/uploads"
+	// Strip "uploads/" prefix if uploadDir already ends with "uploads"
+	cleanStored := filepath.Clean(storedPath)
+	if strings.HasPrefix(cleanStored, "uploads/") || strings.HasPrefix(cleanStored, "uploads\\") {
+		cleanStored = cleanStored[len("uploads/"):]
+	}
+	if !filepath.IsAbs(cleanStored) {
+		cleanStored = filepath.Join(cleanUploadDir, cleanStored)
+	}
+	absPath, err := filepath.Abs(cleanStored)
 	if err != nil {
 		return "", err
 	}
-	if !filepath.IsAbs(cleanPath) {
-		if rel, relErr := filepath.Rel(cleanUploadDir, absPath); relErr != nil || rel == "." || rel == ".." || len(rel) >= 3 && rel[:3] == ".."+string(filepath.Separator) {
-			absPath, err = filepath.Abs(filepath.Join(cleanUploadDir, cleanPath))
-			if err != nil {
-				return "", err
-			}
-		}
-	}
-
 	rel, err := filepath.Rel(cleanUploadDir, absPath)
 	if err != nil {
 		return "", err

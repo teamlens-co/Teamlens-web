@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { fetch } from "@tauri-apps/plugin-http";
 import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -176,13 +177,40 @@ const normalizeCoordinate = (value: unknown): number | undefined => {
   return undefined;
 };
 
+/**
+ * Safely parse JSON from a plugin-http Response.
+ * @tauri-apps/plugin-http can append trailing garbage bytes after the JSON body,
+ * causing response.json() to throw. This function extracts the first complete JSON
+ * object by tracking brace depth, then parses manually.
+ */
+const safeParseJson = async <T,>(response: Response): Promise<T> => {
+  const bodyText = await response.text();
+  let depth = 0;
+  let jsonStart = -1;
+  let cleanJson = "";
+  for (let i = 0; i < bodyText.length; i++) {
+    if (bodyText[i] === "{") {
+      if (depth === 0) jsonStart = i;
+      depth++;
+    } else if (bodyText[i] === "}") {
+      depth--;
+      if (depth === 0 && jsonStart !== -1) {
+        cleanJson = bodyText.slice(jsonStart, i + 1);
+        break;
+      }
+    }
+  }
+  if (!cleanJson) throw new Error(`No valid JSON object found in response body (len=${bodyText.length}): "${bodyText.substring(0, 60)}"`);
+  return JSON.parse(cleanJson) as T;
+};
+
 const fetchJsonWithTimeout = async <T,>(url: string, timeoutMs: number): Promise<T> => {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(url, { signal: controller.signal });
-    return (await response.json()) as T;
+    return await safeParseJson<T>(response);
   } finally {
     window.clearTimeout(timeoutId);
   }
@@ -365,7 +393,7 @@ function App() {
         },
       });
 
-      const payload = (await response.json()) as {
+      const payload = await safeParseJson<{
         success: boolean;
         data?: {
           id: string;
@@ -375,7 +403,7 @@ function App() {
           organization: AgentLoginData["organization"];
         };
         message?: string;
-      };
+      }>(response);
 
       if (!response.ok || !payload.success || !payload.data || payload.data.role !== "EMPLOYEE") {
         await invoke("clear_auth_token");
@@ -419,7 +447,27 @@ function App() {
         }),
       });
 
-      const payload = (await response.json()) as { success: boolean; message?: string; data: AgentLoginData };
+      const bodyText = await response.text();
+      console.log("Login response body:", bodyText.substring(0, 200));
+      console.log("Body length:", bodyText.length);
+      console.log("Body last 20 chars:", JSON.stringify(bodyText.slice(-20)));
+      let payload: { success: boolean; message?: string; data: AgentLoginData };
+      try {
+        // Reuse bodyText from above (response.text() can only be called once)
+        console.log("Login response body length:", bodyText.length);
+        console.log("Login body last 20:", JSON.stringify(bodyText.slice(-20)));
+        // Re-create response-like object with cached text for safeParseJson
+        const patchedResponse = new Response(bodyText, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
+        });
+        payload = await safeParseJson<{ success: boolean; message?: string; data: AgentLoginData }>(patchedResponse);
+      } catch (parseError) {
+        console.error("JSON parse failed:", parseError);
+        setAuthError(`Parse error: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+        return;
+      }
       if (!response.ok || !payload.success) {
         setAuthError(payload.message ?? "Login failed");
         return;
@@ -430,7 +478,7 @@ function App() {
       setPassword("");
     } catch (error) {
       console.error("Agent login failed", error);
-      setAuthError("Unable to login. Check backend connectivity.");
+      setAuthError(`Error: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsLoginLoading(false);
     }
@@ -484,7 +532,7 @@ function App() {
       const res = await fetch(`${apiBase}/api/web/dashboard/analytics?${params.toString()}`, {
         headers: authHeaders,
       });
-      const json = (await res.json()) as ApiSuccess<AnalyticsPayload>;
+      const json = await safeParseJson<ApiSuccess<AnalyticsPayload>>(res);
 
       if (!res.ok || !json.success) {
         return;
@@ -553,7 +601,7 @@ function App() {
         }),
       });
 
-      const data = await res.json();
+      const data = await safeParseJson<Record<string, unknown>>(res);
       console.log("Sent:", data);
 
       const url = inferUrlFromTitle(windowInfo.window_title, windowInfo.browser_url);
@@ -636,7 +684,7 @@ function App() {
         return;
       }
 
-      const result = (await response.json()) as { success: boolean; data: { id: string } };
+      const result = await safeParseJson<{ success: boolean; data: { id: string } }>(response);
       if (result.success) {
         console.log("Screenshot uploaded:", result.data.id);
       }
@@ -748,10 +796,10 @@ function App() {
           return;
         }
 
-        const payload = (await res.json()) as {
+        const payload = await safeParseJson<{
           success: boolean;
           data: WorkSession | null;
-        };
+        }>(res);
 
         if (!payload.success || !payload.data) {
           return;
@@ -879,7 +927,7 @@ function App() {
           });
 
           if (res.ok) {
-            const json = (await res.json()) as ApiSuccess<{ id: string }>;
+            const json = await safeParseJson<ApiSuccess<{ id: string }>>(res);
             setSessionId(json.data.id);
             void captureAndUploadScreenshot({ sessionId: json.data.id, force: true });
           } else {

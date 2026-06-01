@@ -1,0 +1,124 @@
+name: Agent - Build & Release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'agent/**'
+  workflow_dispatch:
+
+env:
+  TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+  VITE_API_URL: ${{ secrets.AGENT_VITE_API_URL }}
+  VITE_WEB_URL: ${{ secrets.AGENT_VITE_WEB_URL }}
+  VITE_WS_URL: wss://api.teamlens.co
+  VITE_WEBRTC_ICE_SERVERS: ${{ secrets.AGENT_VITE_WEBRTC_ICE_SERVERS }}
+
+concurrency:
+  group: agent-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            target: windows
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+
+    defaults:
+      run:
+        working-directory: agent
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: agent/package-lock.json
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: agent/src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set dynamic version
+        shell: bash
+        run: |
+          VER="0.1.${{ github.run_number }}"
+          echo "Setting version to: $VER"
+          node -e "
+            const fs = require('fs');
+            const ver = '${{ github.run_number }}';
+            const bv = '0.1.' + ver;
+            ['package.json', 'src-tauri/tauri.conf.json'].forEach(p => {
+              const cfg = JSON.parse(fs.readFileSync(p, 'utf8'));
+              cfg.version = bv;
+              fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + '\n');
+              console.log('Updated ' + p + ' → ' + bv);
+            });
+          "
+
+      - name: Build Tauri app (release)
+        shell: bash
+        run: |
+          npm run tauri:release
+          python3 scripts/generate-updater-json.py ${{ github.run_number }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: agent/src-tauri/target/release/bundle/
+          retention-days: 7
+
+  publish-release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect release files
+        run: |
+          mkdir -p release-files
+          find artifacts -type f | while read f; do cp "$f" release-files/; done
+          echo "=== Release files ==="
+          ls -la release-files/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-files/**
+          tag_name: agent-v${{ github.run_number }}
+          body: |
+            ## TeamLens Desktop Agent
+            **Build:** ${{ github.run_number }}
+            **Commit:** ${{ github.sha }}
+            Auto-release from main branch push.
+            Agents will auto-update within 6 hours.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
