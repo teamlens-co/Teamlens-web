@@ -453,11 +453,11 @@ function App() {
       console.log("Body last 20 chars:", JSON.stringify(bodyText.slice(-20)));
       let payload: { success: boolean; message?: string; data: AgentLoginData };
       try {
-        const rawText = await response.text();
-        console.log("Login response body length:", rawText.length);
-        console.log("Login body last 20:", JSON.stringify(rawText.slice(-20)));
+        // Reuse bodyText from above (response.text() can only be called once)
+        console.log("Login response body length:", bodyText.length);
+        console.log("Login body last 20:", JSON.stringify(bodyText.slice(-20)));
         // Re-create response-like object with cached text for safeParseJson
-        const patchedResponse = new Response(rawText, {
+        const patchedResponse = new Response(bodyText, {
           status: response.status,
           statusText: response.statusText,
           headers: response.headers,
