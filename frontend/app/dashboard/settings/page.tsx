@@ -11,7 +11,7 @@ type LocationSearchResult = {
   address: string;
   latitude: number;
   longitude: number;
-  provider: "google" | "openstreetmap";
+  provider: "google" | "openstreetmap" | "database";
 };
 
 export default function SettingsPage() {
@@ -183,9 +183,10 @@ export default function SettingsPage() {
       } else {
         setSettingsError(data.message || "Failed to save settings");
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Save settings error:", err);
-      setSettingsError(`Error: ${err.message || "Network error occurred."}`);
+      const message = err instanceof Error ? err.message : "Network error occurred.";
+      setSettingsError(`Error: ${message}`);
     } finally {
       setLoadingSettings(false);
     }

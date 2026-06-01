@@ -48,7 +48,7 @@ func main() {
 
 	jwtSvc := services.NewJWTService(cfg)
 	authSvc := services.NewAuthService(pool.Pool, jwtSvc)
-	locationSvc := services.NewLocationService(pool.Pool)
+	locationSvc := services.NewLocationService(pool.Pool, cfg.GooglePlacesAPIKey)
 	dashSvc := services.NewDashboardService(pool.Pool, locationSvc)
 	activitySvc := services.NewActivityService(pool.Pool, locationSvc, dashSvc)
 	inviteSvc := services.NewInviteService(pool.Pool, jwtSvc, cfg.InviteTTLHours, cfg.WebAppURL)
