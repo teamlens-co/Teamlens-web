@@ -8,39 +8,39 @@ import (
 
 // ActivitySample represents a single activity data point
 type ActivitySample struct {
-	Timestamp   int64
-	MouseMoves  int32
-	KeyPresses  int32
+	Timestamp  int64
+	MouseMoves int32
+	KeyPresses int32
 }
 
 // ActivitySegment represents a contiguous active or idle period
 type ActivitySegment struct {
-	Start       string `json:"start"`
-	End         string `json:"end"`
-	Kind        string `json:"kind"`
-	MouseMoves  int    `json:"mouseMoves"`
-	KeyPresses  int    `json:"keyPresses"`
+	Start      string `json:"start"`
+	End        string `json:"end"`
+	Kind       string `json:"kind"`
+	MouseMoves int    `json:"mouseMoves"`
+	KeyPresses int    `json:"keyPresses"`
 }
 
 // ActivityCalculationResult holds the computed activity stats
 type ActivityCalculationResult struct {
-	WorkSeconds  int64              `json:"workSeconds"`
+	WorkSeconds   int64             `json:"workSeconds"`
 	ActiveSeconds int64             `json:"activeSeconds"`
-	IdleSeconds  int64              `json:"idleSeconds"`
-	MouseMoves   int64              `json:"mouseMoves"`
-	KeyPresses   int64              `json:"keyPresses"`
-	Segments     []ActivitySegment  `json:"segments"`
+	IdleSeconds   int64             `json:"idleSeconds"`
+	MouseMoves    int64             `json:"mouseMoves"`
+	KeyPresses    int64             `json:"keyPresses"`
+	Segments      []ActivitySegment `json:"segments"`
 }
 
 type ActivityCalculationInput struct {
-	SessionStart          int64
-	SessionEnd            int64
-	Samples               []ActivitySample
-	IdleThresholdSeconds  int
-	SampleWindowSeconds   int
+	SessionStart         int64
+	SessionEnd           int64
+	Samples              []ActivitySample
+	IdleThresholdSeconds int
+	SampleWindowSeconds  int
 }
 
-const defaultIdleThresholdSeconds = 60
+const defaultIdleThresholdSeconds = 15
 const defaultSampleWindowSeconds = 10
 
 // CalculateActivitySegments computes active/idle time from activity samples
