@@ -33,8 +33,10 @@ type UploadScreenshotPayload struct {
 
 type GetScreenshotsPayload struct {
 	UserID    string
+	UserIDs   []string // Multiple user IDs (ANY match)
 	SessionID *string
 	Limit     int
+	Offset    int
 	StartDate *time.Time
 	EndDate   *time.Time
 }
@@ -84,32 +86,49 @@ func (s *ScreenshotService) GetScreenshots(ctx context.Context, payload *GetScre
 		limit = 50
 	}
 
-	query := `SELECT id, user_id, session_id, file_path, active_application, window_title,
-	                 domain, url, employee_name, project_name, captured_at, created_at
-	          FROM screenshots
-	          WHERE user_id = $1`
-	args := []interface{}{payload.UserID}
-	paramIdx := 2
+	query := `SELECT s.id, s.user_id, s.session_id, s.file_path, s.active_application, s.window_title,
+	                 s.domain, s.url, s.employee_name, s.project_name, s.captured_at, s.created_at
+	          FROM screenshots s`
+	args := []interface{}{}
+	paramIdx := 1
+
+	if len(payload.UserIDs) > 0 {
+		// Multiple user IDs: WHERE user_id = ANY($1)
+		query += fmt.Sprintf(` WHERE s.user_id = ANY($%d)`, paramIdx)
+		args = append(args, payload.UserIDs)
+		paramIdx++
+	} else if payload.UserID != "" {
+		query += fmt.Sprintf(` WHERE s.user_id = $%d`, paramIdx)
+		args = append(args, payload.UserID)
+		paramIdx++
+	}
 
 	if payload.SessionID != nil && *payload.SessionID != "" {
-		query += fmt.Sprintf(` AND session_id = $%d`, paramIdx)
+		query += fmt.Sprintf(` AND s.session_id = $%d`, paramIdx)
 		args = append(args, *payload.SessionID)
 		paramIdx++
 	}
 	if payload.StartDate != nil {
-		query += fmt.Sprintf(` AND captured_at >= $%d`, paramIdx)
+		query += fmt.Sprintf(` AND s.captured_at >= $%d`, paramIdx)
 		args = append(args, *payload.StartDate)
 		paramIdx++
 	}
 	if payload.EndDate != nil {
-		query += fmt.Sprintf(` AND captured_at <= $%d`, paramIdx)
+		query += fmt.Sprintf(` AND s.captured_at <= $%d`, paramIdx)
 		args = append(args, *payload.EndDate)
 		paramIdx++
 	}
 
-	query += ` ORDER BY captured_at DESC`
+	query += ` ORDER BY s.captured_at DESC`
 	query += fmt.Sprintf(` LIMIT $%d`, paramIdx)
 	args = append(args, limit)
+	paramIdx++
+
+	if payload.Offset > 0 {
+		query += fmt.Sprintf(` OFFSET $%d`, paramIdx)
+		args = append(args, payload.Offset)
+		paramIdx++
+	}
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {

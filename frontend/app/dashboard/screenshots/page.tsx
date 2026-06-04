@@ -273,6 +273,9 @@ export default function ScreenshotsView() {
   const [expandedLoading, setExpandedLoading] = useState(false);
   const [expandedError, setExpandedError] = useState("");
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const perPage = 24;
 
   useEffect(() => {
     if (!authHeaders) return;
@@ -341,33 +344,32 @@ export default function ScreenshotsView() {
       setLoading(true);
       setError("");
       try {
-        const results = await Promise.all(
-          scopedEmployees.map(async (employee) => {
-            const queryParams = new URLSearchParams({
-              userId: employee.id,
-              limit: employeeFilter === "all" ? "24" : "80",
-              startDate: dateRange.startDate.toISOString(),
-              endDate: dateRange.endDate.toISOString(),
-            });
-            const response = await fetch(`${apiBase}/api/agent/screenshots?${queryParams.toString()}`, {
-              headers: authHeaders,
-              credentials: "include",
-            });
-            const result = await response.json();
-            if (!result.success) return [];
-            return (result.data as Screenshot[]).map((screenshot) => ({
-              ...screenshot,
-              employeeName: screenshot.employeeName || employee.fullName,
-            }));
-          }),
-        );
-
-        setScreenshots(
-          results
-            .flat()
-            .sort((a, b) => new Date(b.capturedAt).getTime() - new Date(a.capturedAt).getTime())
-            .slice(0, 120),
-        );
+        const userIds = scopedEmployees.map((e) => e.id).join(",");
+        const queryParams = new URLSearchParams({
+          userIds,
+          limit: String(perPage),
+          page: String(page),
+          startDate: dateRange.startDate.toISOString(),
+          endDate: dateRange.endDate.toISOString(),
+        });
+        const response = await fetch(`${apiBase}/api/agent/screenshots?${queryParams.toString()}`, {
+          headers: authHeaders,
+          credentials: "include",
+        });
+        const result = await response.json();
+        if (!result.success) {
+          setScreenshots([]);
+          return;
+        }
+        const data = result.data as Screenshot[];
+        // Build employee name map
+        const empMap = new Map(scopedEmployees.map((e) => [e.id, e.fullName]));
+        const mapped: Screenshot[] = data.map((s) => ({
+          ...s,
+          employeeName: s.employeeName || empMap.get(s.userId) || "Unknown",
+        }));
+        setScreenshots(mapped);
+        setHasMore(mapped.length >= perPage);
       } catch (err) {
         console.error("Failed to fetch screenshots", err);
         setError("An error occurred while fetching screenshots.");
@@ -377,7 +379,7 @@ export default function ScreenshotsView() {
     };
 
     void fetchScreenshots();
-  }, [authHeaders, apiBase, dateRange, employeeFilter, scopedEmployees, teamFilter]);
+  }, [authHeaders, apiBase, dateRange, employeeFilter, scopedEmployees, teamFilter, page]);
 
   const selectedTeamEmployees = teamFilter === "all" ? employees : employees.filter((employee) => employee.teamId === teamFilter);
   const expandedIndex = expandedScreenshotId ? screenshots.findIndex((screenshot) => screenshot.id === expandedScreenshotId) : -1;
@@ -501,6 +503,7 @@ export default function ScreenshotsView() {
           onChange={(nextValue) => {
             setTeamFilter(nextValue);
             setEmployeeFilter("all");
+            setPage(1);
           }}
           options={[{ label: "All Teams", value: "all" }, ...teams.map((team) => ({ label: team.name, value: team.id }))]}
         />
@@ -509,7 +512,10 @@ export default function ScreenshotsView() {
           label="Employees"
           value={employeeFilter}
           minWidth={200}
-          onChange={setEmployeeFilter}
+          onChange={(nextValue) => {
+            setEmployeeFilter(nextValue);
+            setPage(1);
+          }}
           options={[
             { label: "All Employees", value: "all" },
             ...selectedTeamEmployees.map((employee) => ({ label: employee.fullName, value: employee.id })),
@@ -547,6 +553,30 @@ export default function ScreenshotsView() {
               {screenshots.map((screenshot) => (
                 <ScreenshotCard key={screenshot.id} screenshot={screenshot} onExpand={(item) => void openScreenshot(item)} />
               ))}
+            </div>
+          )}
+
+          {!loading && screenshots.length > 0 && (
+            <div className="mt-6 flex items-center justify-center gap-3">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="flex items-center gap-1 rounded-lg border border-[#DDD2C9] px-4 py-2 text-[13px] font-medium text-[#171717] transition hover:bg-[#F1ECE7] disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Previous
+              </button>
+              <span className="rounded-lg bg-[#F1ECE7] px-4 py-2 text-[13px] font-medium text-[#7E6F65]">
+                Page {page}
+              </span>
+              <button
+                onClick={() => setPage((p) => p + 1)}
+                disabled={!hasMore}
+                className="flex items-center gap-1 rounded-lg border border-[#DDD2C9] px-4 py-2 text-[13px] font-medium text-[#171717] transition hover:bg-[#F1ECE7] disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Next
+                <ChevronRight className="h-4 w-4" />
+              </button>
             </div>
           )}
         </div>

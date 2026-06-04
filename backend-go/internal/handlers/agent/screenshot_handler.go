@@ -131,10 +131,25 @@ func (h *ScreenshotHandler) List(w http.ResponseWriter, r *http.Request) {
 		userID = auth.UserID
 	}
 
+	userIdsStr := r.URL.Query().Get("userIds")
+	var userIds []string
+	if userIdsStr != "" {
+		userIds = strings.Split(userIdsStr, ",")
+	}
+
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit <= 0 {
 		limit = 50
 	}
+	if limit > 200 {
+		limit = 200
+	}
+
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page <= 0 {
+		page = 1
+	}
+	offset := (page - 1) * limit
 
 	sessionID := r.URL.Query().Get("sessionId")
 	var sID *string
@@ -158,8 +173,10 @@ func (h *ScreenshotHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	screenshots, err := h.screenshotSvc.GetScreenshots(r.Context(), &services.GetScreenshotsPayload{
 		UserID:    userID,
+		UserIDs:   userIds,
 		SessionID: sID,
 		Limit:     limit,
+		Offset:    offset,
 		StartDate: startDate,
 		EndDate:   endDate,
 	})
