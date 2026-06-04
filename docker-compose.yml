@@ -81,8 +81,12 @@ services:
       NEXT_PUBLIC_WS_URL: "${NEXT_PUBLIC_WS_URL:-http://localhost:4000}"
       NEXT_PUBLIC_WEBRTC_ICE_SERVERS: "${WEBRTC_ICE_SERVERS:-[]}"
       AGENT_DOWNLOAD_URL: "${AGENT_DOWNLOAD_URL:-}"
+      SCREENSHOT_AI_REPORT_DIR: "/app/screenshot-ai/reports"
+      SCREENSHOT_AI_URL: "${SCREENSHOT_AI_URL:-http://host.docker.internal:5055}"
       NODE_ENV: "${NODE_ENV:-production}"
       NEXT_TELEMETRY_DISABLED: "1"
+    volumes:
+      - ./screenshot-ai/reports:/app/screenshot-ai/reports:ro
     depends_on:
       - backend-go
       - backend-ws

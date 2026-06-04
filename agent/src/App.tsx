@@ -94,6 +94,8 @@ const getWsBase = (): string => {
   return "http://localhost:4000";
 };
 
+const isAutoUpdateEnabled = (): boolean => import.meta.env.VITE_ENABLE_AUTO_UPDATE === "true";
+
 const formatSeconds = (seconds: number): string => {
   const hrs = Math.floor(seconds / 3600)
     .toString()
@@ -503,6 +505,10 @@ function App() {
   };
 
   const checkForAgentUpdate = async () => {
+    if (!isAutoUpdateEnabled()) {
+      return;
+    }
+
     try {
       const update = await check();
       if (!update) {
