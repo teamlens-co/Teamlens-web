@@ -275,6 +275,7 @@ export default function ScreenshotsView() {
   const [isAutoPlaying, setIsAutoPlaying] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
+  const [pendingExpandIndex, setPendingExpandIndex] = useState<number | null>(null);
   const perPage = 24;
 
   useEffect(() => {
@@ -370,6 +371,12 @@ export default function ScreenshotsView() {
         }));
         setScreenshots(mapped);
         setHasMore(mapped.length >= perPage);
+        // After page transition, auto-open the target screenshot
+        if (pendingExpandIndex !== null && mapped[pendingExpandIndex]) {
+          setPendingExpandIndex(null);
+          const target = mapped[pendingExpandIndex];
+          setExpandedScreenshotId(target.id);
+        }
       } catch (err) {
         console.error("Failed to fetch screenshots", err);
         setError("An error occurred while fetching screenshots.");
@@ -432,14 +439,26 @@ export default function ScreenshotsView() {
   }, []);
 
   const showPreviousScreenshot = useCallback(() => {
-    if (!hasPreviousScreenshot) return;
-    void openScreenshot(screenshots[expandedIndex - 1]);
-  }, [expandedIndex, hasPreviousScreenshot, openScreenshot, screenshots]);
+    if (expandedIndex < 0) return;
+    if (expandedIndex > 0) {
+      void openScreenshot(screenshots[expandedIndex - 1]);
+    } else if (page > 1) {
+      // Load previous page; auto-open last screenshot after load
+      setPendingExpandIndex(perPage - 1);
+      setPage((p) => p - 1);
+    }
+  }, [expandedIndex, openScreenshot, screenshots, page]);
 
   const showNextScreenshot = useCallback(() => {
-    if (!hasNextScreenshot) return;
-    void openScreenshot(screenshots[expandedIndex + 1]);
-  }, [expandedIndex, hasNextScreenshot, openScreenshot, screenshots]);
+    if (expandedIndex < 0) return;
+    if (expandedIndex < screenshots.length - 1) {
+      void openScreenshot(screenshots[expandedIndex + 1]);
+    } else if (hasMore) {
+      // Load next page; auto-open first screenshot after load
+      setPendingExpandIndex(0);
+      setPage((p) => p + 1);
+    }
+  }, [expandedIndex, openScreenshot, screenshots, hasMore]);
 
   const showNextAutoScreenshot = useCallback(() => {
     if (expandedIndex < 0 || screenshots.length < 2) return;
