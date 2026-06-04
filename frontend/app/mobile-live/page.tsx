@@ -152,8 +152,6 @@ function MobileLiveInner() {
 
         const peer = new RTCPeerConnection({
           iceServers: payload.iceServers?.length ? payload.iceServers : defaultIceServers,
-          bundlePolicy: "max-bundle",
-          rtcpMuxPolicy: "require",
         });
         peerRef.current = peer;
 

@@ -458,9 +458,6 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
 
         const peer = new RTCPeerConnection({
           iceServers: sessionIceServersRef.current,
-          bundlePolicy: "max-bundle",
-          rtcpMuxPolicy: "require",
-          iceCandidatePoolSize: 4,
         });
         peerRef.current = peer;
         startStatsMonitor(peer);
