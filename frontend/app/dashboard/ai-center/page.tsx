@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertCircle,
@@ -14,6 +14,8 @@ import {
   ListChecks,
   Loader2,
   Monitor,
+  RefreshCw,
+  Settings2,
   Sparkles,
   Target,
   Timer,
@@ -72,6 +74,18 @@ type ActivityTimelineItem = {
   focus_level: string;
   category: string;
   evidence?: string;
+};
+
+type LiveSummaryItem = {
+  userId: string;
+  start: string;
+  end: string;
+  generatedAt: string;
+  screenshotCount: number;
+  productivityScore: number;
+  task: string;
+  categoryBreakdown: CategoryBreakdown[];
+  activeApplication: string;
 };
 
 type ApiTeam = {
@@ -134,7 +148,7 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 }
 
 export default function AICenterPage() {
-  const { authHeaders, apiBase, selectedTeamId } = useAuth();
+  const { authHeaders, apiBase, user, selectedTeamId } = useAuth();
   const [report, setReport] = useState<ScreenshotReport | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
@@ -146,6 +160,11 @@ export default function AICenterPage() {
   const [minScreenshots, setMinScreenshots] = useState("10");
   const [employees, setEmployees] = useState<ApiUser[]>([]);
   const [teams, setTeams] = useState<ApiTeam[]>([]);
+  const [liveSummaries, setLiveSummaries] = useState<LiveSummaryItem[]>([]);
+  const [liveLoading, setLiveLoading] = useState(false);
+  const [intervalOpen, setIntervalOpen] = useState(false);
+  const [currentInterval, setCurrentInterval] = useState(30);
+  const [intervalInput, setIntervalInput] = useState("30");
 
   useEffect(() => {
     if (!authHeaders) return;
@@ -191,6 +210,67 @@ export default function AICenterPage() {
   );
   const hasReport = Boolean(report);
   const windowLabel = `${startTime} - ${endTime}`;
+
+  const loadLiveSummaries = useCallback(async () => {
+    setLiveLoading(true);
+    try {
+      const response = await fetch("/api/ai-screenshot-report/live-summaries", { cache: "no-store" });
+      const payload = await response.json();
+      if (payload.success) {
+        setLiveSummaries(payload.data as LiveSummaryItem[]);
+      }
+    } catch {
+      // live summaries silently fail
+    } finally {
+      setLiveLoading(false);
+    }
+  }, []);
+
+  const loadIntervalConfig = useCallback(async () => {
+    try {
+      const response = await fetch("/api/ai-screenshot-report/config/report-interval", { cache: "no-store" });
+      const payload = await response.json();
+      if (payload.success) {
+        const interval = payload.data.intervalMinutes as number;
+        setCurrentInterval(interval);
+        setIntervalInput(String(interval));
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Poll live summaries every 30s
+  useEffect(() => {
+    if (!authHeaders) return;
+    void loadLiveSummaries();
+    const interval = setInterval(loadLiveSummaries, 30_000);
+    return () => clearInterval(interval);
+  }, [authHeaders, loadLiveSummaries]);
+
+  // Load interval config on mount
+  useEffect(() => {
+    if (!authHeaders) return;
+    void loadIntervalConfig();
+  }, [authHeaders, loadIntervalConfig]);
+
+  const saveIntervalConfig = async () => {
+    const minutes = parseInt(intervalInput, 10);
+    if (Number.isNaN(minutes) || minutes < 5 || minutes > 480) return;
+    try {
+      const response = await fetch(`/api/ai-screenshot-report/config/report-interval?minutes=${minutes}`, {
+        method: "POST",
+        cache: "no-store",
+      });
+      const payload = await response.json();
+      if (payload.success) {
+        setCurrentInterval(payload.data.intervalMinutes as number);
+        setIntervalOpen(false);
+      }
+    } catch {
+      // ignore
+    }
+  };
 
   const loadScreenshotReport = async () => {
     setReportLoading(true);
@@ -306,13 +386,6 @@ export default function AICenterPage() {
     }
   }, [employees, selectedEmployeeId, summaryScope]);
 
-  const applyWindowMinutes = (minutes: number) => {
-    const startDateTime = new Date(`${reportDate}T${startTime}:00`);
-    if (Number.isNaN(startDateTime.getTime())) return;
-    const endDateTime = new Date(startDateTime.getTime() + minutes * 60 * 1000);
-    setEndTime(endDateTime.toTimeString().slice(0, 5));
-  };
-
   return (
     <div className="mx-auto max-w-7xl space-y-5">
       <header className="flex flex-col gap-3 border-b border-slate-200 pb-5 md:flex-row md:items-end md:justify-between">
@@ -422,16 +495,53 @@ export default function AICenterPage() {
 
           <div className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4 md:flex-row md:items-center md:justify-between">
             <div className="flex flex-wrap items-center gap-2">
-              {[30, 50, 60].map((minutes) => (
-                <button
-                  key={minutes}
-                  onClick={() => applyWindowMinutes(minutes)}
-                  className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-brand/40 hover:bg-brand/5 hover:text-brand"
-                  type="button"
-                >
-                  {minutes} min
-                </button>
-              ))}
+              {user?.role === "MANAGER" && (
+                <div className="relative">
+                  <button
+                    onClick={() => setIntervalOpen(!intervalOpen)}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-brand/40 hover:bg-brand/5 hover:text-brand"
+                    type="button"
+                  >
+                    <Settings2 className="h-3.5 w-3.5" />
+                    Every {currentInterval} min
+                  </button>
+                  {intervalOpen && (
+                    <div className="absolute bottom-full left-0 z-50 mb-2 w-56 rounded-lg border border-slate-200 bg-white p-4 shadow-lg">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Auto Report Interval</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Summary generates automatically every X minutes for all employees.
+                      </p>
+                      <div className="mt-3 flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={5}
+                          max={480}
+                          value={intervalInput}
+                          onChange={(event) => setIntervalInput(event.target.value)}
+                          className="h-9 w-full rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 outline-none focus:border-brand focus:ring-2 focus:ring-brand/10"
+                        />
+                        <span className="shrink-0 text-xs font-semibold text-slate-500">min</span>
+                      </div>
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          onClick={() => setIntervalOpen(false)}
+                          className="h-8 flex-1 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600"
+                          type="button"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={saveIntervalConfig}
+                          className="h-8 flex-1 rounded-lg bg-brand text-xs font-semibold text-white"
+                          type="button"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               <select
                 value={minScreenshots}
                 onChange={(event) => setMinScreenshots(event.target.value)}
@@ -476,6 +586,64 @@ export default function AICenterPage() {
             {reportError ? reportError : hasReport ? report?.executiveSummary : "Summary will appear after generation."}
           </p>
         </aside>
+      </section>
+
+      {/* ── Live Employee Summaries ── */}
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Users className="h-4 w-4 text-brand" />
+            <h3 className="text-sm font-semibold text-slate-900">Auto Summaries</h3>
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">Every {currentInterval} min</span>
+          </div>
+          <button
+            onClick={loadLiveSummaries}
+            disabled={liveLoading}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+            type="button"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${liveLoading ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+        </div>
+
+        {liveSummaries.length === 0 ? (
+          <div className="mt-4 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
+            <Clock3 className="mx-auto h-5 w-5 text-slate-400" />
+            <p className="mt-2 text-xs font-semibold text-slate-500">Waiting for auto-summaries...</p>
+            <p className="mt-1 text-xs text-slate-400">
+              Auto-summaries generate every {currentInterval} minutes. Check back soon.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {liveSummaries.map((item) => (
+              <div key={item.userId} className="rounded-lg border border-slate-100 bg-slate-50 p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-slate-800">
+                    {employeeNameById.get(item.userId) || item.userId.slice(0, 12)}
+                  </span>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${scoreTone(item.productivityScore)}`}>
+                    {item.productivityScore}
+                  </span>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {(item.categoryBreakdown ?? []).slice(0, 3).map((cat) => (
+                    <span key={cat.category} className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${categoryClass(cat.category)}`}>
+                      {cat.category} {cat.percentage}%
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs leading-5 text-slate-600 line-clamp-2">
+                  {item.task || item.activeApplication || "No activity data yet"}
+                </p>
+                <p className="mt-2 text-[10px] font-medium text-slate-400">
+                  {item.screenshotCount} screenshots • {new Date(item.generatedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {reportError ? (

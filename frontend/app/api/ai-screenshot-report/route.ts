@@ -1,30 +1,33 @@
 import { NextResponse } from "next/server";
 
-const getSidecarUrl = () => process.env.SCREENSHOT_AI_URL?.trim() || "http://localhost:5055";
+const SIDECAR_URL = process.env.SCREENSHOT_AI_URL?.trim() || "http://localhost:5055";
 
-export async function GET(request: Request) {
+const ENDPOINT_MAP: Record<string, string> = {
+  "/api/ai-screenshot-report": "/summary",
+  "/api/ai-screenshot-report/live-summaries": "/live-summaries",
+  "/api/ai-screenshot-report/periodic-summaries": "/periodic-summaries",
+  "/api/ai-screenshot-report/config/report-interval": "/config/report-interval",
+};
+
+async function proxyRequest(request: Request): Promise<NextResponse> {
   const url = new URL(request.url);
-  const scope = url.searchParams.get("scope") || "team";
-  const requestedDate = url.searchParams.get("date");
-  const requestedStart = url.searchParams.get("start");
-  const requestedEnd = url.searchParams.get("end");
-  const requestedRange = url.searchParams.get("range");
-  const requestedUserId = url.searchParams.get("userId");
-  const requestedUserIds = url.searchParams.get("userIds");
-  const minScreenshots = url.searchParams.get("minScreenshots") || "10";
+  const path = url.pathname;
+  const sidecarPath = ENDPOINT_MAP[path] || "/summary";
+  const sidecarUrl = new URL(sidecarPath, SIDECAR_URL);
 
-  const sidecarUrl = new URL("/summary", getSidecarUrl());
-  sidecarUrl.searchParams.set("scope", scope);
-  sidecarUrl.searchParams.set("minScreenshots", minScreenshots);
-  if (requestedDate) sidecarUrl.searchParams.set("date", requestedDate);
-  if (requestedStart) sidecarUrl.searchParams.set("start", requestedStart);
-  if (requestedEnd) sidecarUrl.searchParams.set("end", requestedEnd);
-  if (requestedRange) sidecarUrl.searchParams.set("range", requestedRange);
-  if (requestedUserId) sidecarUrl.searchParams.set("userId", requestedUserId);
-  if (requestedUserIds) sidecarUrl.searchParams.set("userIds", requestedUserIds);
+  // Forward all query params
+  url.searchParams.forEach((value, key) => {
+    sidecarUrl.searchParams.set(key, value);
+  });
 
   try {
-    const response = await fetch(sidecarUrl, { cache: "no-store" });
+    const fetchOptions: RequestInit = { cache: "no-store" };
+    if (request.method === "POST") {
+      fetchOptions.method = "POST";
+      const body = await request.text();
+      if (body) fetchOptions.body = body;
+    }
+    const response = await fetch(sidecarUrl, fetchOptions);
     const payload = await response.json();
     return NextResponse.json(payload, { status: response.status });
   } catch {
@@ -37,4 +40,12 @@ export async function GET(request: Request) {
       { status: 503 },
     );
   }
+}
+
+export async function GET(request: Request) {
+  return proxyRequest(request);
+}
+
+export async function POST(request: Request) {
+  return proxyRequest(request);
 }

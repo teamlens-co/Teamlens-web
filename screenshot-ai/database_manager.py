@@ -75,6 +75,28 @@ class DatabaseManager:
                   ON screenshot_analysis(image_sha256);
                 CREATE INDEX IF NOT EXISTS idx_screenshot_analysis_status
                   ON screenshot_analysis(status);
+
+                CREATE TABLE IF NOT EXISTS org_config (
+                  key TEXT PRIMARY KEY,
+                  value TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS periodic_summaries (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  user_id TEXT NOT NULL,
+                  start_iso TEXT NOT NULL,
+                  end_iso TEXT NOT NULL,
+                  summary_json TEXT NOT NULL,
+                  screenshot_count INTEGER NOT NULL DEFAULT 0,
+                  productivity_score INTEGER NOT NULL DEFAULT 0,
+                  generated_at TEXT NOT NULL,
+                  interval_minutes INTEGER NOT NULL DEFAULT 30
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_periodic_summaries_user_date
+                  ON periodic_summaries(user_id, start_iso, end_iso);
+                CREATE INDEX IF NOT EXISTS idx_periodic_summaries_generated
+                  ON periodic_summaries(generated_at);
                 """
             )
 
@@ -394,3 +416,94 @@ class DatabaseManager:
                     report_markdown,
                 ),
             )
+
+    # ── Periodic Summaries ──────────────────────────────────────────────
+
+    def get_org_config(self, key: str, default: str = "") -> str:
+        with self.connect() as conn:
+            row = conn.execute("SELECT value FROM org_config WHERE key = ?", (key,)).fetchone()
+            return row["value"] if row else default
+
+    def set_org_config(self, key: str, value: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "INSERT INTO org_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
+            )
+
+    def insert_periodic_summary(
+        self,
+        *,
+        user_id: str,
+        start_iso: str,
+        end_iso: str,
+        summary_json: dict[str, Any],
+        screenshot_count: int,
+        productivity_score: int,
+        interval_minutes: int,
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO periodic_summaries (
+                  user_id, start_iso, end_iso, summary_json, screenshot_count,
+                  productivity_score, generated_at, interval_minutes
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    start_iso,
+                    end_iso,
+                    json.dumps(summary_json, ensure_ascii=True),
+                    screenshot_count,
+                    productivity_score,
+                    datetime.now(timezone.utc).isoformat(),
+                    interval_minutes,
+                ),
+            )
+
+    def list_periodic_summaries(
+        self, user_ids: list[str] | None, start_iso: str, end_iso: str
+    ) -> list[sqlite3.Row]:
+        with self.connect() as conn:
+            args: list[Any] = [start_iso, end_iso]
+            query = """
+                SELECT * FROM periodic_summaries
+                WHERE start_iso >= ? AND end_iso <= ?
+            """
+            if user_ids:
+                placeholders = ",".join("?" for _ in user_ids)
+                query += f" AND user_id IN ({placeholders})"
+                args.extend(user_ids)
+            query += " ORDER BY user_id ASC, start_iso ASC"
+            return list(conn.execute(query, args))
+
+    def get_latest_periodic_summary(self, user_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM periodic_summaries
+                WHERE user_id = ?
+                ORDER BY generated_at DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def get_all_latest_periodic_summaries(self) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT p.*
+                FROM periodic_summaries p
+                INNER JOIN (
+                    SELECT user_id, MAX(generated_at) AS max_gen
+                    FROM periodic_summaries
+                    GROUP BY user_id
+                ) latest ON p.user_id = latest.user_id AND p.generated_at = latest.max_gen
+                ORDER BY p.generated_at DESC
+                """,
+            ).fetchall()
+            return [dict(row) for row in rows]

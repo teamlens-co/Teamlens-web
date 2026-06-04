@@ -42,6 +42,7 @@ class AppConfig:
     screenshot_batch_limit: int
     max_image_width: int
     jpeg_quality: int
+    periodic_interval_minutes: int
     log_level: str
 
 
@@ -81,5 +82,6 @@ def load_config() -> AppConfig:
         screenshot_batch_limit=_int_env("SCREENSHOT_BATCH_LIMIT", 200),
         max_image_width=_int_env("MAX_IMAGE_WIDTH", 1280),
         jpeg_quality=_int_env("JPEG_QUALITY", 70),
+        periodic_interval_minutes=_int_env("PERIODIC_INTERVAL_MINUTES", 30),
         log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
     )
