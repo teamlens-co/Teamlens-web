@@ -4,6 +4,7 @@ const SIDECAR_URL = process.env.SCREENSHOT_AI_URL?.trim() || "http://localhost:5
 
 const ENDPOINT_MAP: Record<string, string> = {
   "/api/ai-screenshot-report": "/summary",
+  "/api/ai-screenshot-report/health": "/health",
   "/api/ai-screenshot-report/live-summaries": "/live-summaries",
   "/api/ai-screenshot-report/periodic-summaries": "/periodic-summaries",
   "/api/ai-screenshot-report/config/report-interval": "/config/report-interval",
