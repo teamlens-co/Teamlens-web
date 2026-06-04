@@ -3,20 +3,22 @@ import { NextResponse } from "next/server";
 const SIDECAR_URL = process.env.SCREENSHOT_AI_URL?.trim() || "http://localhost:5055";
 
 const ENDPOINT_MAP: Record<string, string> = {
-  "/api/ai-screenshot-report": "/summary",
-  "/api/ai-screenshot-report/health": "/health",
-  "/api/ai-screenshot-report/live-summaries": "/live-summaries",
-  "/api/ai-screenshot-report/periodic-summaries": "/periodic-summaries",
-  "/api/ai-screenshot-report/config/report-interval": "/config/report-interval",
+  "/": "/summary",
+  "/health": "/health",
+  "/live-summaries": "/live-summaries",
+  "/periodic-summaries": "/periodic-summaries",
+  "/config/report-interval": "/config/report-interval",
 };
 
-async function proxyRequest(request: Request): Promise<NextResponse> {
+async function proxyRequest(
+  request: Request,
+  params: { path?: string[] }
+): Promise<NextResponse> {
   const url = new URL(request.url);
-  const path = url.pathname;
-  const sidecarPath = ENDPOINT_MAP[path] || "/summary";
+  const subPath = "/" + (params.path?.join("/") || "");
+  const sidecarPath = ENDPOINT_MAP[subPath] || "/summary";
   const sidecarUrl = new URL(sidecarPath, SIDECAR_URL);
 
-  // Forward all query params
   url.searchParams.forEach((value, key) => {
     sidecarUrl.searchParams.set(key, value);
   });
@@ -43,10 +45,18 @@ async function proxyRequest(request: Request): Promise<NextResponse> {
   }
 }
 
-export async function GET(request: Request) {
-  return proxyRequest(request);
+export async function GET(
+  request: Request,
+  segmentData: { params: Promise<{ path?: string[] }> }
+) {
+  const params = await segmentData.params;
+  return proxyRequest(request, params);
 }
 
-export async function POST(request: Request) {
-  return proxyRequest(request);
+export async function POST(
+  request: Request,
+  segmentData: { params: Promise<{ path?: string[] }> }
+) {
+  const params = await segmentData.params;
+  return proxyRequest(request, params);
 }
