@@ -221,6 +221,11 @@ export default function AICenterPage() {
           setReportError("Select an employee first.");
           return;
         }
+        if (!selectedEmployee) {
+          setReport(null);
+          setReportError("Selected employee is not available in this workspace. Refresh the page and select an employee again.");
+          return;
+        }
         params.set("userId", selectedEmployeeId);
       } else if (scopedEmployeeIds.length > 0) {
         params.set("userIds", scopedEmployeeIds.join(","));
@@ -287,6 +292,19 @@ export default function AICenterPage() {
       setReportLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!selectedEmployeeId) return;
+    if (!employees.some((employee) => employee.id === selectedEmployeeId)) {
+      setSelectedEmployeeId("");
+    }
+  }, [employees, selectedEmployeeId]);
+
+  useEffect(() => {
+    if (summaryScope === "user" && !selectedEmployeeId && employees.length > 0) {
+      setSelectedEmployeeId(employees[0].id);
+    }
+  }, [employees, selectedEmployeeId, summaryScope]);
 
   const applyWindowMinutes = (minutes: number) => {
     const startDateTime = new Date(`${reportDate}T${startTime}:00`);
