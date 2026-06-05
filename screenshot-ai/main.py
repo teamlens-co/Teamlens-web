@@ -53,31 +53,30 @@ class ScreenshotAIWorker:
         self.reschedule_periodic_job = lambda _minutes: None  # Will be replaced after scheduler starts
 
     def run_once(self) -> None:
-        last_ts = self.db.get_state("last_processed_captured_at", "")
-        records = self.fetch_recent_screenshots(last_captured_at=last_ts)
-        logging.info("Fetched screenshot batch", extra={"count": len(records)})
+        last_id = self.db.get_last_processed_id()
+        records = self.fetch_recent_screenshots(after_id=last_id)
+        logging.info("Fetched screenshot batch", extra={"count": len(records), "after_id": last_id})
         for record in records:
             if self.db.has_screenshot(record.id):
                 continue
             self.process_record(record)
         if records:
-            max_ts = max(record.captured_at for record in records).isoformat()
-            self.db.set_state("last_processed_captured_at", max_ts)
-            logging.debug("Updated last processed captured_at", extra={"last_captured_at": max_ts})
+            max_id = max(record.id for record in records)
+            self.db.set_last_processed_id(max_id)
+            logging.debug("Updated last processed screenshot ID", extra={"last_id": max_id})
 
-    def fetch_recent_screenshots(self, last_captured_at: str = "") -> list[ScreenshotRecord]:
+    def fetch_recent_screenshots(self, after_id: str = "") -> list[ScreenshotRecord]:
         since = datetime.now(timezone.utc) - timedelta(hours=self.config.screenshot_lookback_hours)
         query = """
             SELECT id, user_id, session_id, file_path, active_application, window_title, captured_at
             FROM screenshots
-            WHERE captured_at > %s
-            ORDER BY captured_at ASC
+            WHERE captured_at >= %s AND id > %s
+            ORDER BY captured_at ASC, id ASC
             LIMIT %s
         """
-        cursor_param = last_captured_at if last_captured_at else since.isoformat()
         with psycopg.connect(self.config.database_url) as conn:
             with conn.cursor() as cursor:
-                cursor.execute(query, (cursor_param, self.config.screenshot_batch_limit))
+                cursor.execute(query, (since.isoformat(), after_id, self.config.screenshot_batch_limit))
                 rows = cursor.fetchall()
         return [
             ScreenshotRecord(

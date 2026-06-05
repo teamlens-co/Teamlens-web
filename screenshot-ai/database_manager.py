@@ -433,6 +433,14 @@ class DatabaseManager:
                 (key, value),
             )
 
+    def get_last_processed_id(self) -> str:
+        """Get the last processed screenshot ID (cursor for polling)."""
+        return self.get_state("last_processed_id", "")
+
+    def set_last_processed_id(self, id_val: str) -> None:
+        """Store the last processed screenshot ID (cursor for polling)."""
+        self.set_state("last_processed_id", id_val)
+
     # ── Periodic Summaries ──────────────────────────────────────────────
 
     def get_org_config(self, key: str, default: str = "") -> str:
