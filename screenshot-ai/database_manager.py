@@ -417,6 +417,22 @@ class DatabaseManager:
                 ),
             )
 
+    # ── Analyzer State (key/value) ──────────────────────────────────────
+
+    def get_state(self, key: str, default: str = "") -> str:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT value FROM analyzer_state WHERE key = ?", (key,)
+            ).fetchone()
+            return row["value"] if row else default
+
+    def set_state(self, key: str, value: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "INSERT INTO analyzer_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
+            )
+
     # ── Periodic Summaries ──────────────────────────────────────────────
 
     def get_org_config(self, key: str, default: str = "") -> str:
@@ -430,6 +446,14 @@ class DatabaseManager:
                 "INSERT INTO org_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                 (key, value),
             )
+
+    def periodic_summary_exists(self, user_id: str, start_iso: str) -> bool:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM periodic_summaries WHERE user_id = ? AND start_iso = ? LIMIT 1",
+                (user_id, start_iso),
+            ).fetchone()
+            return row is not None
 
     def insert_periodic_summary(
         self,
