@@ -93,6 +93,8 @@ class DatabaseManager:
                   interval_minutes INTEGER NOT NULL DEFAULT 30
                 );
 
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_periodic_summaries_unique_user_start
+                  ON periodic_summaries(user_id, start_iso);
                 CREATE INDEX IF NOT EXISTS idx_periodic_summaries_user_date
                   ON periodic_summaries(user_id, start_iso, end_iso);
                 CREATE INDEX IF NOT EXISTS idx_periodic_summaries_generated
@@ -477,7 +479,7 @@ class DatabaseManager:
         with self.connect() as conn:
             conn.execute(
                 """
-                INSERT INTO periodic_summaries (
+                INSERT OR IGNORE INTO periodic_summaries (
                   user_id, start_iso, end_iso, summary_json, screenshot_count,
                   productivity_score, generated_at, interval_minutes
                 )

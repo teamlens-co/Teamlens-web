@@ -316,8 +316,17 @@ class ScreenshotAIWorker:
         """Generate periodic summaries for all active employees since last run."""
         interval = int(self.db.get_org_config("periodic_interval_minutes", str(self.config.periodic_interval_minutes)))
         now = datetime.now(timezone.utc)
-        end_iso = now.isoformat()
-        start_iso = (now - timedelta(minutes=interval)).isoformat()
+
+        # Round now down to interval boundary so scheduler latency (e.g., :03 vs :00)
+        # does NOT shift start_iso across runs, preventing duplicate summaries.
+        epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        elapsed = (now - epoch).total_seconds()
+        interval_seconds = interval * 60
+        elapsed_rounded = int(elapsed) // interval_seconds * interval_seconds
+        boundary_now = epoch + timedelta(seconds=elapsed_rounded)
+
+        end_iso = boundary_now.isoformat()
+        start_iso = (boundary_now - timedelta(minutes=interval)).isoformat()
 
         # Find users active in this window
         active_users = self._find_active_users(start_iso, end_iso)
