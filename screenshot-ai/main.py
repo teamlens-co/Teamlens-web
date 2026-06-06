@@ -53,30 +53,41 @@ class ScreenshotAIWorker:
         self.reschedule_periodic_job = lambda _minutes: None  # Will be replaced after scheduler starts
 
     def run_once(self) -> None:
-        last_id = self.db.get_last_processed_id()
-        records = self.fetch_recent_screenshots(after_id=last_id)
-        logging.info("Fetched screenshot batch", extra={"count": len(records), "after_id": last_id})
+        last_captured = self.db.get_last_processed_captured_at()
+        records = self.fetch_recent_screenshots(after_captured_at=last_captured)
+        logging.info("Fetched screenshot batch", extra={"count": len(records), "after": last_captured})
         for record in records:
             if self.db.has_screenshot(record.id):
                 continue
             self.process_record(record)
         if records:
-            max_id = max(record.id for record in records)
-            self.db.set_last_processed_id(max_id)
-            logging.debug("Updated last processed screenshot ID", extra={"last_id": max_id})
+            max_captured = max(record.captured_at for record in records)
+            self.db.set_last_processed_captured_at(max_captured.isoformat())
+            logging.debug("Updated last processed captured_at", extra={"last_captured_at": max_captured.isoformat()})
 
-    def fetch_recent_screenshots(self, after_id: str = "") -> list[ScreenshotRecord]:
-        since = datetime.now(timezone.utc) - timedelta(hours=self.config.screenshot_lookback_hours)
+    def fetch_recent_screenshots(self, after_captured_at: str = "") -> list[ScreenshotRecord]:
+        now = datetime.now(timezone.utc)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        lookback = now - timedelta(hours=self.config.screenshot_lookback_hours)
+
+        if after_captured_at:
+            cursor_ts = datetime.fromisoformat(after_captured_at.replace("Z", "+00:00")) + timedelta(microseconds=1)
+            # If cursor is from before today, reset to today_start to prioritize fresh data
+            since = max(cursor_ts, today_start)
+        else:
+            # No cursor yet: start with today's screenshots
+            since = today_start
+
         query = """
             SELECT id, user_id, session_id, file_path, active_application, window_title, captured_at
             FROM screenshots
-            WHERE captured_at >= %s AND id > %s
+            WHERE captured_at >= %s
             ORDER BY captured_at ASC, id ASC
             LIMIT %s
         """
         with psycopg.connect(self.config.database_url) as conn:
             with conn.cursor() as cursor:
-                cursor.execute(query, (since.isoformat(), after_id, self.config.screenshot_batch_limit))
+                cursor.execute(query, (since.isoformat(), self.config.screenshot_batch_limit))
                 rows = cursor.fetchall()
         return [
             ScreenshotRecord(
@@ -313,62 +324,77 @@ class ScreenshotAIWorker:
         logging.info("Generated daily reports", extra={"date": today, "count": generated})
 
     def collect_periodic_summaries(self) -> None:
-        """Generate periodic summaries for all active employees since last run."""
+        """Generate periodic summaries — current window + backfill missing slots."""
         interval = int(self.db.get_org_config("periodic_interval_minutes", str(self.config.periodic_interval_minutes)))
         now = datetime.now(timezone.utc)
-
-        # Round now down to interval boundary so scheduler latency (e.g., :03 vs :00)
-        # does NOT shift start_iso across runs, preventing duplicate summaries.
         epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
-        elapsed = (now - epoch).total_seconds()
         interval_seconds = interval * 60
+
+        # Round now down to interval boundary
+        elapsed = (now - epoch).total_seconds()
         elapsed_rounded = int(elapsed) // interval_seconds * interval_seconds
         boundary_now = epoch + timedelta(seconds=elapsed_rounded)
 
-        end_iso = boundary_now.isoformat()
-        start_iso = (boundary_now - timedelta(minutes=interval)).isoformat()
+        # Determine earliest window to backfill (max 8 hours back, or first analyzed screenshot)
+        lookback_hours = int(self.db.get_org_config("periodic_lookback_hours", "8"))
+        earliest_window = boundary_now - timedelta(hours=lookback_hours)
 
-        # Find users active in this window
-        active_users = self._find_active_users(start_iso, end_iso)
-        if not active_users:
-            logging.info("No active users found for periodic summary", extra={"interval": interval})
-            return
+        # Walk through each interval window from earliest to now (including current)
+        current_start = earliest_window
+        generated = 0
+        while current_start <= boundary_now:
+            window_end = current_start + timedelta(seconds=interval_seconds)
+            start_iso = current_start.isoformat()
+            end_iso = window_end.isoformat()
 
-        logging.info("Generating periodic summaries", extra={"interval_minutes": interval, "user_count": len(active_users)})
+            # Get users active in this window (from PostgreSQL screenshots)
+            active_users = self._find_active_users(start_iso, end_iso)
+            if not active_users:
+                current_start = window_end
+                continue
 
-        for user_id in active_users:
-            try:
-                if self.db.periodic_summary_exists(user_id, start_iso):
-                    logging.info(
-                        "Periodic summary already exists, skipping",
-                        extra={"user_id": user_id, "start_iso": start_iso},
+            for user_id in active_users:
+                try:
+                    if self.db.periodic_summary_exists(user_id, start_iso):
+                        continue
+
+                    rows = self.db.list_reportable_analysis_for_users_between([user_id], start_iso, end_iso)
+                    if not rows or len(rows) < 2:
+                        continue
+
+                    summary = self.report_generator.build_summary(
+                        rows,
+                        now.date().isoformat(),
+                        f"Periodic Summary ({interval}min)",
+                        range_label=self._interval_label(interval, start_iso, end_iso),
                     )
-                    continue
+                    if summary.get("total_analyzed_screenshots", 0) < 2:
+                        continue
 
-                rows = self.db.list_reportable_analysis_for_users_between([user_id], start_iso, end_iso)
-                if not rows:
-                    continue
-                summary = self.report_generator.build_summary(
-                    rows,
-                    now.date().isoformat(),
-                    f"Periodic Summary ({interval}min)",
-                    range_label=self._interval_label(interval, start_iso, end_iso),
-                )
-                if summary.get("total_analyzed_screenshots", 0) < 2:
-                    continue
+                    self.db.insert_periodic_summary(
+                        user_id=user_id,
+                        start_iso=start_iso,
+                        end_iso=end_iso,
+                        summary_json=summary,
+                        screenshot_count=summary["total_analyzed_screenshots"],
+                        productivity_score=summary["productivity_score"],
+                        interval_minutes=interval,
+                    )
+                    generated += 1
+                    logging.info(
+                        "Periodic summary stored",
+                        extra={"user_id": user_id, "start": start_iso, "end": end_iso,
+                               "screenshots": summary["total_analyzed_screenshots"], "score": summary["productivity_score"]},
+                    )
+                except Exception as error:
+                    logging.exception("Periodic summary failed for user", extra={"user_id": user_id, "window": start_iso, "error": str(error)})
 
-                self.db.insert_periodic_summary(
-                    user_id=user_id,
-                    start_iso=start_iso,
-                    end_iso=end_iso,
-                    summary_json=summary,
-                    screenshot_count=summary["total_analyzed_screenshots"],
-                    productivity_score=summary["productivity_score"],
-                    interval_minutes=interval,
-                )
-                logging.info("Stored periodic summary", extra={"user_id": user_id, "screenshots": summary["total_analyzed_screenshots"]})
-            except Exception as error:
-                logging.exception("Periodic summary failed for user", extra={"user_id": user_id, "error": str(error)})
+            current_start = window_end
+
+        logging.info("Periodic summary collection done", extra={"generated": generated, "lookback_hours": lookback_hours})
+        # Trigger a second pass if run before all today's screenshots were analyzed
+        if generated == 0:
+            logging.info("No new summaries generated, will retry on next scheduler tick")
 
     def _find_active_users(self, start_iso: str, end_iso: str) -> list[str]:
         """Find users who have screenshots in the given time window."""
@@ -385,6 +411,20 @@ class ScreenshotAIWorker:
         except Exception as error:
             logging.warning("Could not query active users from PostgreSQL", extra={"error": str(error)})
             return []
+
+    def _get_user_names(self, user_ids: list[str]) -> dict[str, str]:
+        """Fetch full_name from PostgreSQL users table for given user IDs."""
+        if not user_ids:
+            return {}
+        query = "SELECT id, full_name FROM users WHERE id = ANY(%s)"
+        try:
+            with psycopg.connect(self.config.database_url) as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(query, (user_ids,))
+                    return {row[0]: row[1] for row in cursor.fetchall()}
+        except Exception as error:
+            logging.warning("Could not fetch user names", extra={"error": str(error)})
+            return {}
 
     @staticmethod
     def _interval_label(interval: int, start_iso: str, end_iso: str) -> str:
@@ -478,6 +518,25 @@ def start_summary_http_server(worker: ScreenshotAIWorker) -> ThreadingHTTPServer
                 self._handle_get_report_interval()
                 return
 
+            # ── Daily Report Endpoints ──
+            if path == "/daily-reports/dates":
+                self._handle_daily_report_dates()
+                return
+
+            if path == "/daily-reports":
+                self._handle_daily_reports_for_date(parsed)
+                return
+
+            if path == "/config/daily-report-time":
+                self._handle_get_daily_report_time()
+                return
+
+            # /daily-reports/{userId}
+            if path.startswith("/daily-reports/"):
+                user_id = path[len("/daily-reports/"):]
+                self._handle_single_daily_report(parsed, user_id)
+                return
+
             self.respond(404, {"success": False, "message": "Not found"})
 
         def do_POST(self) -> None:
@@ -486,6 +545,14 @@ def start_summary_http_server(worker: ScreenshotAIWorker) -> ThreadingHTTPServer
 
             if path == "/config/report-interval":
                 self._handle_set_report_interval(parsed)
+                return
+
+            if path == "/config/daily-report-time":
+                self._handle_set_daily_report_time(parsed)
+                return
+
+            if path == "/daily-reports/regenerate":
+                self._handle_regenerate_daily_reports(parsed)
                 return
 
             self.respond(404, {"success": False, "message": "Not found"})
@@ -547,19 +614,24 @@ def start_summary_http_server(worker: ScreenshotAIWorker) -> ThreadingHTTPServer
         def _handle_live_summaries(self) -> None:
             """Return the latest periodic summary for every user."""
             summaries = worker.db.get_all_latest_periodic_summaries()
+            user_ids = list({s["user_id"] for s in summaries})
+            names = worker._get_user_names(user_ids)
             result = []
             for s in summaries:
                 try:
                     summary_data = json.loads(s["summary_json"])
                 except (TypeError, json.JSONDecodeError):
                     summary_data = {}
+                rating = summary_data.get("rating", "average")
                 result.append({
                     "userId": s["user_id"],
+                    "fullName": names.get(s["user_id"], s["user_id"]),
                     "start": s["start_iso"],
                     "end": s["end_iso"],
                     "generatedAt": s["generated_at"],
                     "screenshotCount": s["screenshot_count"],
                     "productivityScore": s["productivity_score"],
+                    "rating": rating,
                     "task": summary_data.get("top_tasks", [{}])[0].get("task", "") if summary_data.get("top_tasks") else "",
                     "categoryBreakdown": summary_data.get("category_breakdown", []),
                     "activeApplication": self._latest_app_from_summary(summary_data),
@@ -584,6 +656,8 @@ def start_summary_http_server(worker: ScreenshotAIWorker) -> ThreadingHTTPServer
                 return
 
             result = []
+            user_ids_in_result = list({row["user_id"] for row in rows})
+            names = worker._get_user_names(user_ids_in_result)
             for row in rows:
                 try:
                     summary_data = json.loads(row["summary_json"])
@@ -591,6 +665,7 @@ def start_summary_http_server(worker: ScreenshotAIWorker) -> ThreadingHTTPServer
                     summary_data = {}
                 result.append({
                     "userId": row["user_id"],
+                    "fullName": names.get(row["user_id"], row["user_id"]),
                     "start": row["start_iso"],
                     "end": row["end_iso"],
                     "generatedAt": row["generated_at"],
@@ -621,6 +696,86 @@ def start_summary_http_server(worker: ScreenshotAIWorker) -> ThreadingHTTPServer
             worker.reschedule_periodic_job(minutes)
             logging.info("Report interval updated", extra={"interval_minutes": minutes})
             self.respond(200, {"success": True, "data": {"intervalMinutes": minutes}})
+
+        # ── Daily Report Handlers ──────────────────────────────────────
+
+        def _handle_get_daily_report_time(self) -> None:
+            time_str = worker.db.get_daily_report_time("18:00")
+            self.respond(200, {"success": True, "data": {"reportTime": time_str}})
+
+        def _handle_set_daily_report_time(self, parsed) -> None:
+            query = parse_qs(parsed.query)
+            time_str = query.get("time", [""])[0].strip()
+            import re
+            if not re.match(r"^([01]\d|2[0-3]):([0-5]\d)$", time_str):
+                self.respond(400, {"success": False, "message": "time must be in HH:MM format (24h)"})
+                return
+            worker.db.set_daily_report_time(time_str)
+            worker.reschedule_daily_report_job(time_str)
+            logging.info("Daily report time updated", extra={"time": time_str})
+            self.respond(200, {"success": True, "data": {"reportTime": time_str}})
+
+        def _handle_daily_report_dates(self) -> None:
+            dates = worker.db.list_daily_report_dates()
+            self.respond(200, {"success": True, "data": dates})
+
+        def _handle_daily_reports_for_date(self, parsed) -> None:
+            query = parse_qs(parsed.query)
+            date = query.get("date", [datetime.now().date().isoformat()])[0].strip()
+            reports = worker.db.list_daily_reports_for_date(date)
+            user_ids = list({r["user_id"] for r in reports})
+            names = worker._get_user_names(user_ids)
+            result = []
+            for r in reports:
+                result.append({
+                    "userId": r["user_id"],
+                    "fullName": names.get(r["user_id"], r["user_id"]),
+                    "reportDate": r["report_date"],
+                    "generatedAt": r["generated_at"],
+                    "totalAnalyzedScreenshots": r["total_analyzed_screenshots"],
+                    "productivityScore": r["productivity_score"],
+                    "categoryBreakdown": json.loads(r["category_breakdown_json"]),
+                    "topTasks": json.loads(r["top_tasks_json"]),
+                    "hourlyFocus": json.loads(r["hourly_focus_json"]),
+                    "distractionAlerts": json.loads(r["distraction_alerts_json"]),
+                    "recommendations": json.loads(r["recommendations_json"]),
+                    "reportMarkdown": r["report_markdown"],
+                })
+            self.respond(200, {"success": True, "data": result})
+
+        def _handle_single_daily_report(self, parsed, user_id: str) -> None:
+            query = parse_qs(parsed.query)
+            date = query.get("date", [datetime.now().date().isoformat()])[0].strip()
+            report = worker.db.get_daily_report(user_id, date)
+            if not report:
+                self.respond(404, {"success": False, "message": "Report not found"})
+                return
+            names = worker._get_user_names([user_id])
+            self.respond(200, {"success": True, "data": {
+                "userId": report["user_id"],
+                "fullName": names.get(report["user_id"], report["user_id"]),
+                "reportDate": report["report_date"],
+                "generatedAt": report["generated_at"],
+                "totalAnalyzedScreenshots": report["total_analyzed_screenshots"],
+                "productivityScore": report["productivity_score"],
+                "categoryBreakdown": json.loads(report["category_breakdown_json"]),
+                "topTasks": json.loads(report["top_tasks_json"]),
+                "hourlyFocus": json.loads(report["hourly_focus_json"]),
+                "distractionAlerts": json.loads(report["distraction_alerts_json"]),
+                "recommendations": json.loads(report["recommendations_json"]),
+                "reportMarkdown": report["report_markdown"],
+            }})
+
+        def _handle_regenerate_daily_reports(self, parsed) -> None:
+            query = parse_qs(parsed.query)
+            date = query.get("date", [""])[0].strip()
+            if not date:
+                date = datetime.now().date().isoformat()
+            try:
+                generated = worker.report_generator.generate_for_date(date)
+                self.respond(200, {"success": True, "data": {"date": date, "generated": generated}})
+            except Exception as e:
+                self.respond(500, {"success": False, "message": str(e)})
 
         @staticmethod
         def _latest_app_from_summary(summary_data: dict) -> str:
@@ -660,9 +815,28 @@ def run_forever(worker: ScreenshotAIWorker) -> None:
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
 
-    hour, minute = worker.parse_report_time()
+    # Read daily report time from DB (fallback to env var)
+    report_time = worker.db.get_daily_report_time("18:00")
+    try:
+        hour, minute = map(int, report_time.split(":"))
+    except (ValueError, AttributeError):
+        hour, minute = worker.parse_report_time()
+
     scheduler = BackgroundScheduler()
     scheduler.add_job(worker.generate_daily_reports, "cron", hour=hour, minute=minute, id="daily_reports", replace_existing=True)
+
+    # Callback for dynamic rescheduling from HTTP endpoint
+    def reschedule_daily_job(time_str: str) -> None:
+        try:
+            h, m = map(int, time_str.split(":"))
+            job = scheduler.get_job("daily_reports")
+            if job:
+                scheduler.reschedule_job("daily_reports", trigger="cron", hour=h, minute=m)
+                logging.info("Daily report job rescheduled", extra={"time": time_str})
+        except Exception as e:
+            logging.error("Failed to reschedule daily report job", extra={"error": str(e)})
+
+    worker.reschedule_daily_report_job = reschedule_daily_job
 
     # Periodic summaries job (configurable interval)
     initial_interval = int(worker.db.get_org_config("periodic_interval_minutes", str(worker.config.periodic_interval_minutes)))

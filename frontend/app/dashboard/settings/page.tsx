@@ -41,6 +41,11 @@ export default function SettingsPage() {
   const [settingsSuccess, setSettingsSuccess] = useState(false);
   const [settingsError, setSettingsError] = useState("");
 
+  // Daily Report Time state
+  const [dailyReportTime, setDailyReportTime] = useState("18:00");
+  const [savingReportTime, setSavingReportTime] = useState(false);
+  const [reportTimeSuccess, setReportTimeSuccess] = useState(false);
+
   // Fetch existing office location and settings on load
   useEffect(() => {
     if (!authHeaders || user?.role !== "MANAGER") return;
@@ -67,6 +72,8 @@ export default function SettingsPage() {
         }
       })
       .catch((err) => console.error("Failed to load settings", err));
+
+    fetchDailyReportTime();
   }, [authHeaders, apiBase, user]);
 
   // Debounced address search
@@ -157,6 +164,41 @@ export default function SettingsPage() {
       }
     } catch (err) {
       console.error("Failed to delete location", err);
+    }
+  };
+
+  const fetchDailyReportTime = async () => {
+    if (!authHeaders) return;
+    try {
+      const res = await fetch(
+        `${apiBase}/api/ai-screenshot-report/config/daily-report-time`,
+        { headers: authHeaders as HeadersInit }
+      );
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data?.reportTime) {
+          setDailyReportTime(json.data.reportTime);
+        }
+      }
+    } catch {
+      // Use default
+    }
+  };
+
+  const handleSaveDailyReportTime = async () => {
+    setSavingReportTime(true);
+    setReportTimeSuccess(false);
+    try {
+      const res = await fetch(
+        `${apiBase}/api/ai-screenshot-report/config/daily-report-time?time=${dailyReportTime}`,
+        { method: "POST", headers: authHeaders as HeadersInit }
+      );
+      if (res.ok) {
+        setReportTimeSuccess(true);
+        setTimeout(() => setReportTimeSuccess(false), 3000);
+      }
+    } finally {
+      setSavingReportTime(false);
     }
   };
 
@@ -398,7 +440,7 @@ export default function SettingsPage() {
               </div>
             )}
             {locationSuccess && (
-              <div className="flex items-center rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-[12.5px] font-medium text-emerald-600">
+              <div className="flex items-center rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-[12.5px] font-medium text-brand">
                 <Check className="w-4 h-4 mr-3 flex-shrink-0" />
                 Office location saved successfully!
               </div>
@@ -415,6 +457,55 @@ export default function SettingsPage() {
           </form>
         </div>
         ) : null}
+      </div>
+
+      {/* ── Daily Report Time ── */}
+      <div className="rounded-2xl border border-border bg-card shadow-sm">
+        <div className="flex items-center justify-between px-5 py-4">
+          <span className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand/15 text-brand">
+              <Clock className="w-[18px] h-[18px]" />
+            </div>
+            <span>
+              <h2 className="text-[14px] font-semibold text-foreground">Daily Report Schedule</h2>
+              <span className="mt-0.5 block text-[12.5px] text-muted-foreground">
+                Set the time when daily reports are auto-generated for all employees.
+              </span>
+            </span>
+          </span>
+        </div>
+        <div className="border-t border-border px-5 py-4 space-y-4">
+          <div>
+            <label className="mb-1 block text-[11.5px] font-medium text-muted-foreground">Report Generation Time (24h)</label>
+            <div className="flex items-center gap-3">
+              <input
+                type="time"
+                value={dailyReportTime}
+                onChange={(e) => setDailyReportTime(e.target.value)}
+                className="block h-9 rounded-lg border border-border bg-background px-3 text-[13px] font-medium text-foreground outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 transition"
+              />
+              <button
+                type="button"
+                onClick={handleSaveDailyReportTime}
+                disabled={savingReportTime || !dailyReportTime}
+                className="inline-flex h-9 items-center rounded-lg bg-brand px-4 text-[12.5px] font-medium text-white shadow-sm hover:bg-brand-dark transition disabled:opacity-50"
+              >
+                <Save className="w-4 h-4 mr-2" />
+                {savingReportTime ? "Saving..." : "Save Time"}
+              </button>
+            </div>
+            {reportTimeSuccess && (
+              <p className="mt-2 text-[11.5px] font-medium text-brand flex items-center gap-1.5">
+                <Check className="h-3.5 w-3.5" />
+                Report time updated successfully
+              </p>
+            )}
+          </div>
+          <div className="rounded-lg bg-muted/40 px-4 py-3 text-[12px] text-muted-foreground leading-relaxed">
+            Daily reports are generated at the configured time each day, summarizing what each employee worked on.
+            These include activity breakdown, top tasks, focus distribution, and more.
+          </div>
+        </div>
       </div>
 
       <div className="rounded-2xl border border-border bg-card shadow-sm">
@@ -452,7 +543,7 @@ export default function SettingsPage() {
             </div>
           )}
           {settingsSuccess && (
-            <div className="flex items-center rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-[12.5px] font-medium text-emerald-600">
+            <div className="flex items-center rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-[12.5px] font-medium text-brand">
               <Check className="w-4 h-4 mr-3 flex-shrink-0" />
               Settings saved successfully!
             </div>

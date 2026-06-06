@@ -11,8 +11,8 @@ from database_manager import DatabaseManager
 
 
 CATEGORIES = ("Work", "Learning", "Communication", "Leisure", "Other")
-FOCUS_WEIGHT = {"Deep Work": 1.0, "Medium": 0.65, "Distraction": 0.0}
-CATEGORY_WEIGHT = {"Work": 1.0, "Learning": 0.85, "Communication": 0.7, "Other": 0.45, "Leisure": 0.0}
+FOCUS_WEIGHT = {"Deep Work": 1.0, "Medium": 0.35, "Distraction": 0.0}
+CATEGORY_WEIGHT = {"Work": 1.0, "Learning": 0.85, "Communication": 0.4, "Other": 0.1, "Leisure": 0.0}
 
 
 def format_duration(seconds: int) -> str:
@@ -91,7 +91,13 @@ class DailyReportGenerator:
             category = row["category"] or "Other"
             focus = row["focus_level"] or "Medium"
             task = row["task"] or "Unknown"
+            app = row["application_name"] or ""
             captured = datetime.fromisoformat(row["captured_at"])
+            # Blank/unidentifiable screenshots (no app, no text, blank screen) → treat as idle
+            if not app.strip() and (not row.get("visible_text") or not row["visible_text"].strip()):
+                category = "Other"
+                focus = "Distraction"
+                task = "Idle / Blank screen"
             category_seconds[category] = category_seconds.get(category, 0) + seconds
             task_seconds[task] += seconds
             hourly_focus_values[captured.hour].append(focus)
@@ -124,6 +130,7 @@ class DailyReportGenerator:
             productivity_score=productivity_score,
             category_breakdown=category_breakdown,
             task_details=task_details,
+            distraction_count=len(distraction_alerts),
         )
         report_markdown = self._render_markdown(
             title,
@@ -132,7 +139,7 @@ class DailyReportGenerator:
             len(rows),
             total_seconds,
             productivity_score,
-            executive_summary,
+            executive_summary["summary_text"],
             category_breakdown,
             top_tasks,
             hourly_focus,
@@ -148,7 +155,11 @@ class DailyReportGenerator:
             "total_seconds": total_seconds,
             "total_duration": format_duration(total_seconds),
             "productivity_score": productivity_score,
-            "executive_summary": executive_summary,
+            "rating": executive_summary["rating"],
+            "executive_summary": executive_summary["summary_text"],
+            "score_explanation": executive_summary["score_explanation"],
+            "top_issue": executive_summary["top_issue"] or "No major issues.",
+            "distraction_summary": executive_summary["distraction_summary"],
             "category_breakdown": category_breakdown,
             "top_tasks": top_tasks,
             "hourly_focus": hourly_focus,
@@ -207,19 +218,127 @@ class DailyReportGenerator:
         productivity_score: int,
         category_breakdown: list[dict[str, Any]],
         task_details: list[dict[str, Any]],
-    ) -> str:
+        distraction_count: int = 0,
+    ) -> dict:
         primary_category = max(category_breakdown, key=lambda item: item["duration_seconds"], default={"category": "Other", "percentage": 0})
         main_task = task_details[0] if task_details else None
         if not main_task:
             return "No clear work pattern could be inferred from the analyzed screenshots."
 
         apps = ", ".join(main_task["applications"]) or "unknown apps"
-        return (
-            f"Across {analyzed_count} analyzed screenshots ({format_duration(total_seconds)}), activity was mostly "
-            f"{primary_category['category']} ({primary_category['percentage']}%). The main work pattern was "
-            f"{main_task['task']} in {apps}, with {main_task['primary_focus']} focus. "
-            f"Overall productivity score is {productivity_score}/100."
-        )
+
+        # Build a detailed breakdown string
+        cat_lines = []
+        for cat in sorted(category_breakdown, key=lambda c: c["percentage"], reverse=True):
+            cat_lines.append(f"{cat['category']}: {cat['duration']} ({cat['percentage']}%)")
+
+        # Top tasks summary
+        task_lines = []
+        for task in task_details[:4]:
+            task_lines.append(f"  - {task['task']}: {task['duration']} in {', '.join(task['applications'][:2])}")
+
+        # Find distractions/unnecessary activities
+        distractions = [t for t in task_details if t["primary_category"] == "Leisure"]
+        distraction_lines = []
+        for d in distractions:
+            distraction_lines.append(f"  - {d['task']}: {d['duration']} (unnecessary)")
+
+        duration_str = format_duration(total_seconds)
+
+        # Score interpretation
+        if productivity_score >= 90:
+            score_assessment = "Excellent productivity"
+            rating = "excellent"
+        elif productivity_score >= 75:
+            score_assessment = "Good productivity"
+            rating = "good"
+        elif productivity_score >= 60:
+            score_assessment = "Average productivity — some improvements needed"
+            rating = "average"
+        elif productivity_score >= 40:
+            score_assessment = "Below average productivity — significant room for improvement"
+            rating = "below_average"
+        else:
+            score_assessment = "Poor productivity — major focus issues detected"
+            rating = "poor"
+
+        # Score explanation — WHY the score is what it is
+        work_pct = next((c["percentage"] for c in category_breakdown if c["category"] == "Work"), 0)
+        learn_pct = next((c["percentage"] for c in category_breakdown if c["category"] == "Learning"), 0)
+        comm_pct = next((c["percentage"] for c in category_breakdown if c["category"] == "Communication"), 0)
+        leisure_pct = next((c["percentage"] for c in category_breakdown if c["category"] == "Leisure"), 0)
+        other_pct = next((c["percentage"] for c in category_breakdown if c["category"] == "Other"), 0)
+
+        score_parts = []
+        if work_pct > 0:
+            score_parts.append(f"**{work_pct}%** Work")
+        if learn_pct > 0:
+            score_parts.append(f"**{learn_pct}%** Learning")
+        if comm_pct > 0:
+            score_parts.append(f"**{comm_pct}%** Communication")
+        if leisure_pct > 0:
+            score_parts.append(f"**{leisure_pct}%** Leisure (⚠️ unproductive)")
+        if other_pct > 0:
+            score_parts.append(f"**{other_pct}%** Other")
+
+        breakdown_str = " | ".join(score_parts)
+
+        # Determine what caused low score
+        low_score_reasons = []
+        if leisure_pct >= 20:
+            low_score_reasons.append(f"⚠️ **{leisure_pct}%** time spent on Leisure activities (non-work)")
+        if other_pct >= 30:
+            low_score_reasons.append(f"⚠️ **{other_pct}%** time spent on unclassified/Other activities")
+        if work_pct < 30 and comm_pct > 50:
+            low_score_reasons.append(f"⚡ Too much time ({comm_pct}%) in Communication — emails/chats instead of actual work")
+        if work_pct < 20:
+            low_score_reasons.append(f"⚡ Very little time ({work_pct}%) spent on core work tasks")
+        if productivity_score < 60 and not low_score_reasons:
+            low_score_reasons.append("Mixed focus across tasks — no single deep work block detected")
+
+        top_issue = low_score_reasons[0] if low_score_reasons else None
+
+        score_explanation = f"Score {productivity_score} — {score_assessment}. Breakdown: {breakdown_str}."
+        if low_score_reasons:
+            score_explanation += f"\n\n**Why score is {productivity_score}:**"
+            for reason in low_score_reasons:
+                score_explanation += f"\n• {reason}"
+
+        # Distraction summary
+        dist_count = distraction_count
+        if dist_count > 0:
+            distraction_summary = f"⚠️ **{dist_count} distraction(s) detected** in this period. The employee was browsing non-work content."
+        else:
+            distraction_summary = "✅ No distractions detected in this period."
+
+        lines = [
+            f"**{score_assessment}** ({productivity_score}/100). Analyzed {analyzed_count} screenshots over {duration_str}.",
+            f"Primary activity: **{primary_category['category']}** ({primary_category['percentage']}%) — {main_task['task']} in {apps}.",
+            "",
+            "**Category Breakdown:**",
+        ]
+        lines.extend(f"  • {cl}" for cl in cat_lines)
+        lines.append("")
+        lines.append("**Top Tasks Completed:**")
+        lines.extend(task_lines)
+
+        if distraction_lines:
+            lines.append("")
+            lines.append("**⚠️ Distractions / Unnecessary Activities:**")
+            lines.extend(distraction_lines)
+
+        lines.append("")
+        lines.append(f"**Focus Level:** {main_task['primary_focus']}")
+        if top_issue:
+            lines.append(f"**⚠️ Key Issue:** {top_issue}")
+
+        return {
+            "summary_text": "\n".join(lines),
+            "rating": rating,
+            "score_explanation": score_explanation,
+            "top_issue": top_issue,
+            "distraction_summary": distraction_summary,
+        }
 
     def _activity_timeline(self, rows: list[Any], durations: list[int]) -> list[dict[str, Any]]:
         timeline: list[dict[str, Any]] = []

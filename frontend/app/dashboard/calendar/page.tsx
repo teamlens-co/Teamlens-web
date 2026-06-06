@@ -203,15 +203,15 @@ export default function CalendarView() {
         </div>
 
         {/* monthly summary strip */}
-        <div className="grid grid-cols-3 divide-x divide-slate-100 bg-slate-50/60">
+        <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 divide-x-0 sm:divide-x divide-slate-100 bg-slate-50/60">
           {[
             { label: "Total Work", value: fmtFull(monthWork) },
             { label: "Active Time", value: fmtFull(monthActive) },
             { label: "Avg / Active Day", value: activeDays > 0 ? fmtShort(Math.floor(monthWork / activeDays)) : "—" },
           ].map(({ label, value }) => (
-            <div key={label} className="px-6 py-4">
+            <div key={label} className="px-6 py-3 sm:py-4">
               <p className="text-xs font-medium text-slate-400">{label}</p>
-              <p className="mt-1 text-2xl font-medium text-slate-900">{value}</p>
+              <p className="mt-1 text-xl sm:text-2xl font-medium text-slate-900">{value}</p>
             </div>
           ))}
         </div>
@@ -304,7 +304,7 @@ export default function CalendarView() {
           {detail && !detailLoading && (
             <>
               {/* stat cards */}
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                 {[
                   { icon: Clock, iconCls: "text-indigo-600", bg: "bg-indigo-50", label: "Work Time", value: fmtFull(detail.workSeconds) },
                   { icon: Activity, iconCls: "text-emerald-600", bg: "bg-emerald-50", label: "Active Time", value: fmtFull(detail.activeSeconds) },

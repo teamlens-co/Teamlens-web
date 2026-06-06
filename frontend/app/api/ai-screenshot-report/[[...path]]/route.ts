@@ -16,7 +16,7 @@ async function proxyRequest(
 ): Promise<NextResponse> {
   const url = new URL(request.url);
   const subPath = "/" + (params.path?.join("/") || "");
-  const sidecarPath = ENDPOINT_MAP[subPath] || "/summary";
+  const sidecarPath = ENDPOINT_MAP[subPath] || subPath;
   const sidecarUrl = new URL(sidecarPath, SIDECAR_URL);
 
   url.searchParams.forEach((value, key) => {

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 const DOWNLOAD_CONFIG_ERROR =
   "Agent download is not configured. Please contact support.";
-const LOCAL_AGENT_DOWNLOAD_PATH = "/downloads/TeamLens_0.1.2_x64-setup.exe";
+const LOCAL_AGENT_DOWNLOAD_PATH = "/downloads/TeamLens_0.1.1_x64_en-US.msi";
 
 function resolveDownloadUrl(): string | null {
   const configuredUrl =
@@ -38,5 +38,7 @@ export function GET(request: Request) {
     );
   }
 
-  return NextResponse.redirect(new URL(downloadUrl, request.url), { status: 302 });
+  const host = request.headers.get("host") || new URL(request.url).host;
+  const protocol = request.headers.get("x-forwarded-proto") || "https";
+  return NextResponse.redirect(new URL(downloadUrl, `${protocol}://${host}`), { status: 302 });
 }

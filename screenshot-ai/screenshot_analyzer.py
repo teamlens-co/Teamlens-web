@@ -15,38 +15,47 @@ from PIL import Image
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 
-ANALYSIS_PROMPT = """You are analyzing an employee productivity screenshot.
+ANALYSIS_PROMPT = """You are a STRICT employee productivity auditor. Your job is to analyze screenshots and determine if the employee is actually working or wasting time.
 
 Return ONLY valid JSON. No markdown. No extra text.
 
 Analyze the screenshot and infer:
-- application_name: the main visible app, such as VS Code, Chrome, Word, Excel, Slack, Terminal, Unknown
-- task: concise human-readable task, max 8 words
-- category: one of Work, Learning, Communication, Leisure, Other
-- focus_level: one of Deep Work, Medium, Distraction
-- visible_text: only important readable text, max 300 characters
+- application_name: the main visible app (VS Code, Chrome, Word, Excel, Slack, Terminal, Notion, Figma, or EXACT website name like Amazon, YouTube, Netflix, Instagram, etc.)
+- task: detailed description of what the employee is doing, max 15 words
+- category: one of Work, Learning, Communication, Leisure, Other — BE STRICT
+- focus_level: one of Deep Work, Medium, Distraction — BE STRICT
+- visible_text: important readable text showing actual work content, max 400 characters. Include document titles, code function names, ticket IDs, or page titles
 - confidence: number from 0 to 1
-- reasoning_short: max 20 words
+- reasoning_short: explain WHY you classified it this way, max 40 words
+- manager_summary: one-line summary for manager, max 20 words
 
-Rules:
-- Do not identify private people.
-- Do not transcribe secrets, passwords, tokens, financial numbers, or sensitive personal data. Replace such content with [REDACTED].
-- If the screen is unclear, use Unknown and lower confidence.
-- Classify coding, document writing, design, analytics, admin tools, and project management as Work.
-- Classify tutorials, docs, courses, and technical articles as Learning.
-- Classify email, chat, meetings, and messaging as Communication.
-- Classify social media, entertainment, shopping, games, and non-work video as Leisure.
-- Use Deep Work for focused creation/problem-solving, Medium for browsing/admin/mixed work, Distraction for leisure or unrelated activity.
+CRITICAL — STRICT Classification Rules:
+- Real Work (coding, debugging, PR reviews, document writing, design, analytics, admin panels, project management tickets): → Work
+- Learning that directly helps work (tech docs, tutorials, courses): → Learning
+- Work communication (Slack about projects, email about work, standups, meetings): → Communication
+- SOCIAL MEDIA (Instagram, Twitter/X, Facebook, Reddit, LinkedIn browsing without purpose): → Leisure + Distraction
+- SHOPPING (Amazon, Flipkart, Myntra, any ecommerce browsing): → Leisure + Distraction
+- STREAMING (YouTube entertainment, Netflix, Prime, Hotstar, any OTT, sports streaming): → Leisure + Distraction
+- GAMING (any game): → Leisure + Distraction
+- NEWS/SPORTS unrelated to work: → Leisure + Distraction
+- BLANK/LOCK screen, login screen, idle desktop: → Other + Medium
+- NON-WORK browsing (random articles, Wikipedia rabbit holes, celebrity news, gossip): → Leisure + Distraction
+- Phone mirroring / screen casting: → Leisure + Distraction
+- Just scrolling with no clear purpose: → Leisure + Distraction
+- Purposeful browsing for work (researching API docs, reading tech blogs, checking work emails): → Work or Learning, NOT Leisure
+
+HARD RULE: If the screen shows entertainment, social media, shopping, gaming, sports, or non-educational video → ALWAYS classify as "Leisure" + "Distraction" regardless of anything else.
 
 Expected JSON shape:
 {
   "application_name": "VS Code",
-  "task": "coding Python API",
+  "task": "debugging Django payment API - fixing Stripe webhook timeout",
   "category": "Work",
   "focus_level": "Deep Work",
-  "visible_text": "main important text only",
-  "confidence": 0.86,
-  "reasoning_short": "Editor with Python backend files visible"
+  "visible_text": "def handle_stripe_webhook(request): ... except TimeoutError: ... payment.py line 142",
+  "confidence": 0.88,
+  "reasoning_short": "VS Code open with Python/Django backend code, Stripe integration visible, active debugging session",
+  "manager_summary": "Working on Stripe payment integration - debugging webhook timeout"
 }
 """
 
@@ -62,6 +71,7 @@ class ScreenshotAnalysis(BaseModel):
     visible_text: str = ""
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     reasoning_short: str = ""
+    manager_summary: str = ""
 
     @field_validator("category")
     @classmethod
@@ -77,16 +87,22 @@ class ScreenshotAnalysis(BaseModel):
     @classmethod
     def trim_task(cls, value: str) -> str:
         words = value.strip().split()
-        return " ".join(words[:8]) if words else "Unknown"
+        return " ".join(words[:15]) if words else "Unknown"
 
     @field_validator("visible_text")
     @classmethod
     def trim_visible_text(cls, value: str) -> str:
-        return value.strip()[:300]
+        return value.strip()[:400]
 
     @field_validator("reasoning_short")
     @classmethod
     def trim_reasoning(cls, value: str) -> str:
+        words = value.strip().split()
+        return " ".join(words[:40])
+
+    @field_validator("manager_summary")
+    @classmethod
+    def trim_manager_summary(cls, value: str) -> str:
         words = value.strip().split()
         return " ".join(words[:20])
 

@@ -435,13 +435,13 @@ class DatabaseManager:
                 (key, value),
             )
 
-    def get_last_processed_id(self) -> str:
-        """Get the last processed screenshot ID (cursor for polling)."""
-        return self.get_state("last_processed_id", "")
+    def get_last_processed_captured_at(self) -> str:
+        """Get the last processed screenshot captured_at ISO string (cursor for polling)."""
+        return self.get_state("last_processed_captured_at", "")
 
-    def set_last_processed_id(self, id_val: str) -> None:
-        """Store the last processed screenshot ID (cursor for polling)."""
-        self.set_state("last_processed_id", id_val)
+    def set_last_processed_captured_at(self, captured_at: str) -> None:
+        """Store the last processed screenshot captured_at ISO string (cursor for polling)."""
+        self.set_state("last_processed_captured_at", captured_at)
 
     # ── Periodic Summaries ──────────────────────────────────────────────
 
@@ -541,3 +541,39 @@ class DatabaseManager:
                 """,
             ).fetchall()
             return [dict(row) for row in rows]
+
+    # ── Daily Report Time Configuration ─────────────────────────────────
+
+    def get_daily_report_time(self, default: str = "18:00") -> str:
+        """Get the configured daily report generation time (HH:MM format, 24h)."""
+        return self.get_org_config("daily_report_time", default)
+
+    def set_daily_report_time(self, time_str: str) -> None:
+        """Set the daily report generation time."""
+        self.set_org_config("daily_report_time", time_str)
+
+    def list_daily_reports_for_date(self, report_date: str) -> list[dict[str, Any]]:
+        """Get all daily reports for a given date (YYYY-MM-DD)."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM daily_reports WHERE report_date = ? ORDER BY user_id ASC",
+                (report_date,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_daily_report(self, user_id: str, report_date: str) -> dict[str, Any] | None:
+        """Get a single user's daily report."""
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM daily_reports WHERE user_id = ? AND report_date = ?",
+                (user_id, report_date),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def list_daily_report_dates(self) -> list[str]:
+        """List all dates that have reports, newest first."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT report_date FROM daily_reports ORDER BY report_date DESC"
+            ).fetchall()
+            return [r["report_date"] for r in rows]
