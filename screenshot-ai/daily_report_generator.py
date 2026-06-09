@@ -223,25 +223,13 @@ class DailyReportGenerator:
         primary_category = max(category_breakdown, key=lambda item: item["duration_seconds"], default={"category": "Other", "percentage": 0})
         main_task = task_details[0] if task_details else None
         if not main_task:
-            return "No clear work pattern could be inferred from the analyzed screenshots."
-
-        apps = ", ".join(main_task["applications"]) or "unknown apps"
-
-        # Build a detailed breakdown string
-        cat_lines = []
-        for cat in sorted(category_breakdown, key=lambda c: c["percentage"], reverse=True):
-            cat_lines.append(f"{cat['category']}: {cat['duration']} ({cat['percentage']}%)")
-
-        # Top tasks summary
-        task_lines = []
-        for task in task_details[:4]:
-            task_lines.append(f"  - {task['task']}: {task['duration']} in {', '.join(task['applications'][:2])}")
-
-        # Find distractions/unnecessary activities
-        distractions = [t for t in task_details if t["primary_category"] == "Leisure"]
-        distraction_lines = []
-        for d in distractions:
-            distraction_lines.append(f"  - {d['task']}: {d['duration']} (unnecessary)")
+            return {
+                "summary_text": "No clear work pattern could be inferred from the analyzed screenshots.",
+                "rating": "unknown",
+                "score_explanation": "Insufficient data to calculate a score.",
+                "top_issue": None,
+                "distraction_summary": "No screenshots were analyzed.",
+            }
 
         duration_str = format_duration(total_seconds)
 
@@ -262,78 +250,100 @@ class DailyReportGenerator:
             score_assessment = "Poor productivity — major focus issues detected"
             rating = "poor"
 
-        # Score explanation — WHY the score is what it is
+        # What they spent most time on — as a natural summary
+        top_tasks_text = main_task["task"]
+        top_apps = ", ".join(main_task["applications"][:2]) if main_task.get("applications") else "their computer"
+
+        # Build category breakdown naturally
         work_pct = next((c["percentage"] for c in category_breakdown if c["category"] == "Work"), 0)
         learn_pct = next((c["percentage"] for c in category_breakdown if c["category"] == "Learning"), 0)
         comm_pct = next((c["percentage"] for c in category_breakdown if c["category"] == "Communication"), 0)
         leisure_pct = next((c["percentage"] for c in category_breakdown if c["category"] == "Leisure"), 0)
         other_pct = next((c["percentage"] for c in category_breakdown if c["category"] == "Other"), 0)
 
-        score_parts = []
-        if work_pct > 0:
-            score_parts.append(f"**{work_pct}%** Work")
-        if learn_pct > 0:
-            score_parts.append(f"**{learn_pct}%** Learning")
-        if comm_pct > 0:
-            score_parts.append(f"**{comm_pct}%** Communication")
-        if leisure_pct > 0:
-            score_parts.append(f"**{leisure_pct}%** Leisure (⚠️ unproductive)")
-        if other_pct > 0:
-            score_parts.append(f"**{other_pct}%** Other")
+        # Primary activity sentence
+        primary_activity_parts = []
+        if work_pct >= 50:
+            primary_activity_parts.append(f"most of their time ({work_pct}%) on work-related tasks")
+        elif work_pct >= 30:
+            primary_activity_parts.append(f"a significant portion ({work_pct}%) on work tasks")
+        else:
+            primary_activity_parts.append(f"only {work_pct}% of their time on actual work")
 
-        breakdown_str = " | ".join(score_parts)
+        if comm_pct >= 30:
+            primary_activity_parts.append(f"and spent {comm_pct}% on emails and messages")
+        if learn_pct >= 20:
+            primary_activity_parts.append(f"with {learn_pct}% dedicated to learning")
 
-        # Determine what caused low score
+        primary_activity_str = " ".join(primary_activity_parts) if primary_activity_parts else f"spent {work_pct}% on work and {comm_pct}% on communication"
+
+        # Build natural summary text — flowing paragraph
+        summary_sentences = []
+
+        # Sentence 1: Overall score + what they did broadly
+        summary_sentences.append(
+            f"{score_assessment} ({productivity_score}/100). "
+            f"Over {duration_str} ({analyzed_count} screenshots analyzed), "
+            f"this employee was primarily focused on {top_tasks_text} "
+            f"using {top_apps}. "
+            f"They spent {primary_activity_str}."
+        )
+
+        # Sentence 2-3: Other tasks they worked on
+        if len(task_details) > 1:
+            other_tasks = task_details[1:4]
+            other_task_parts = []
+            for t in other_tasks:
+                task_apps = ", ".join(t["applications"][:1]) if t.get("applications") else "various tools"
+                other_task_parts.append(f"{t['task']} ({t['duration']}) in {task_apps}")
+            if other_task_parts:
+                summary_sentences.append(
+                    "Other activities included " + ", ".join(other_task_parts[:-1]) + (" and " + other_task_parts[-1] if len(other_task_parts) > 1 else other_task_parts[0]) + "."
+                )
+
+        # Sentence 3: Distractions if any
+        if distraction_count > 0:
+            dist_task = next((t for t in task_details if t["primary_category"] == "Leisure"), None)
+            if dist_task:
+                summary_sentences.append(
+                    f"However, there were {distraction_count} detected distraction{'s' if distraction_count > 1 else ''} "
+                    f"including {dist_task['task']} ({dist_task['duration']}), which impacted overall productivity."
+                )
+        else:
+            pass  # No news is good news — skip
+
+        # Score explanation
         low_score_reasons = []
         if leisure_pct >= 20:
-            low_score_reasons.append(f"⚠️ **{leisure_pct}%** time spent on Leisure activities (non-work)")
+            low_score_reasons.append(f"{leisure_pct}% time spent on non-work Leisure activities")
         if other_pct >= 30:
-            low_score_reasons.append(f"⚠️ **{other_pct}%** time spent on unclassified/Other activities")
+            low_score_reasons.append(f"{other_pct}% time in unclassified activities")
         if work_pct < 30 and comm_pct > 50:
-            low_score_reasons.append(f"⚡ Too much time ({comm_pct}%) in Communication — emails/chats instead of actual work")
+            low_score_reasons.append(f"too much time ({comm_pct}%) on communication instead of core work")
         if work_pct < 20:
-            low_score_reasons.append(f"⚡ Very little time ({work_pct}%) spent on core work tasks")
+            low_score_reasons.append(f"very little time ({work_pct}%) on core work tasks")
         if productivity_score < 60 and not low_score_reasons:
-            low_score_reasons.append("Mixed focus across tasks — no single deep work block detected")
+            low_score_reasons.append("no sustained deep work blocks detected")
 
         top_issue = low_score_reasons[0] if low_score_reasons else None
 
-        score_explanation = f"Score {productivity_score} — {score_assessment}. Breakdown: {breakdown_str}."
+        score_explanation = f"Score {productivity_score} — {score_assessment}. "
+        # Category breakdown for score_explanation
+        cat_parts = [f"{c['category']} {c['percentage']}%" for c in sorted(category_breakdown, key=lambda x: x['percentage'], reverse=True) if c['percentage'] > 0]
+        if cat_parts:
+            score_explanation += "Breakdown: " + ", ".join(cat_parts) + ". "
         if low_score_reasons:
-            score_explanation += f"\n\n**Why score is {productivity_score}:**"
-            for reason in low_score_reasons:
-                score_explanation += f"\n• {reason}"
+            score_explanation += "Why score is " + str(productivity_score) + ": "
+            score_explanation += "; ".join(low_score_reasons) + "."
 
         # Distraction summary
-        dist_count = distraction_count
-        if dist_count > 0:
-            distraction_summary = f"⚠️ **{dist_count} distraction(s) detected** in this period. The employee was browsing non-work content."
+        if distraction_count > 0:
+            distraction_summary = f"{distraction_count} distraction(s) detected during this period."
         else:
-            distraction_summary = "✅ No distractions detected in this period."
-
-        lines = [
-            f"**{score_assessment}** ({productivity_score}/100). Analyzed {analyzed_count} screenshots over {duration_str}.",
-            f"Primary activity: **{primary_category['category']}** ({primary_category['percentage']}%) — {main_task['task']} in {apps}.",
-            "",
-            "**Category Breakdown:**",
-        ]
-        lines.extend(f"  • {cl}" for cl in cat_lines)
-        lines.append("")
-        lines.append("**Top Tasks Completed:**")
-        lines.extend(task_lines)
-
-        if distraction_lines:
-            lines.append("")
-            lines.append("**⚠️ Distractions / Unnecessary Activities:**")
-            lines.extend(distraction_lines)
-
-        lines.append("")
-        lines.append(f"**Focus Level:** {main_task['primary_focus']}")
-        if top_issue:
-            lines.append(f"**⚠️ Key Issue:** {top_issue}")
+            distraction_summary = "No distractions detected in this period."
 
         return {
-            "summary_text": "\n".join(lines),
+            "summary_text": " ".join(summary_sentences),
             "rating": rating,
             "score_explanation": score_explanation,
             "top_issue": top_issue,

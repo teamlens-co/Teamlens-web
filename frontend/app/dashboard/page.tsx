@@ -210,7 +210,7 @@ export default function DashboardOverview() {
         scopedUsers.slice(0, 50).map(async (employee) => {
           const params = new URLSearchParams({
             userId: employee.id,
-            limit: "200",
+            limit: "5000",
             ...rangeParams,
           });
           const response = await fetch(`${apiBase}/api/agent/screenshots?${params.toString()}`, {

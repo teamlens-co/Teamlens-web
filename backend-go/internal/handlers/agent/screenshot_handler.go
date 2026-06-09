@@ -141,8 +141,8 @@ func (h *ScreenshotHandler) List(w http.ResponseWriter, r *http.Request) {
 	if limit <= 0 {
 		limit = 50
 	}
-	if limit > 200 {
-		limit = 200
+	if limit > 5000 {
+		limit = 5000
 	}
 
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))

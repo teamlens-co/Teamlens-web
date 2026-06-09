@@ -220,6 +220,45 @@ func (h *RecordingHandler) ServeFile(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, fullPath)
 }
 
+// ServeFileByID looks up a recording by ID and serves its file
+func (h *RecordingHandler) ServeFileByID(w http.ResponseWriter, r *http.Request) {
+	auth := middleware.GetAuthContext(r.Context())
+	if auth == nil {
+		middleware.Error(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	recordingID := r.PathValue("recordingId")
+	if recordingID == "" {
+		middleware.Error(w, http.StatusBadRequest, "Recording ID is required")
+		return
+	}
+
+	recording, err := h.recordingSvc.GetRecordingByID(r.Context(), recordingID)
+	if err != nil {
+		middleware.Error(w, http.StatusNotFound, "Recording not found")
+		return
+	}
+
+	// Check access
+	if recording.OrganizationID != auth.OrganizationID {
+		middleware.Error(w, http.StatusForbidden, "Forbidden")
+		return
+	}
+
+	fullPath := recording.FilePath
+	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		// Try with uploadDir prefix
+		fullPath = filepath.Join(h.uploadDir, recording.FilePath)
+		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+			middleware.Error(w, http.StatusNotFound, "File not found on disk")
+			return
+		}
+	}
+
+	http.ServeFile(w, r, fullPath)
+}
+
 func (h *RecordingHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	auth := middleware.GetAuthContext(r.Context())
 	if auth == nil {

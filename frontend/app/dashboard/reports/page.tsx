@@ -282,9 +282,9 @@ export default function ReportsPage() {
         </div>
       </header>
 
-      <div className="rounded-xl border border-[#DDD2C9] bg-white px-4 py-3 text-[13px] text-[#7E6F65]">
-        <span>Showing apps and websites for {currentFilterLabel}. Pick an employee or team above for a focused report.</span>
-      </div>
+      <p className="text-[13px] text-[#7E6F65]">
+        Showing apps and websites for <strong className="font-semibold text-[#171717]">{currentFilterLabel}</strong>. Pick an employee or team above for a focused report.
+      </p>
 
       <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
         <section className="overflow-hidden rounded-xl border border-[#DDD2C9] bg-white">

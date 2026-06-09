@@ -237,7 +237,7 @@ const inferUrlFromTitle = (title: string, browserUrl?: string): string | undefin
 
 const invalidDomainSuffixes = new Set(["app", "css", "html", "js", "jsx", "json", "md", "py", "rs", "tsx", "ts", "txt", "vue", "xml"]);
 const SCREENSHOT_INTERVAL_MIN_MS = 30_000;
-const SCREENSHOT_INTERVAL_MAX_MS = 120_000;
+const SCREENSHOT_INTERVAL_MAX_MS = 30_000;
 
 const nextScreenshotDelayMs = () =>
   Math.floor(Math.random() * (SCREENSHOT_INTERVAL_MAX_MS - SCREENSHOT_INTERVAL_MIN_MS + 1)) + SCREENSHOT_INTERVAL_MIN_MS;

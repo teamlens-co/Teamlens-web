@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Video, Download, Trash2, Clock, User, Calendar, HardDrive, Play, Search } from "lucide-react";
+import { Video, Download, Trash2, Clock, User, Calendar, HardDrive, Play, Search, FastForward, Rewind } from "lucide-react";
 import { useAuth } from "../../../contexts/AuthContext";
 
 type Recording = {
@@ -55,6 +55,7 @@ export default function RecordingsPage() {
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [teamUsers, setTeamUsers] = useState<{ id: string; fullName: string; email: string }[]>([]);
@@ -259,7 +260,38 @@ export default function RecordingsPage() {
               autoPlay
               className="w-full h-full object-contain"
               id="recording-video-player"
+              ref={(el) => {
+                if (el) el.playbackRate = playbackSpeed;
+              }}
             />
+          </div>
+          {/* Playback speed controls */}
+          <div className="flex items-center justify-between border-t border-[#EFE8E2] px-5 py-2.5">
+            <div className="flex items-center gap-1.5">
+              <FastForward className="h-3.5 w-3.5 text-[#8C837B]" strokeWidth={2} />
+              <span className="text-[11px] font-medium text-[#8C837B] mr-1">Speed</span>
+              {[0.5, 1, 1.5, 2].map((speed) => (
+                <button
+                  key={speed}
+                  type="button"
+                  onClick={() => {
+                    setPlaybackSpeed(speed);
+                    const video = document.getElementById("recording-video-player") as HTMLVideoElement | null;
+                    if (video) video.playbackRate = speed;
+                  }}
+                  className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all ${
+                    playbackSpeed === speed
+                      ? "bg-brand text-white shadow-sm"
+                      : "bg-[#F1ECE7] text-[#7E6F65] hover:bg-[#E5DDD6]"
+                  }`}
+                >
+                  {speed}x
+                </button>
+              ))}
+            </div>
+            <span className="text-[10px] font-medium text-[#9A9088]">
+              {playbackSpeed !== 1 ? `Playing at ${playbackSpeed}x speed` : "Normal speed"}
+            </span>
           </div>
         </div>
       )}
@@ -288,14 +320,17 @@ export default function RecordingsPage() {
               {recs.map((recording) => (
                 <div
                   key={recording.id}
-                  className={`flex items-center gap-4 px-5 py-4 transition-colors hover:bg-[#FCFAF8] ${
+                  className={`flex flex-wrap items-center gap-3 px-4 py-3 sm:px-5 sm:py-4 transition-colors hover:bg-[#FCFAF8] ${
                     playingId === recording.id ? "border-l-2 border-l-brand bg-[#FDEBE5]/45" : ""
                   }`}
                 >
                   <button
                     type="button"
-                    onClick={() => setPlayingId(playingId === recording.id ? null : recording.id)}
-                    className="group relative flex h-14 w-20 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#171717] transition-colors hover:bg-[#302C28]"
+                    onClick={() => {
+                      setPlayingId(playingId === recording.id ? null : recording.id);
+                      if (playingId !== recording.id) setPlaybackSpeed(1);
+                    }}
+                    className="group relative flex h-12 w-[72px] sm:h-14 sm:w-20 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#171717] transition-colors hover:bg-[#302C28]"
                     id={`play-recording-${recording.id}`}
                   >
                     <div className="absolute inset-0 bg-brand/20 opacity-0 transition-opacity group-hover:opacity-100" />
@@ -309,7 +344,7 @@ export default function RecordingsPage() {
                         {getEmployeeName(recording.employeeId)}
                       </span>
                     </div>
-                    <div className="mt-1 flex items-center gap-3 text-[12px] font-medium text-[#8C837B]">
+                    <div className="mt-1 flex items-center flex-wrap gap-x-3 gap-y-1 text-[11px] sm:text-[12px] font-medium text-[#8C837B]">
                       <span className="inline-flex items-center gap-1">
                         <Clock className="h-3 w-3" />
                         {formatTime(recording.recordedAt)}
@@ -321,24 +356,24 @@ export default function RecordingsPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 sm:gap-2 ml-auto sm:ml-0">
                     <button
                       type="button"
                       onClick={() => handleDownload(recording)}
-                      className="inline-flex items-center rounded-lg border border-[#E1D7CE] bg-white px-3 py-1.5 text-[12px] font-medium text-[#302C28] shadow-sm transition-colors hover:bg-[#FCFAF8]"
+                      className="inline-flex items-center rounded-lg border border-[#E1D7CE] bg-white px-2 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-[12px] font-medium text-[#302C28] shadow-sm transition-colors hover:bg-[#FCFAF8]"
                       id={`download-btn-${recording.id}`}
                     >
-                      <Download className="mr-1.5 h-3.5 w-3.5" />
-                      Download
+                      <Download className="mr-1 h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Download</span>
                     </button>
                     {isManager && (
                       <>
                         {deleteConfirmId === recording.id ? (
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1">
                             <button
                               type="button"
                               onClick={() => handleDelete(recording.id)}
-                              className="inline-flex items-center rounded-lg bg-[#DC2626] px-3 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-[#B91C1C]"
+                              className="inline-flex items-center rounded-lg bg-[#DC2626] px-2 sm:px-3 py-1 sm:py-1.5 text-[11px] sm:text-[12px] font-medium text-white transition-colors hover:bg-[#B91C1C]"
                               id={`confirm-delete-${recording.id}`}
                             >
                               Confirm
@@ -346,7 +381,7 @@ export default function RecordingsPage() {
                             <button
                               type="button"
                               onClick={() => setDeleteConfirmId(null)}
-                              className="inline-flex items-center rounded-lg border border-[#E1D7CE] bg-white px-3 py-1.5 text-[12px] font-medium text-[#302C28] transition-colors hover:bg-[#FCFAF8]"
+                              className="inline-flex items-center rounded-lg border border-[#E1D7CE] bg-white px-2 sm:px-3 py-1 sm:py-1.5 text-[11px] sm:text-[12px] font-medium text-[#302C28] transition-colors hover:bg-[#FCFAF8]"
                             >
                               Cancel
                             </button>
@@ -355,7 +390,7 @@ export default function RecordingsPage() {
                           <button
                             type="button"
                             onClick={() => setDeleteConfirmId(recording.id)}
-                            className="inline-flex items-center rounded-lg border border-rose-100 bg-rose-50 px-2.5 py-1.5 text-[12px] font-medium text-[#DC2626] transition-colors hover:bg-rose-100"
+                            className="inline-flex items-center rounded-lg border border-rose-100 bg-rose-50 px-2 sm:px-2.5 py-1 sm:py-1.5 text-[11px] sm:text-[12px] font-medium text-[#DC2626] transition-colors hover:bg-rose-100"
                             id={`delete-btn-${recording.id}`}
                           >
                             <Trash2 className="h-3.5 w-3.5" />

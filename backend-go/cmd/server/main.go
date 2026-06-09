@@ -156,6 +156,7 @@ func main() {
 		r.Get("/recordings/{recordingId}", webRecHandler.Get)
 		r.Delete("/recordings/{recordingId}", webRecHandler.Delete)
 		r.Get("/recordings/serve/{filePath}", webRecHandler.ServeFile)
+		r.Get("/recordings/{recordingId}/file", webRecHandler.ServeFileByID)
 
 		// Settings / Manual Time
 		r.Post("/manual-hours", webSettingsHandler.AddManualHours)

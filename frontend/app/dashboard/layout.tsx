@@ -2,12 +2,11 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Activity,
-  AlertCircle,
   BarChart2,
-  Bell,
+  BellRing,
   Briefcase,
   CalendarDays,
   Camera,
@@ -16,7 +15,6 @@ import {
   FileText,
   LayoutDashboard,
   LogOut,
-  Search,
   Settings,
   Sparkles,
   Timer,
@@ -27,6 +25,7 @@ import {
 } from "lucide-react";
 import { AuthProvider, useAuth } from "../../contexts/AuthContext";
 import TeamLensLogo from "../../components/TeamLensLogo";
+import AlertBell from "../../components/AlertBell";
 
 const isDev = process.env.NODE_ENV === "development";
 
@@ -69,6 +68,7 @@ const sidebarGroups = [
   {
     label: "System",
     links: [
+      { name: "Alert Rules", href: "/dashboard/alert-settings", icon: BellRing },
       { name: "Settings", href: "/dashboard/settings", icon: Settings },
     ],
   },
@@ -77,32 +77,7 @@ const sidebarGroups = [
 function SidebarLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [showNotifications, setShowNotifications] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  const mockNotifications = [
-    {
-      id: 1,
-      title: "Productivity Alert",
-      description: "John Doe's productivity has dropped below 50% today.",
-      time: "10 mins ago",
-      unread: true,
-    },
-    {
-      id: 2,
-      title: "New Team Member",
-      description: "Jane Smith has joined the Engineering team.",
-      time: "2 hours ago",
-      unread: true,
-    },
-    {
-      id: 3,
-      title: "System Update",
-      description: "TeamLens will be undergoing maintenance tonight at 12 AM IST.",
-      time: "5 hours ago",
-      unread: false,
-    },
-  ];
 
   const {
     user,
@@ -204,51 +179,7 @@ function SidebarLayout({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="ml-auto flex items-center gap-2">
-            <div className="relative">
-              <button 
-                onClick={() => setShowNotifications(!showNotifications)}
-                className={`relative grid h-8 w-8 place-items-center rounded-md transition-colors ${showNotifications ? "bg-accent text-primary" : "text-foreground/80 hover:bg-accent/60"}`}
-              >
-                <Bell className="h-4 w-4" strokeWidth={2} />
-                <span className="absolute right-[7px] top-[5px] h-2 w-2 rounded-full border-[1.5px] border-[var(--surface-2)] bg-[#DC3030]" />
-              </button>
-
-              {showNotifications && (
-                <>
-                  <div 
-                    className="fixed inset-0 z-40" 
-                    onClick={() => setShowNotifications(false)}
-                  />
-                  <div className="absolute right-0 mt-2 w-80 origin-top-right rounded-xl border border-border bg-[var(--surface-2)] p-2 shadow-xl z-50 animate-in fade-in zoom-in-95 duration-200">
-                    <div className="flex items-center justify-between px-3 py-2 border-b border-border mb-1">
-                      <span className="text-[12px] font-bold uppercase tracking-wider text-foreground">Notifications</span>
-                      <span className="text-[10px] font-medium text-primary hover:underline cursor-pointer">Mark all as read</span>
-                    </div>
-                    <div className="max-h-[360px] overflow-y-auto custom-scrollbar">
-                      {mockNotifications.map((notif) => (
-                        <div 
-                          key={notif.id}
-                          className={`flex flex-col gap-1 p-3 rounded-lg transition-colors cursor-pointer hover:bg-accent/40 ${notif.unread ? "bg-accent/20" : ""}`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-[13px] font-semibold text-foreground">{notif.title}</span>
-                            {notif.unread && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
-                          </div>
-                          <p className="text-[11px] leading-relaxed text-muted-foreground line-clamp-2">{notif.description}</p>
-                          <span className="text-[10px] font-medium text-[#B4AAA2] mt-1">{notif.time}</span>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="mt-1 border-t border-border pt-2 text-center">
-                      <button className="w-full py-1.5 text-[11px] font-bold text-muted-foreground hover:text-foreground transition-colors">
-                        View all activity
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-
+            <AlertBell />
             <div className="grid h-8 w-8 place-items-center rounded-full bg-foreground text-[11px] font-semibold uppercase text-[var(--surface-2)]">
                 {user.fullName
                   .split(" ")
