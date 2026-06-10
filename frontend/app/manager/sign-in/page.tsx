@@ -33,9 +33,7 @@ const getRuntimeApiBases = () => {
     queryBase,
     isLocalHost ? envBase : undefined,
     isLocalHost ? undefined : `${protocol}//${hostname}`,
-    isLocalHost ? undefined : `${protocol}//${hostname}:5000`,
     envBase,
-    "http://localhost:5000",
   ]);
 };
 
@@ -56,7 +54,7 @@ export default function ManagerSignInPage() {
   const [isCheckingSession, setIsCheckingSession] = useState(true);
 
   const apiBases = useMemo(() => getRuntimeApiBases(), []);
-  const [apiBase, setApiBase] = useState(apiBases[0] ?? "http://localhost:5000");
+  const [apiBase, setApiBase] = useState(apiBases[0] ?? "");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
