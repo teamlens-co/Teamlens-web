@@ -1,14 +1,18 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   CalendarDays, Clock, ChevronLeft, ChevronRight, FileText,
   AlertCircle, RefreshCw, ChevronDown, BrainCircuit,
   MessageSquareText, BookOpen, Gamepad2, Ellipsis,
   Clock4, ListChecks, Sparkles, CircleAlert, ArrowUpRight,
-  Users, BarChart3, Activity, Target, Eye, EyeOff
+  Users, BarChart3, Activity, Target, ArrowLeft
+} from "lucide-react";
 } from "lucide-react";
 import { useAuth } from "../../../contexts/AuthContext";
+import Link from "next/link";
 
 type CategoryItem = {
   category: string;
@@ -111,200 +115,9 @@ function FocusBar({ level, width }: { level: string; width: number }) {
   );
 }
 
-function EmployeeDetailPanel({
-  report,
-  onClose,
-}: {
-  report: DailyReport;
-  onClose: () => void;
-}) {
-  const totalSeconds =
-    report.categoryBreakdown?.reduce((s, c) => s + c.duration_seconds, 0) ?? 0;
-  const totalTimeStr = parseTotalTimeFromMarkdown(report.reportMarkdown || "");
-  const plainSummary = parsePlainEnglishSummary(report.reportMarkdown || "");
-  const focusByHour = report.hourlyFocus ?? [];
-
-  return (
-    <>
-      {/* Overlay */}
-      <div
-        className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm"
-        onClick={onClose}
-      />
-      {/* Panel */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-3xl border-t border-border bg-[var(--surface-2)] shadow-2xl animate-slide-up">
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-[var(--surface-2)] px-5 py-3.5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand/15 text-sm font-bold text-brand">
-              {(report.fullName?.split(" ") ?? []).map((n: string) => n[0]).join("").toUpperCase().slice(0, 2) ?? "?"}
-            </div>
-            <div>
-              <p className="text-[14px] font-semibold text-foreground">{report.fullName}</p>
-              <p className="text-[11px] text-muted-foreground">{totalTimeStr || fmtDuration(totalSeconds)} tracked</p>
-            </div>
-            <ScoreBadge score={report.productivityScore} />
-          </div>
-          <button
-            onClick={onClose}
-            className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent/60 transition-colors"
-            type="button"
-          >
-            <EyeOff className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="p-5 space-y-5">
-
-          {/* Executive Summary */}
-          {plainSummary && (
-            <div className="rounded-xl border border-border/60 bg-gradient-to-br from-background/80 to-background p-4">
-              <p className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                <Sparkles className="h-3.5 w-3.5 text-brand" />
-                Executive Summary
-              </p>
-              <p className="text-[13px] leading-relaxed text-foreground/85">{plainSummary}</p>
-            </div>
-          )}
-
-          {/* Activity Split */}
-          {report.categoryBreakdown && report.categoryBreakdown.filter(c => c.percentage > 0).length > 0 && (
-            <div>
-              <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                <Clock4 className="h-3.5 w-3.5 text-brand" />
-                Activity Split
-              </p>
-              <div className="space-y-2.5">
-                {report.categoryBreakdown.filter(c => c.percentage > 0).map((item) => {
-                  const meta = CATEGORY_META[item.category] ?? { icon: Ellipsis, color: "bg-muted text-muted-foreground", label: item.category };
-                  const Icon = meta.icon;
-                  return (
-                    <div key={item.category} className="flex items-center gap-3">
-                      <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${meta.color}`}>
-                        <Icon className="h-3.5 w-3.5" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between text-[12px] mb-1">
-                          <span className="font-medium text-foreground">{meta.label}</span>
-                          <span className="text-muted-foreground">
-                            {fmtDuration(item.duration_seconds)}
-                            <span className="ml-1.5 font-semibold text-foreground">{item.percentage}%</span>
-                          </span>
-                        </div>
-                        <div className="h-2 rounded-full bg-muted overflow-hidden">
-                          <div className="h-full rounded-full bg-brand/60 transition-all" style={{ width: `${Math.max(2, item.percentage)}%` }} />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Top Tasks */}
-          {report.topTasks && report.topTasks.length > 0 && (
-            <div>
-              <p className="mb-2.5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                <ListChecks className="h-3.5 w-3.5 text-brand" />
-                Top Activities
-              </p>
-              <div className="space-y-1.5">
-                {report.topTasks.slice(0, 6).map((task, i) => (
-                  <div key={i} className="flex items-center justify-between gap-3 rounded-lg bg-background/40 px-3 py-2">
-                    <span className="text-[12.5px] text-foreground/85 truncate min-w-0 flex items-center gap-2">
-                      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-muted text-[9px] font-bold text-muted-foreground">{i + 1}</span>
-                      {task.task}
-                    </span>
-                    <span className="text-[11.5px] text-muted-foreground shrink-0 font-medium">{task.duration}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Hourly Focus */}
-          {focusByHour.length > 0 && (
-            <div>
-              <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                <Clock className="h-3.5 w-3.5 text-brand" />
-                Hourly Focus
-              </p>
-              <div className="space-y-1.5">
-                {focusByHour.map((fh, i) => {
-                  const level = fh.focus_level;
-                  const bg = FOCUS_COLORS[level] || "bg-muted";
-                  const label = level === "High" ? "Deep Work" : level === "Medium" ? "Moderate" : level === "Low" ? "Light" : level;
-                  return (
-                    <div key={i} className="flex items-center gap-3 text-[11.5px]">
-                      <span className="w-10 shrink-0 font-medium text-muted-foreground">{fh.hour?.slice(0, 5)}</span>
-                      <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                        <div className={`h-full rounded-full ${bg} transition-all`} style={{ width: level === "High" ? "90" : level === "Medium" ? "60" : level === "Low" ? "30" : "15" }} />
-                      </div>
-                      <span className="w-18 shrink-0 text-right text-muted-foreground">{label}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Distractions */}
-          {report.distractionAlerts && report.distractionAlerts.length > 0 && (
-            <div>
-              <p className="mb-2.5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                <CircleAlert className="h-3.5 w-3.5 text-amber-500" />
-                Distractions ({report.distractionAlerts.length})
-              </p>
-              <div className="space-y-1.5">
-                {report.distractionAlerts.slice(0, 4).map((d, i) => (
-                  <div key={i} className="flex items-start gap-2 rounded-lg bg-rose-50/50 px-3 py-2">
-                    <AlertCircle className="mt-0.5 h-3 w-3 shrink-0 text-rose-400" />
-                    <span className="text-[12px] text-rose-800/80">{d}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Recommendations */}
-          {report.recommendations && report.recommendations.length > 0 && (
-            <div>
-              <p className="mb-2.5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                <ArrowUpRight className="h-3.5 w-3.5 text-emerald-500" />
-                Recommendations
-              </p>
-              <div className="space-y-1.5">
-                {report.recommendations.slice(0, 3).map((r, i) => (
-                  <div key={i} className="flex items-start gap-2 rounded-lg bg-emerald-50/50 px-3 py-2">
-                    <Sparkles className="mt-0.5 h-3 w-3 shrink-0 text-emerald-400" />
-                    <span className="text-[12px] text-emerald-800/80">{r}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Full Report Markdown */}
-          {report.reportMarkdown && (
-            <details className="group rounded-xl border border-border/60 bg-background/30">
-              <summary className="flex cursor-pointer items-center gap-2 px-4 py-3 text-[12px] font-semibold text-muted-foreground hover:text-foreground transition-colors">
-                <FileText className="h-3.5 w-3.5" />
-                Full Report
-                <ChevronDown className="ml-auto h-3.5 w-3.5 transition-transform group-open:rotate-180" />
-              </summary>
-              <div
-                className="border-t border-border/40 px-4 py-4 text-[12px] leading-relaxed text-foreground/70 space-y-1"
-                dangerouslySetInnerHTML={{ __html: renderMarkdown(report.reportMarkdown) }}
-              />
-            </details>
-          )}
-        </div>
-      </div>
-    </>
-  );
-}
-
 export default function DailyReportsPage() {
   const { authHeaders } = useAuth();
+  const router = useRouter();
   const [reports, setReports] = useState<DailyReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -315,7 +128,6 @@ export default function DailyReportsPage() {
   });
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [regenerating, setRegenerating] = useState(false);
-  const [selectedEmployee, setSelectedEmployee] = useState<DailyReport | null>(null);
 
   const fetchReports = async (date: string) => {
     if (!authHeaders) return;
@@ -528,18 +340,14 @@ export default function DailyReportsPage() {
               const workPct = report.categoryBreakdown?.find(c => c.category === "Work")?.percentage ?? 0;
               const leisurePct = report.categoryBreakdown?.find(c => c.category === "Leisure")?.percentage ?? 0;
               const distCount = report.distractionAlerts?.length ?? 0;
-              const isActive = selectedEmployee?.userId === report.userId;
 
               return (
                 <div key={report.userId}>
-                  <button
-                    onClick={() => setSelectedEmployee(isActive ? null : report)}
+                  <Link
+                    href={`/dashboard/daily-reports/${report.userId}`}
                     className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3.5 text-left transition-all focus:outline-none ${
-                      isActive
-                        ? "border-brand/40 bg-brand/5 shadow-sm"
-                        : "border-border bg-[var(--surface-2)] shadow-sm hover:border-brand/20 hover:shadow-md"
+                      "border-border bg-[var(--surface-2)] shadow-sm hover:border-brand/20 hover:shadow-md"
                     }`}
-                    type="button"
                   >
                     {/* Avatar */}
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand/15 text-sm font-bold text-brand">
@@ -582,27 +390,17 @@ export default function DailyReportsPage() {
                       </div>
                     </div>
 
-                    {/* Score + Chevron */}
+                    {/* Score + Arrow */}
                     <div className="flex items-center gap-2 shrink-0">
                       <ScoreBadge score={report.productivityScore} />
-                      <div className={`transition-transform ${isActive ? "rotate-180" : ""}`}>
-                        <Eye className="h-4 w-4 text-muted-foreground" />
-                      </div>
+                      <ArrowLeft className="h-4 w-4 rotate-135 text-muted-foreground" />
                     </div>
-                  </button>
+                  </Link>
                 </div>
               );
             })}
           </div>
         </>
-      )}
-
-      {/* ── Detail Panel (bottom sheet) ── */}
-      {selectedEmployee && (
-        <EmployeeDetailPanel
-          report={selectedEmployee}
-          onClose={() => setSelectedEmployee(null)}
-        />
       )}
     </div>
   );
