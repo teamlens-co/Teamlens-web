@@ -11,7 +11,7 @@ run_number = sys.argv[1] if len(sys.argv) > 1 else '0'
 # Build version from run number
 build_version = '0.1.{}'.format(run_number)
 
-# Update tauri.conf.json & package.json with correct version
+# Update tauri.conf.json, package.json, and Cargo.toml with correct version
 for path in ['src-tauri/tauri.conf.json', 'package.json']:
     with open(path) as f:
         cfg = json.load(f)
@@ -20,6 +20,15 @@ for path in ['src-tauri/tauri.conf.json', 'package.json']:
         with open(path, 'w') as f:
             json.dump(cfg, f, indent=2)
         print('[OK] Updated {} version to {}'.format(path, build_version))
+
+cargo_path = 'src-tauri/Cargo.toml'
+with open(cargo_path) as f:
+    cargo_toml = f.read()
+updated_cargo_toml = re.sub(r'^version\s*=\s*"[^"]+"', 'version = "{}"'.format(build_version), cargo_toml, count=1, flags=re.MULTILINE)
+if updated_cargo_toml != cargo_toml:
+    with open(cargo_path, 'w') as f:
+        f.write(updated_cargo_toml)
+    print('[OK] Updated {} version to {}'.format(cargo_path, build_version))
 
 # Find the built MSI/exe + sig in the bundle dirs
 bundle_dir = 'src-tauri/target/release/bundle'

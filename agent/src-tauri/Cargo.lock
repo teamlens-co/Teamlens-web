@@ -934,7 +934,7 @@ dependencies = [
 
 [[package]]
 name = "desktop-agent"
-version = "0.1.0"
+version = "0.1.46"
 dependencies = [
  "chrono",
  "device_query",

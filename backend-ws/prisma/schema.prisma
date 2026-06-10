@@ -32,6 +32,9 @@ model WorkSession {
   latitude      Float?
   longitude     Float?
   location_type String?
+  isRecording   Boolean   @default(false) @map("is_recording")
+  recordingStartedAt DateTime? @map("recording_started_at") @db.Timestamptz(6)
+  recordingStoppedAt DateTime? @map("recording_stopped_at") @db.Timestamptz(6)
 
   @@index([userId, clockInAt], map: "idx_sessions_user_clockin")
   @@map("work_sessions")
@@ -248,12 +251,57 @@ model ScreenRecording {
   mimeType       String   @default("video/webm") @map("mime_type")
   recordedAt     DateTime @map("recorded_at")
   createdAt      DateTime @default(now()) @map("created_at")
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
+  retentionHours Int      @default(48) @map("retention_hours")
 
   @@index([managerId])
   @@index([employeeId])
   @@index([organizationId])
   @@index([recordedAt])
   @@map("screen_recordings")
+}
+
+model RecordingSession {
+  id             String           @id
+  employeeId     String           @map("employee_id")
+  organizationId String           @map("organization_id")
+  workSessionId  String?          @map("work_session_id")
+  startedAt      DateTime         @default(now()) @map("started_at") @db.Timestamptz(6)
+  stoppedAt      DateTime?        @map("stopped_at") @db.Timestamptz(6)
+  fps            Int              @default(10)
+  width          Int              @default(0)
+  height         Int              @default(0)
+  codec          String           @default("vp8")
+  mimeType       String           @default("video/webm") @map("mime_type")
+  status         String           @default("recording")
+  totalSize      BigInt           @default(0) @map("total_size")
+  durationMs     BigInt           @default(0) @map("duration_ms")
+  deletedAt      DateTime?        @map("deleted_at") @db.Timestamptz(6)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @default(now()) @map("updated_at") @db.Timestamptz(6)
+  chunks         RecordingChunk[]
+
+  @@index([organizationId, startedAt], map: "recording_sessions_org_started_idx")
+  @@index([employeeId, startedAt], map: "recording_sessions_employee_started_idx")
+  @@index([startedAt, deletedAt], map: "recording_sessions_cleanup_idx")
+  @@index([status], map: "recording_sessions_status_idx")
+  @@map("recording_sessions")
+}
+
+model RecordingChunk {
+  id                 String           @id
+  recordingSessionId String           @map("recording_session_id")
+  chunkIndex         Int              @map("chunk_index")
+  filePath           String           @map("file_path")
+  fileSize           BigInt           @default(0) @map("file_size")
+  durationMs         BigInt           @default(0) @map("duration_ms")
+  uploadedAt         DateTime         @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  session            RecordingSession @relation(fields: [recordingSessionId], references: [id], onDelete: Cascade)
+
+  @@unique([recordingSessionId, chunkIndex], map: "recording_chunks_session_index_key")
+  @@index([recordingSessionId, chunkIndex], map: "recording_chunks_session_idx")
+  @@map("recording_chunks")
 }
 
 model office_locations {

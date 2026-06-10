@@ -307,7 +307,49 @@ CREATE TABLE public.screen_recordings (
     duration_ms integer NOT NULL,
     mime_type text DEFAULT 'video/webm'::text NOT NULL,
     recorded_at timestamp(3) without time zone NOT NULL,
-    created_at timestamp(3) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+    created_at timestamp(3) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    deleted_at timestamp with time zone,
+    retention_hours integer DEFAULT 48 NOT NULL
+);
+
+--
+-- Name: recording_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.recording_sessions (
+    id text NOT NULL,
+    employee_id text NOT NULL,
+    organization_id text NOT NULL,
+    work_session_id text,
+    started_at timestamp with time zone DEFAULT now() NOT NULL,
+    stopped_at timestamp with time zone,
+    fps integer DEFAULT 10 NOT NULL,
+    width integer DEFAULT 0 NOT NULL,
+    height integer DEFAULT 0 NOT NULL,
+    codec text DEFAULT 'vp8'::text NOT NULL,
+    mime_type text DEFAULT 'video/webm'::text NOT NULL,
+    status text DEFAULT 'recording'::text NOT NULL,
+    total_size bigint DEFAULT 0 NOT NULL,
+    duration_ms bigint DEFAULT 0 NOT NULL,
+    deleted_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: recording_chunks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.recording_chunks (
+    id text NOT NULL,
+    recording_session_id text NOT NULL,
+    chunk_index integer NOT NULL,
+    file_path text NOT NULL,
+    file_size bigint DEFAULT 0 NOT NULL,
+    duration_ms bigint DEFAULT 0 NOT NULL,
+    uploaded_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -385,7 +427,10 @@ CREATE TABLE public.work_sessions (
     updated_at timestamp without time zone DEFAULT now() NOT NULL,
     latitude double precision,
     longitude double precision,
-    location_type text
+    location_type text,
+    is_recording boolean DEFAULT false NOT NULL,
+    recording_started_at timestamp with time zone,
+    recording_stopped_at timestamp with time zone
 );
 
 
@@ -482,6 +527,12 @@ ALTER TABLE ONLY public.organizations
 
 ALTER TABLE ONLY public.screen_recordings
     ADD CONSTRAINT screen_recordings_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.recording_sessions
+    ADD CONSTRAINT recording_sessions_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.recording_chunks
+    ADD CONSTRAINT recording_chunks_pkey PRIMARY KEY (id);
 
 
 --
@@ -712,6 +763,20 @@ CREATE INDEX screen_recordings_organization_id_idx ON public.screen_recordings U
 
 CREATE INDEX screen_recordings_recorded_at_idx ON public.screen_recordings USING btree (recorded_at);
 
+CREATE INDEX screen_recordings_deleted_at_idx ON public.screen_recordings USING btree (deleted_at);
+
+CREATE INDEX recording_sessions_org_started_idx ON public.recording_sessions USING btree (organization_id, started_at);
+
+CREATE INDEX recording_sessions_employee_started_idx ON public.recording_sessions USING btree (employee_id, started_at);
+
+CREATE INDEX recording_sessions_cleanup_idx ON public.recording_sessions USING btree (started_at, deleted_at);
+
+CREATE INDEX recording_sessions_status_idx ON public.recording_sessions USING btree (status);
+
+CREATE UNIQUE INDEX recording_chunks_session_index_key ON public.recording_chunks USING btree (recording_session_id, chunk_index);
+
+CREATE INDEX recording_chunks_session_idx ON public.recording_chunks USING btree (recording_session_id, chunk_index);
+
 
 --
 -- Name: screenshots_session_id_idx; Type: INDEX; Schema: public; Owner: -
@@ -841,6 +906,9 @@ ALTER TABLE ONLY public.users
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.recording_chunks
+    ADD CONSTRAINT recording_chunks_recording_session_id_fkey FOREIGN KEY (recording_session_id) REFERENCES public.recording_sessions(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 
 --

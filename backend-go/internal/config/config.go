@@ -11,10 +11,10 @@ import (
 
 type Config struct {
 	// Server
-	Port         string
-	WebAppURL    string
-	UploadDir    string
-	CORSOrigins  []string
+	Port        string
+	WebAppURL   string
+	UploadDir   string
+	CORSOrigins []string
 
 	// Database
 	DatabaseURL string
@@ -29,6 +29,10 @@ type Config struct {
 
 	// Google Places
 	GooglePlacesAPIKey string
+
+	// Recording
+	RecordingEnabled        bool
+	RecordingRetentionHours int
 }
 
 func Load() (*Config, error) {
@@ -36,13 +40,15 @@ func Load() (*Config, error) {
 	_ = godotenv.Load()
 
 	cfg := &Config{
-		Port:              getEnv("PORT", "5000"),
-		WebAppURL:         getEnv("WEB_APP_URL", "http://localhost:3000"),
-		UploadDir:         getEnv("UPLOAD_DIR", "./uploads"),
-		DatabaseURL:       getEnv("DATABASE_URL", "postgres://teamlens:teamlens@localhost:5432/teamlens"),
-		JWTSecret:         getEnv("JWT_SECRET", "dev-secret-change-in-production"),
-		InviteTTLHours:    getEnvInt("INVITE_TTL_HOURS", 72),
-		GooglePlacesAPIKey: getEnv("GOOGLE_PLACES_API_KEY", ""),
+		Port:                    getEnv("PORT", "5000"),
+		WebAppURL:               getEnv("WEB_APP_URL", "http://localhost:3000"),
+		UploadDir:               getEnv("UPLOAD_DIR", "./uploads"),
+		DatabaseURL:             getEnv("DATABASE_URL", "postgres://teamlens:teamlens@localhost:5432/teamlens"),
+		JWTSecret:               getEnv("JWT_SECRET", "dev-secret-change-in-production"),
+		InviteTTLHours:          getEnvInt("INVITE_TTL_HOURS", 72),
+		GooglePlacesAPIKey:      getEnv("GOOGLE_PLACES_API_KEY", ""),
+		RecordingEnabled:        getEnvBool("RECORDING_ENABLED", true),
+		RecordingRetentionHours: getEnvInt("RECORDING_RETENTION_HOURS", 48),
 	}
 
 	corsRaw := getEnv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173")
@@ -83,6 +89,18 @@ func getEnvInt(key string, fallback int) int {
 	if v := os.Getenv(key); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
 			return i
+		}
+	}
+	return fallback
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	if v := os.Getenv(key); v != "" {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "1", "true", "yes", "on":
+			return true
+		case "0", "false", "no", "off":
+			return false
 		}
 	}
 	return fallback

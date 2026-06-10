@@ -29,6 +29,28 @@ export default function AlertBell() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const { authHeaders } = useAuth();
 
+  // Play sound
+  const playAlertSound = useCallback(() => {
+    if (!soundEnabled) return;
+    try {
+      if (!audioRef.current) {
+        audioRef.current = new Audio();
+      }
+      // Use Web Audio API to generate a simple beep
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.value = 880;
+      gain.gain.value = 0.3;
+      osc.start();
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+      osc.stop(ctx.currentTime + 0.5);
+    } catch {}
+  }, [soundEnabled]);
+
   // Fetch initial alerts
   const fetchAlerts = useCallback(async () => {
     try {
@@ -50,8 +72,11 @@ export default function AlertBell() {
     if (typeof window === "undefined") return;
 
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.host;
-    const wsUrl = `${proto}//${host}/ws/alerts`;
+    const isDirectFrontend = window.location.port === "3000";
+    const wsUrl = process.env.NEXT_PUBLIC_ALERT_WS_URL?.trim()
+      || (isDirectFrontend
+        ? `${proto}//${window.location.hostname}:5057/ws`
+        : `${proto}//${window.location.host}/ws/alerts`);
 
     function connect() {
       const ws = new WebSocket(wsUrl);
@@ -73,36 +98,17 @@ export default function AlertBell() {
 
     connect();
     return () => wsRef.current?.close();
-  }, []);
+  }, [playAlertSound]);
 
   // Poll for alerts as fallback
   useEffect(() => {
-    fetchAlerts();
+    const initialFetch = window.setTimeout(fetchAlerts, 0);
     const interval = setInterval(fetchAlerts, 30000);
-    return () => clearInterval(interval);
+    return () => {
+      window.clearTimeout(initialFetch);
+      clearInterval(interval);
+    };
   }, [fetchAlerts]);
-
-  // Play sound
-  const playAlertSound = () => {
-    if (!soundEnabled) return;
-    try {
-      if (!audioRef.current) {
-        audioRef.current = new Audio();
-      }
-      // Use Web Audio API to generate a simple beep
-      const ctx = new AudioContext();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = "sine";
-      osc.frequency.value = 880;
-      gain.gain.value = 0.3;
-      osc.start();
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-      osc.stop(ctx.currentTime + 0.5);
-    } catch {}
-  };
 
   // Acknowledge alert
   const acknowledgeAlert = async (alertId: string) => {

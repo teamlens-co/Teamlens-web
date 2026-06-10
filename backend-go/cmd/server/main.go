@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/teamlens/backend-go/internal/config"
+	"github.com/teamlens/backend-go/internal/cron"
 	"github.com/teamlens/backend-go/internal/database"
 	handlersagent "github.com/teamlens/backend-go/internal/handlers/agent"
 	handlersmobile "github.com/teamlens/backend-go/internal/handlers/mobile"
@@ -54,6 +55,7 @@ func main() {
 	inviteSvc := services.NewInviteService(pool.Pool, jwtSvc, cfg.InviteTTLHours, cfg.WebAppURL)
 	teamSvc := services.NewTeamService(pool.Pool, dashSvc)
 	recordingSvc := services.NewRecordingService(pool.Pool)
+	recordingSessionSvc := services.NewRecordingSessionService(pool.Pool)
 	screenshotSvc := services.NewScreenshotService(pool.Pool)
 	usageSvc := services.NewUsageService(pool.Pool)
 	agentAuthSvc := services.NewAgentAuthService(pool.Pool, jwtSvc, cfg)
@@ -66,12 +68,18 @@ func main() {
 	webLocHandler := handlersweb.NewLocationHandler(locationSvc)
 	webTeamHandler := handlersweb.NewTeamHandler(teamSvc)
 	webRecHandler := handlersweb.NewRecordingHandler(recordingSvc, cfg.UploadDir)
+	webRecordingSessionHandler := handlersweb.NewRecordingSessionHandler(recordingSessionSvc, cfg.UploadDir)
 	webSettingsHandler := handlersweb.NewSettingsHandler(pool.Pool, locationSvc, activitySvc, authSvc)
 
 	agentAuthHandler := handlersagent.NewAuthHandler(agentAuthSvc)
 	agentActivityHandler := handlersagent.NewActivityHandler(activitySvc)
 	agentScreenshotHandler := handlersagent.NewScreenshotHandler(screenshotSvc, cfg.UploadDir)
+	agentRecordingSessionHandler := handlersagent.NewRecordingSessionHandler(recordingSessionSvc, cfg.UploadDir, cfg.RecordingEnabled)
 	agentUsageHandler := handlersagent.NewUsageHandler(usageSvc)
+
+	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())
+	defer cleanupCancel()
+	cron.NewRecordingCleanupJob(recordingSessionSvc, cfg.RecordingRetentionHours).Start(cleanupCtx)
 
 	mobileHandler := handlersmobile.NewHandler()
 
@@ -157,6 +165,11 @@ func main() {
 		r.Delete("/recordings/{recordingId}", webRecHandler.Delete)
 		r.Get("/recordings/serve/{filePath}", webRecHandler.ServeFile)
 		r.Get("/recordings/{recordingId}/file", webRecHandler.ServeFileByID)
+		r.Get("/recording-sessions/active", webRecordingSessionHandler.Active)
+		r.Get("/recording-sessions", webRecordingSessionHandler.List)
+		r.Get("/recording-sessions/{id}", webRecordingSessionHandler.Get)
+		r.Get("/recording-sessions/{id}/playlist", webRecordingSessionHandler.Playlist)
+		r.Get("/recording-sessions/{id}/chunks/{chunkId}/file", webRecordingSessionHandler.ServeChunk)
 
 		// Settings / Manual Time
 		r.Post("/manual-hours", webSettingsHandler.AddManualHours)
@@ -223,6 +236,8 @@ func main() {
 	agentr.Group(func(r chi.Router) {
 		r.Use(middleware.AuthMiddleware(jwtSvc, pool.Pool))
 
+		r.Get("/auth/me", agentAuthHandler.Me)
+
 		r.Post("/sessions/clock-in", agentActivityHandler.ClockIn)
 		r.Post("/sessions/clock-out", agentActivityHandler.ClockOut)
 		r.Get("/sessions/active", agentActivityHandler.GetActiveSession)
@@ -235,6 +250,10 @@ func main() {
 		r.Get("/screenshots/{screenshotId}", agentScreenshotHandler.Get)
 		r.Delete("/screenshots/{screenshotId}", agentScreenshotHandler.Delete)
 		r.Get("/screenshots/serve/{filePath}", agentScreenshotHandler.ServeFile)
+
+		r.Post("/recording-sessions/start", agentRecordingSessionHandler.Start)
+		r.Post("/recording-sessions/{id}/chunks", agentRecordingSessionHandler.UploadChunk)
+		r.Post("/recording-sessions/{id}/finish", agentRecordingSessionHandler.Finish)
 
 		r.Post("/usage/log", agentUsageHandler.CreateUsageLog)
 		r.Post("/usage", agentUsageHandler.CreateUsageLog)

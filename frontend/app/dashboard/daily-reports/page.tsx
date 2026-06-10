@@ -304,7 +304,7 @@ function EmployeeDetailPanel({
 }
 
 export default function DailyReportsPage() {
-  const { authHeaders, apiBase } = useAuth();
+  const { authHeaders } = useAuth();
   const [reports, setReports] = useState<DailyReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -323,7 +323,7 @@ export default function DailyReportsPage() {
     setError("");
     try {
       const res = await fetch(
-        `${apiBase}/api/ai-screenshot-report/daily-reports?date=${date}`,
+        `/api/ai-screenshot-report/daily-reports?date=${date}`,
         { headers: authHeaders as HeadersInit }
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -344,7 +344,7 @@ export default function DailyReportsPage() {
     if (!authHeaders) return;
     try {
       const res = await fetch(
-        `${apiBase}/api/ai-screenshot-report/daily-reports/dates`,
+        `/api/ai-screenshot-report/daily-reports/dates`,
         { headers: authHeaders as HeadersInit }
       );
       if (res.ok) {
@@ -364,7 +364,7 @@ export default function DailyReportsPage() {
     setRegenerating(true);
     try {
       const res = await fetch(
-        `${apiBase}/api/ai-screenshot-report/daily-reports/regenerate?date=${selectedDate}`,
+        `/api/ai-screenshot-report/daily-reports/regenerate?date=${selectedDate}`,
         { method: "POST", headers: authHeaders as HeadersInit }
       );
       if (res.ok) {

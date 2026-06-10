@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MonitorUp, Square, WifiOff, Circle, Download, Maximize2, Minimize2 } from "lucide-react";
+import { MonitorUp, Square, WifiOff, Download, Maximize2, Minimize2 } from "lucide-react";
 import { io, type Socket } from "socket.io-client";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -583,42 +583,9 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-medium text-slate-900">Live Screen</h2>
-          <p className="text-sm text-slate-500">
-            {socketState === "connected" ? "Peer-to-peer WebRTC stream" : "Connecting live signaling"}
-          </p>
         </div>
         <div className="flex items-center gap-2">
           {/* Recording controls — visible only when live */}
-          {viewState === "live" && (
-            <>
-              {isRecording ? (
-                <button
-                  type="button"
-                  onClick={stopRecording}
-                  className="group inline-flex items-center rounded-md bg-red-50 border border-red-200 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100 transition-colors"
-                  id="stop-recording-btn"
-                >
-                  <span className="relative mr-2 flex h-3 w-3">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-red-600" />
-                  </span>
-                  <span className="font-mono mr-1.5">{formatRecordingDuration(recordingDuration)}</span>
-                  Stop Recording
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={startRecording}
-                  className="inline-flex items-center rounded-md bg-slate-50 border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 hover:border-slate-300 transition-colors"
-                  id="start-recording-btn"
-                >
-                  <Circle className="mr-2 h-4 w-4 text-red-500 fill-red-500" />
-                  Record
-                </button>
-              )}
-            </>
-          )}
-
           {viewState === "live" || viewState === "waiting" || viewState === "requesting" ? (
             <button
               type="button"
@@ -675,28 +642,6 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
             disablePictureInPicture
             className="aspect-video w-full bg-slate-950 object-contain"
           />
-
-          {streamStats ? (
-            <div className="absolute bottom-3 left-3 flex flex-wrap items-center gap-2 rounded-md bg-black/60 px-3 py-1.5 text-xs font-medium text-white/90 backdrop-blur-sm">
-              <span>{streamStats.width}x{streamStats.height}</span>
-              <span>{streamStats.fps} fps</span>
-              <span>{streamStats.bitrateKbps} kbps</span>
-              {streamStats.latencyMs !== null ? <span>{streamStats.latencyMs} ms</span> : null}
-            </div>
-          ) : null}
-
-          {/* Recording indicator overlay */}
-          {isRecording && (
-            <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/60 backdrop-blur-sm rounded-full px-3 py-1.5">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
-              </span>
-              <span className="text-xs font-mono text-white/90 font-medium">
-                REC {formatRecordingDuration(recordingDuration)}
-              </span>
-            </div>
-          )}
 
           {/* Fullscreen toggle */}
           <button

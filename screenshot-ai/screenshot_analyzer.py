@@ -21,12 +21,12 @@ Return ONLY valid JSON. No markdown. No extra text.
 
 Analyze the screenshot and infer:
 - application_name: the main visible app (VS Code, Chrome, Word, Excel, Slack, Terminal, Notion, Figma, or EXACT website name like Amazon, YouTube, Netflix, Instagram, etc.)
-- task: detailed description of what the employee is doing, max 15 words
+- task: detailed description of what the employee is doing, max 8 words
 - category: one of Work, Learning, Communication, Leisure, Other — BE STRICT
 - focus_level: one of Deep Work, Medium, Distraction — BE STRICT
-- visible_text: important readable text showing actual work content, max 400 characters. Include document titles, code function names, ticket IDs, or page titles
+- visible_text: important readable text showing actual work content, max 300 characters. Include document titles, code function names, ticket IDs, or page titles
 - confidence: number from 0 to 1
-- reasoning_short: explain WHY you classified it this way, max 40 words
+- reasoning_short: explain WHY you classified it this way, max 20 words
 - manager_summary: one-line summary for manager, max 20 words
 
 CRITICAL — STRICT Classification Rules:
@@ -87,18 +87,18 @@ class ScreenshotAnalysis(BaseModel):
     @classmethod
     def trim_task(cls, value: str) -> str:
         words = value.strip().split()
-        return " ".join(words[:15]) if words else "Unknown"
+        return " ".join(words[:8]) if words else "Unknown"
 
     @field_validator("visible_text")
     @classmethod
     def trim_visible_text(cls, value: str) -> str:
-        return value.strip()[:400]
+        return value.strip()[:300]
 
     @field_validator("reasoning_short")
     @classmethod
     def trim_reasoning(cls, value: str) -> str:
         words = value.strip().split()
-        return " ".join(words[:40])
+        return " ".join(words[:20])
 
     @field_validator("manager_summary")
     @classmethod

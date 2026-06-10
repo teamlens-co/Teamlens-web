@@ -61,6 +61,70 @@ services:
       postgres:
         condition: service_healthy
 
+  # -- Screenshot AI sidecar -------------------------------------------------
+  screenshot-ai:
+    build:
+      context: ./screenshot-ai
+      dockerfile: Dockerfile
+    container_name: teamlens-screenshot-ai
+    restart: unless-stopped
+    ports:
+      - "5055:5055"
+    environment:
+      DATABASE_URL: "postgres://teamlens:teamlens@postgres:5432/teamlens"
+      UPLOAD_DIR: "/app/uploads"
+      SQLITE_PATH: "/app/data/screenshot_ai.sqlite3"
+      REPORT_OUTPUT_DIR: "/app/reports"
+      SUMMARY_HTTP_HOST: "0.0.0.0"
+      SUMMARY_HTTP_PORT: "5055"
+      KIMI_API_MODE: "${KIMI_API_MODE:-openai}"
+      KIMI_API_BASE_URL: "${KIMI_API_BASE_URL:-}"
+      KIMI_GATEWAY_ID: "${KIMI_GATEWAY_ID:-}"
+      KIMI_API_KEY: "${KIMI_API_KEY:-}"
+      KIMI_MODEL: "${KIMI_MODEL:-kimi-2.6}"
+      KIMI_TIMEOUT_SECONDS: "${KIMI_TIMEOUT_SECONDS:-120}"
+      KIMI_MAX_RETRIES: "${KIMI_MAX_RETRIES:-3}"
+      KIMI_MAX_TOKENS: "${KIMI_MAX_TOKENS:-4096}"
+      POLL_INTERVAL_SECONDS: "${POLL_INTERVAL_SECONDS:-60}"
+      REPORT_TIME_LOCAL: "${REPORT_TIME_LOCAL:-18:00}"
+      ANALYSIS_SAMPLE_STABLE_MINUTES: "${ANALYSIS_SAMPLE_STABLE_MINUTES:-5}"
+      SCREENSHOT_LOOKBACK_HOURS: "${SCREENSHOT_LOOKBACK_HOURS:-24}"
+      SCREENSHOT_BATCH_LIMIT: "${SCREENSHOT_BATCH_LIMIT:-200}"
+      MAX_IMAGE_WIDTH: "${MAX_IMAGE_WIDTH:-896}"
+      JPEG_QUALITY: "${JPEG_QUALITY:-60}"
+      PERIODIC_INTERVAL_MINUTES: "${PERIODIC_INTERVAL_MINUTES:-30}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+    volumes:
+      - uploads_data:/app/uploads:ro
+      - ./screenshot-ai/data:/app/data
+      - ./screenshot-ai/reports:/app/reports
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # -- Alert service ---------------------------------------------------------
+  alert-service:
+    build:
+      context: ./alert-service
+      dockerfile: Dockerfile
+    container_name: teamlens-alert-service
+    restart: unless-stopped
+    ports:
+      - "5057:5057"
+    environment:
+      PORT: "5057"
+      DATABASE_URL: "postgres://teamlens:teamlens@postgres:5432/teamlens?sslmode=disable"
+      SQLITE_PATH: "/app/data/screenshot_ai.sqlite3"
+      CHECK_INTERVAL: "${ALERT_CHECK_INTERVAL:-60s}"
+      ORG_ID: "${ALERT_DEFAULT_ORG_ID:-}"
+    volumes:
+      - ./screenshot-ai/data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      screenshot-ai:
+        condition: service_started
+
   # ── Frontend (Next.js) ────────────────────────────────────────────────
   frontend:
     build:
@@ -70,6 +134,7 @@ services:
         NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:-http://localhost:5000}"
         NEXT_PUBLIC_WS_URL: "${NEXT_PUBLIC_WS_URL:-http://localhost:4000}"
         NEXT_PUBLIC_WEBRTC_ICE_SERVERS: "${WEBRTC_ICE_SERVERS:-[]}"
+        NEXT_PUBLIC_ALERT_WS_URL: "${NEXT_PUBLIC_ALERT_WS_URL:-ws://localhost:5057/ws}"
     container_name: teamlens-frontend
     restart: unless-stopped
     expose:
@@ -82,7 +147,9 @@ services:
       NEXT_PUBLIC_WEBRTC_ICE_SERVERS: "${WEBRTC_ICE_SERVERS:-[]}"
       AGENT_DOWNLOAD_URL: "${AGENT_DOWNLOAD_URL:-}"
       SCREENSHOT_AI_REPORT_DIR: "/app/screenshot-ai/reports"
-      SCREENSHOT_AI_URL: "${SCREENSHOT_AI_URL:-http://host.docker.internal:5055}"
+      SCREENSHOT_AI_URL: "${SCREENSHOT_AI_URL:-http://screenshot-ai:5055}"
+      ALERT_SERVICE_URL: "${ALERT_SERVICE_URL:-http://alert-service:5057}"
+      NEXT_PUBLIC_ALERT_WS_URL: "${NEXT_PUBLIC_ALERT_WS_URL:-ws://localhost:5057/ws}"
       NODE_ENV: "${NODE_ENV:-production}"
       NEXT_TELEMETRY_DISABLED: "1"
     volumes:
@@ -90,6 +157,8 @@ services:
     depends_on:
       - backend-go
       - backend-ws
+      - screenshot-ai
+      - alert-service
 
   # ── Nginx Gateway ─────────────────────────────────────────────────────
   gateway:
@@ -104,6 +173,7 @@ services:
       - backend-go
       - backend-ws
       - frontend
+      - alert-service
 
 volumes:
   postgres_data:

@@ -67,6 +67,13 @@ type ActiveWindowInfo = {
   browser_url?: string;
 };
 
+type RecordingUploadStatus = "idle" | "recording" | "uploading" | "pending" | "paused" | "error";
+
+type RecordingSessionResponse = {
+  id: string;
+  status: string;
+};
+
 const getApiBase = (): string => {
   const configured = import.meta.env.VITE_API_URL?.trim();
   if (configured) {
@@ -238,9 +245,28 @@ const inferUrlFromTitle = (title: string, browserUrl?: string): string | undefin
 const invalidDomainSuffixes = new Set(["app", "css", "html", "js", "jsx", "json", "md", "py", "rs", "tsx", "ts", "txt", "vue", "xml"]);
 const SCREENSHOT_INTERVAL_MIN_MS = 30_000;
 const SCREENSHOT_INTERVAL_MAX_MS = 30_000;
+const AUTO_RECORDING_FPS = 10;
+const AUTO_RECORDING_CHUNK_MS = 30_000;
+const AUTO_RECORDING_WIDTH = 1280;
+const AUTO_RECORDING_HEIGHT = 720;
+const AUTO_RECORDING_MIME_CANDIDATES = [
+  "video/webm;codecs=vp8",
+  "video/webm;codecs=vp9",
+  "video/webm",
+];
 
 const nextScreenshotDelayMs = () =>
   Math.floor(Math.random() * (SCREENSHOT_INTERVAL_MAX_MS - SCREENSHOT_INTERVAL_MIN_MS + 1)) + SCREENSHOT_INTERVAL_MIN_MS;
+
+const selectRecordingMimeType = () => {
+  if (typeof MediaRecorder === "undefined") return "";
+  return AUTO_RECORDING_MIME_CANDIDATES.find((candidate) => MediaRecorder.isTypeSupported(candidate)) ?? "";
+};
+
+const codecFromMimeType = (mimeType: string) => {
+  const match = mimeType.match(/codecs=([^;]+)/i);
+  return match?.[1]?.toLowerCase() || "webm";
+};
 
 const cleanInferredDomain = (value?: string): string | undefined => {
   const domain = value?.replace(/^https?:\/\//i, "").replace(/^www\./i, "").split(/[/?#]/)[0]?.toLowerCase();
@@ -342,16 +368,25 @@ function App() {
   const [debugLocation, setDebugLocation] = useState<{ lat?: number; lng?: number; source?: string } | null>(null);
   const [activeWindow, setActiveWindow] = useState<ActiveWindowInfo | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [, setRecordingStatus] = useState<RecordingUploadStatus>("idle");
+  const [, setRecordingMessage] = useState<string | null>(null);
 
   const mouseMovesRef = useRef(0);
   const keyPressesRef = useRef(0);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordingCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const recordingFrameTimerRef = useRef<number | null>(null);
+  const recordingSessionIdRef = useRef<string | null>(null);
+  const recordingChunkIndexRef = useRef(0);
+  const recordingChunkStartedAtRef = useRef<number>(0);
+  const recordingStopRequestedRef = useRef(false);
 
   const apiBase = useMemo(() => getApiBase(), []);
   const webBase = useMemo(() => getWebBase(), []);
   const wsBase = useMemo(() => getWsBase(), []);
   const {
-    isStreaming: isLiveScreenStreaming,
-    liveMessage,
     stopLiveScreen,
   } = useEmployeeLiveScreen({
     apiBase,
@@ -388,43 +423,23 @@ function App() {
         return;
       }
 
-      const response = await fetch(`${apiBase}/api/web/auth/me`, {
+      const response = await fetch(`${apiBase}/api/agent/auth/me`, {
         headers: {
           Authorization: `Bearer ${stored}`,
           "Content-Type": "application/json",
         },
       });
 
-      const payload = await safeParseJson<{
-        success: boolean;
-        data?: {
-          id: string;
-          fullName: string;
-          email: string;
-          role: "MANAGER" | "EMPLOYEE";
-          organization: AgentLoginData["organization"];
-        };
-        message?: string;
-      }>(response);
+      const payload = await safeParseJson<{ success: boolean; data?: AgentLoginData; message?: string }>(response);
 
-      if (!response.ok || !payload.success || !payload.data || payload.data.role !== "EMPLOYEE") {
+      if (!response.ok || !payload.success || !payload.data || payload.data.user.role !== "EMPLOYEE") {
         await invoke("clear_auth_token");
         setAuthToken(null);
         setIsAuthenticated(false);
         return;
       }
 
-      applyAuth({
-        token: stored,
-        expiresAt: "",
-        user: {
-          id: payload.data.id,
-          fullName: payload.data.fullName,
-          email: payload.data.email,
-          role: payload.data.role,
-        },
-        organization: payload.data.organization,
-      });
+      applyAuth({ ...payload.data, token: payload.data.token || stored });
     } catch (error) {
       console.error("Unable to restore auth token", error);
       setAuthToken(null);
@@ -486,7 +501,226 @@ function App() {
     }
   };
 
+  const uploadRecordingChunk = async (recordingSessionId: string, chunkIndex: number, blob: Blob, durationMs: number) => {
+    if (!authHeaders) return false;
+
+    const formData = new FormData();
+    formData.append("chunkIndex", String(chunkIndex));
+    formData.append("durationMs", String(durationMs));
+    formData.append("chunk", blob, `chunk-${chunkIndex}.webm`);
+
+    try {
+      setRecordingStatus("uploading");
+      const response = await fetch(`${apiBase}/api/agent/recording-sessions/${recordingSessionId}/chunks`, {
+        method: "POST",
+        headers: {
+          Authorization: authHeaders.Authorization,
+        },
+        body: formData,
+      });
+      if (!response.ok) {
+        setRecordingStatus("pending");
+        setRecordingMessage("Recording upload pending. Backend will be retried on the next chunk.");
+        return false;
+      }
+      setRecordingStatus("recording");
+      setRecordingMessage(null);
+      return true;
+    } catch (error) {
+      console.error("Recording chunk upload failed", error);
+      setRecordingStatus("pending");
+      setRecordingMessage("Recording upload pending. Network is unavailable.");
+      return false;
+    }
+  };
+
+  const stopAutoRecording = async (failed = false) => {
+    recordingStopRequestedRef.current = true;
+
+    if (recordingFrameTimerRef.current !== null) {
+      window.clearInterval(recordingFrameTimerRef.current);
+      recordingFrameTimerRef.current = null;
+    }
+
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== "inactive") {
+      recorder.stop();
+    }
+
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    mediaStreamRef.current = null;
+    recordingCanvasRef.current = null;
+    mediaRecorderRef.current = null;
+    setIsRecording(false);
+    setRecordingStatus(failed ? "error" : "idle");
+
+    const recordingSessionId = recordingSessionIdRef.current;
+    recordingSessionIdRef.current = null;
+    recordingChunkIndexRef.current = 0;
+
+    if (recordingSessionId && authHeaders) {
+      try {
+        await fetch(`${apiBase}/api/agent/recording-sessions/${recordingSessionId}/finish`, {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify({
+            stoppedAt: new Date().toISOString(),
+            failed,
+          }),
+        });
+      } catch (error) {
+        console.error("Finish recording session failed", error);
+      }
+    }
+  };
+
+  const startAutoRecording = async (activeSessionId: string) => {
+    if (!authHeaders || !activeSessionId || recordingSessionIdRef.current || isRecording) {
+      return;
+    }
+    if (typeof MediaRecorder === "undefined") {
+      setRecordingStatus("error");
+      setRecordingMessage("Screen recording is not supported by this WebView.");
+      return;
+    }
+
+    try {
+      const mimeType = selectRecordingMimeType();
+      const canvas = document.createElement("canvas");
+      canvas.width = AUTO_RECORDING_WIDTH;
+      canvas.height = AUTO_RECORDING_HEIGHT;
+      const context = canvas.getContext("2d", { alpha: false });
+      if (!context || !canvas.captureStream) {
+        throw new Error("Canvas recording is not supported by this WebView.");
+      }
+      context.fillStyle = "#111111";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      recordingCanvasRef.current = canvas;
+      const stream = canvas.captureStream(AUTO_RECORDING_FPS);
+      mediaStreamRef.current = stream;
+      let lastFrameStarted = false;
+      const drawNativeFrame = async () => {
+        if (lastFrameStarted || recordingStopRequestedRef.current || !recordingCanvasRef.current) return;
+        lastFrameStarted = true;
+        try {
+          const frameData = await invoke<number[]>("capture_live_frame");
+          const blob = new Blob([new Uint8Array(frameData)], { type: "image/png" });
+          const bitmap = await createImageBitmap(blob);
+          const activeCanvas = recordingCanvasRef.current;
+          if (!activeCanvas) {
+            bitmap.close();
+            return;
+          }
+          const ctx = activeCanvas.getContext("2d", { alpha: false });
+          if (!ctx) {
+            bitmap.close();
+            return;
+          }
+          const scale = Math.min(activeCanvas.width / bitmap.width, activeCanvas.height / bitmap.height);
+          const width = Math.round(bitmap.width * scale);
+          const height = Math.round(bitmap.height * scale);
+          const x = Math.floor((activeCanvas.width - width) / 2);
+          const y = Math.floor((activeCanvas.height - height) / 2);
+          ctx.fillStyle = "#111111";
+          ctx.fillRect(0, 0, activeCanvas.width, activeCanvas.height);
+          ctx.drawImage(bitmap, x, y, width, height);
+          bitmap.close();
+        } catch (frameError) {
+          console.error("Native recording frame capture failed", frameError);
+        } finally {
+          lastFrameStarted = false;
+        }
+      };
+
+      await drawNativeFrame();
+      recordingFrameTimerRef.current = window.setInterval(() => {
+        void drawNativeFrame();
+      }, Math.max(1000 / AUTO_RECORDING_FPS, 50));
+
+      const startResponse = await fetch(`${apiBase}/api/agent/recording-sessions/start`, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify({
+          workSessionId: activeSessionId,
+          fps: AUTO_RECORDING_FPS,
+          width: AUTO_RECORDING_WIDTH,
+          height: AUTO_RECORDING_HEIGHT,
+          codec: codecFromMimeType(mimeType),
+          mimeType: mimeType || "video/webm",
+          startedAt: new Date().toISOString(),
+        }),
+      });
+      const startPayload = await safeParseJson<ApiSuccess<RecordingSessionResponse>>(startResponse);
+      if (!startResponse.ok || !startPayload.success) {
+        throw new Error("Backend refused recording session start");
+      }
+
+      recordingSessionIdRef.current = startPayload.data.id;
+      recordingChunkIndexRef.current = 0;
+      recordingStopRequestedRef.current = false;
+      setIsRecording(true);
+      setRecordingStatus("recording");
+      setRecordingMessage(null);
+
+      const recordNextChunk = () => {
+        if (recordingStopRequestedRef.current || !mediaStreamRef.current || !recordingSessionIdRef.current) {
+          return;
+        }
+        const chunks: BlobPart[] = [];
+        const recorder = new MediaRecorder(mediaStreamRef.current, mimeType ? { mimeType } : undefined);
+        mediaRecorderRef.current = recorder;
+        recordingChunkStartedAtRef.current = Date.now();
+
+        recorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            chunks.push(event.data);
+          }
+        };
+        recorder.onstop = () => {
+          const recordingSessionId = recordingSessionIdRef.current;
+          const durationMs = Date.now() - recordingChunkStartedAtRef.current;
+          if (recordingSessionId && chunks.length > 0) {
+            const chunkIndex = recordingChunkIndexRef.current;
+            recordingChunkIndexRef.current += 1;
+            const blob = new Blob(chunks, { type: mimeType || "video/webm" });
+            void uploadRecordingChunk(recordingSessionId, chunkIndex, blob, durationMs);
+          }
+          if (!recordingStopRequestedRef.current) {
+            window.setTimeout(recordNextChunk, 0);
+          }
+        };
+        recorder.onerror = (event) => {
+          console.error("MediaRecorder error", event);
+          setRecordingStatus("error");
+          setRecordingMessage("Recording error occurred.");
+          void stopAutoRecording(true);
+        };
+        recorder.start();
+        window.setTimeout(() => {
+          if (recorder.state === "recording") {
+            recorder.stop();
+          }
+        }, AUTO_RECORDING_CHUNK_MS);
+      };
+
+      recordNextChunk();
+    } catch (error) {
+      console.error("Unable to start auto recording", error);
+      if (recordingFrameTimerRef.current !== null) {
+        window.clearInterval(recordingFrameTimerRef.current);
+        recordingFrameTimerRef.current = null;
+      }
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+      recordingCanvasRef.current = null;
+      setIsRecording(false);
+      setRecordingStatus("error");
+      setRecordingMessage("Unable to start native screen recording. Check OS screen-capture permission.");
+    }
+  };
+
   const logout = async () => {
+    await stopAutoRecording(false);
     try {
       await invoke("clear_auth_token");
     } catch (error) {
@@ -783,6 +1017,45 @@ function App() {
     return () => clearInterval(interval);
   }, [isAuthenticated, isClockedIn]);
 
+  const autoClockIn = async () => {
+    if (!authHeaders || isClockedIn || isClockActionLoading) {
+      return;
+    }
+    setIsClockActionLoading(true);
+    const now = new Date();
+    try {
+      setStartedAt(now);
+      setElapsedSeconds(0);
+      setIsClockedIn(true);
+      setSyncMessage(null);
+
+      const res = await fetch(`${apiBase}/api/agent/clock-in`, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify({
+          timestamp: now.toISOString(),
+          activeAfter: getLocalDayRange().start.toISOString(),
+        }),
+      });
+      if (!res.ok) {
+        setSyncMessage("Auto clock-in started locally. Backend sync pending.");
+        return;
+      }
+      const json = await safeParseJson<ApiSuccess<{ id: string }>>(res);
+      setSessionId(json.data.id);
+      void captureAndUploadScreenshot({ sessionId: json.data.id, force: true });
+      void startAutoRecording(json.data.id);
+      await sendData();
+    } catch (error) {
+      console.error("Auto clock-in failed", error);
+      setSyncMessage("Auto clock-in failed. Please check your connection.");
+      setIsClockedIn(false);
+      setStartedAt(null);
+    } finally {
+      setIsClockActionLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!isAuthenticated || !authHeaders) {
       return;
@@ -808,6 +1081,7 @@ function App() {
         }>(res);
 
         if (!payload.success || !payload.data) {
+          void autoClockIn();
           return;
         }
 
@@ -830,8 +1104,10 @@ function App() {
         }
 
         void captureAndUploadScreenshot({ sessionId: active.id, force: true });
+        void startAutoRecording(active.id);
       } catch (error) {
         console.error("Session recovery failed", error);
+        void autoClockIn();
       }
     };
 
@@ -840,8 +1116,15 @@ function App() {
 
   const toggleClockStatus = () => {
     if (isClockedIn) {
+      const activeSessionId = sessionId;
+      setSessionId(null);
+      setIsClockedIn(false);
+      setStartedAt(null);
+      setElapsedSeconds(0);
+      setSyncMessage(null);
+      setIsClockActionLoading(false);
+
       void (async () => {
-        setIsClockActionLoading(true);
         await sendData();
 
         try {
@@ -849,24 +1132,20 @@ function App() {
             method: "POST",
             headers: authHeaders ?? { "Content-Type": "application/json" },
             body: JSON.stringify({
-              sessionId: sessionId ?? undefined,
+              sessionId: activeSessionId ?? undefined,
               timestamp: new Date().toISOString(),
             }),
           });
 
           if (!response.ok) {
-            setSyncMessage("Clock-out saved locally. Backend update pending.");
+            console.warn("Clock-out backend update pending.");
           }
         } catch (error) {
           console.error("Clock-out failed", error);
-          setSyncMessage("Clock-out saved locally. Backend update pending.");
         }
 
-        setSessionId(null);
-        setIsClockedIn(false);
-        setStartedAt(null);
+        await stopAutoRecording(false);
         await refreshAnalytics();
-        setIsClockActionLoading(false);
       })();
 
       return;
@@ -936,6 +1215,7 @@ function App() {
             const json = await safeParseJson<ApiSuccess<{ id: string }>>(res);
             setSessionId(json.data.id);
             void captureAndUploadScreenshot({ sessionId: json.data.id, force: true });
+            void startAutoRecording(json.data.id);
           } else {
             setSyncMessage("Clock-in started locally. Backend sync pending.");
           }
@@ -972,6 +1252,22 @@ function App() {
   const appWindow = getCurrentWindow();
 
   const handleClose = async () => {
+    if (isClockedIn && authHeaders) {
+      await sendData();
+      await stopAutoRecording(false);
+      try {
+        await fetch(`${apiBase}/api/agent/clock-out`, {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify({
+            sessionId: sessionId ?? undefined,
+            timestamp: new Date().toISOString(),
+          }),
+        });
+      } catch (error) {
+        console.error("Clock-out on close failed", error);
+      }
+    }
     await appWindow.close();
   };
 
@@ -1157,17 +1453,6 @@ function App() {
             </button>
           </div>
           {syncMessage ? <p className="sync-message">{syncMessage}</p> : null}
-          {isLiveScreenStreaming ? (
-            <div className="live-stream-indicator" role="status">
-              <span className="live-dot" />
-              Live screen streaming active
-              <button type="button" onClick={() => stopLiveScreen("ended")}>
-                Stop
-              </button>
-            </div>
-          ) : liveMessage ? (
-            <p className="sync-message">{liveMessage}</p>
-          ) : null}
         </div>
       </section>
 

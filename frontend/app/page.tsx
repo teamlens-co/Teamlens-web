@@ -69,7 +69,7 @@ const cardVariantsCenter = {
 
 const agentDownloadHref =
   process.env.NEXT_PUBLIC_AGENT_DOWNLOAD_URL?.trim() ||
-  "/downloads/TeamLens_0.1.45_x64_en-US.msi";
+  "/downloads/TeamLens_0.1.46_x64_en-US.msi";
 
 export default function Home() {
   const router = useRouter();

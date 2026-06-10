@@ -23,6 +23,58 @@ func NewAgentAuthService(pool *pgxpool.Pool, jwt *JWTService, cfg *config.Config
 	return &AgentAuthService{pool: pool, jwt: jwt, cfg: cfg}
 }
 
+func (s *AgentAuthService) Me(ctx context.Context, userID string) (*models.AgentLoginResponse, error) {
+	var user struct {
+		ID             string
+		FullName       string
+		Email          string
+		Role           models.AuthRole
+		Status         string
+		OrganizationID string
+		OrgName        string
+		OrgSlug        string
+	}
+
+	err := s.pool.QueryRow(ctx,
+		`SELECT u.id, u.full_name, u.email, u.role, u.status, u.organization_id,
+		        o.name, o.slug
+		 FROM users u
+		 JOIN organizations o ON o.id = u.organization_id
+		 WHERE u.id = $1`, userID,
+	).Scan(
+		&user.ID, &user.FullName, &user.Email, &user.Role, &user.Status,
+		&user.OrganizationID, &user.OrgName, &user.OrgSlug,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errors.New("User not found")
+		}
+		return nil, fmt.Errorf("query user: %w", err)
+	}
+
+	if user.Status != "ACTIVE" {
+		return nil, errors.New("User account is not active")
+	}
+
+	if user.Role != models.RoleEmployee {
+		return nil, errors.New("Desktop agent login is only available for employees")
+	}
+
+	return &models.AgentLoginResponse{
+		User: models.UserResponse{
+			ID:       user.ID,
+			FullName: user.FullName,
+			Email:    user.Email,
+			Role:     user.Role,
+		},
+		Organization: models.OrgResponse{
+			ID:   user.OrganizationID,
+			Name: user.OrgName,
+			Slug: user.OrgSlug,
+		},
+	}, nil
+}
+
 func (s *AgentAuthService) Login(ctx context.Context, email, password string, deviceLabel *string) (*models.AgentLoginResponse, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 

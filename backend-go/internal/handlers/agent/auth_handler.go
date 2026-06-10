@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/teamlens/backend-go/internal/middleware"
+	"github.com/teamlens/backend-go/internal/models"
 	"github.com/teamlens/backend-go/internal/services"
 )
 
@@ -15,6 +16,33 @@ type AuthHandler struct {
 
 func NewAuthHandler(svc *services.AgentAuthService) *AuthHandler {
 	return &AuthHandler{agentAuthSvc: svc}
+}
+
+func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
+	auth := middleware.GetAuthContext(r.Context())
+	if auth == nil {
+		middleware.Error(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	if auth.TokenType != models.TokenTypeAgent || auth.Role != models.RoleEmployee {
+		middleware.Error(w, http.StatusForbidden, "Desktop agent token is required")
+		return
+	}
+
+	result, err := h.agentAuthSvc.Me(r.Context(), auth.UserID)
+	if err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "not active") || strings.Contains(msg, "only available") {
+			middleware.Error(w, http.StatusUnauthorized, msg)
+			return
+		}
+		middleware.Error(w, http.StatusNotFound, msg)
+		return
+	}
+
+	result.Token = auth.Token
+	middleware.Success(w, http.StatusOK, result)
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {

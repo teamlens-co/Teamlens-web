@@ -90,7 +90,6 @@ function LiveCard({ employee, apiBase, onOpen }: { employee: LiveEmployee; apiBa
           <span className={`h-2 w-2 rounded-full ${employee.online ? "bg-[#4FD17D]" : "bg-[#B8B0AA]"}`} />
           <span className="truncate">{employee.name}</span>
         </div>
-
         {employee.screenshot ? (
           <Image
             src={`${apiBase}/api/agent/screenshots/${employee.screenshot.id}`}

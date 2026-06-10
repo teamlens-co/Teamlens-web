@@ -18,6 +18,7 @@ env:
   VITE_WEB_URL: ${{ secrets.AGENT_VITE_WEB_URL }}
   VITE_WS_URL: wss://api.teamlens.co
   VITE_WEBRTC_ICE_SERVERS: ${{ secrets.AGENT_VITE_WEBRTC_ICE_SERVERS }}
+  CARGO_BUILD_JOBS: "1"
 
 concurrency:
   group: agent-build-${{ github.ref }}
@@ -71,8 +72,13 @@ jobs:
               const cfg = JSON.parse(fs.readFileSync(p, 'utf8'));
               cfg.version = bv;
               fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + '\n');
-              console.log('Updated ' + p + ' → ' + bv);
+              console.log('Updated ' + p + ' -> ' + bv);
             });
+            const cargoPath = 'src-tauri/Cargo.toml';
+            const cargo = fs.readFileSync(cargoPath, 'utf8')
+              .replace(/^version\s*=\s*\"[^\"]+\"/m, 'version = \"' + bv + '\"');
+            fs.writeFileSync(cargoPath, cargo);
+            console.log('Updated ' + cargoPath + ' -> ' + bv);
           "
 
       - name: Build Tauri app (release)

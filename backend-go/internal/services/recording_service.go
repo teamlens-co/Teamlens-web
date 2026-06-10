@@ -48,7 +48,7 @@ func (s *RecordingService) GetRecordings(ctx context.Context, organizationID str
 
 	query := `SELECT id, manager_id, employee_id, organization_id, live_session_id, file_path, file_size, duration_ms, mime_type, recorded_at, created_at
 	          FROM screen_recordings
-	          WHERE organization_id = $1`
+	          WHERE organization_id = $1 AND deleted_at IS NULL`
 
 	args := []interface{}{organizationID}
 	paramIdx := 2
@@ -103,7 +103,7 @@ func (s *RecordingService) GetRecordingByID(ctx context.Context, id string) (*mo
 	var liveSessionID *string
 	err := s.pool.QueryRow(ctx,
 		`SELECT id, manager_id, employee_id, organization_id, live_session_id, file_path, file_size, duration_ms, mime_type, recorded_at, created_at
-		 FROM screen_recordings WHERE id = $1`, id,
+		 FROM screen_recordings WHERE id = $1 AND deleted_at IS NULL`, id,
 	).Scan(&rec.ID, &rec.ManagerID, &rec.EmployeeID, &rec.OrganizationID, &liveSessionID,
 		&rec.FilePath, &rec.FileSize, &rec.DurationMs, &rec.MimeType, &rec.RecordedAt, &rec.CreatedAt)
 	if err != nil {
@@ -114,7 +114,7 @@ func (s *RecordingService) GetRecordingByID(ctx context.Context, id string) (*mo
 }
 
 func (s *RecordingService) DeleteRecording(ctx context.Context, id string) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM screen_recordings WHERE id = $1`, id)
+	_, err := s.pool.Exec(ctx, `UPDATE screen_recordings SET deleted_at = NOW() WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("delete recording: %w", err)
 	}
