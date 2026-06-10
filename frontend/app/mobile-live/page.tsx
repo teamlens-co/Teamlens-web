@@ -21,7 +21,7 @@ function MobileLiveInner() {
   const token = params.get("mobileToken") || params.get("teamlensToken") || "";
   const employeeId = params.get("employeeId") || "";
   const runtimeHost = typeof window !== "undefined" ? `${window.location.protocol}//${window.location.hostname}` : "";
-  const apiBase = trimSlash(params.get("mobileApiBase") || (runtimeHost ? `${runtimeHost}:5000` : "http://localhost:5000"));
+  const apiBase = trimSlash(params.get("mobileApiBase") || (runtimeHost ? runtimeHost : ""));
   const wsBase = trimSlash(params.get("mobileWsBase") || (runtimeHost ? `${runtimeHost}:4000` : "http://localhost:4000"));
 
   const [status, setStatus] = useState("Preparing live stream...");

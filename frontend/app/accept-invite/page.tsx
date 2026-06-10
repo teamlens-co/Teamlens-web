@@ -48,7 +48,7 @@ function AcceptInviteContent() {
 
   const apiBase = useMemo(() => {
     const envBase = process.env.NEXT_PUBLIC_API_URL?.trim();
-    return envBase && envBase.length > 0 ? envBase.replace(/\/$/, "") : "http://localhost:5000";
+    return envBase && envBase.length > 0 ? envBase.replace(/\/$/, "") : "";
   }, []);
 
   useEffect(() => {

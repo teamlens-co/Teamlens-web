@@ -20,7 +20,7 @@ const uniqueBases = (values: Array<string | null | undefined>) =>
 const getRuntimeApiBases = () => {
   const envBase = process.env.NEXT_PUBLIC_API_URL?.trim();
   if (typeof window === "undefined") {
-    return uniqueBases([envBase, "http://localhost:5000"]);
+    return uniqueBases([envBase]);
   }
 
   const params = new URLSearchParams(window.location.search);
