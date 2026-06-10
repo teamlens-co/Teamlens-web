@@ -62,9 +62,7 @@ const getRuntimeApiBases = () => {
     queryBase,
     isLocalHost ? envBase : undefined,
     isLocalHost ? undefined : `${protocol}//${hostname}`,
-    isLocalHost ? undefined : `${protocol}//${hostname}:5000`,
     envBase,
-    "http://localhost:5000",
   ]);
 };
 
@@ -84,9 +82,7 @@ const getRuntimeWsBases = () => {
     queryBase,
     isLocalHost ? envBase : undefined,
     isLocalHost ? undefined : `${protocol}//${hostname}`,
-    isLocalHost ? undefined : `${protocol}//${hostname}:4000`,
     envBase,
-    "http://localhost:4000",
   ]);
 };
 
@@ -181,7 +177,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const apiBaseCandidates = useMemo(() => getRuntimeApiBases(), []);
   const wsBaseCandidates = useMemo(() => getRuntimeWsBases(), []);
-  const [resolvedApiBase, setResolvedApiBase] = useState(apiBaseCandidates[0] ?? "http://localhost:5000");
+  const [resolvedApiBase, setResolvedApiBase] = useState(apiBaseCandidates[0] ?? "");
   const apiBase = resolvedApiBase;
   const wsBase = wsBaseCandidates[0] ?? "http://localhost:4000";
 
