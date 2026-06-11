@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { fetch } from "@tauri-apps/plugin-http";
 import { getVersion } from "@tauri-apps/api/app";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -74,6 +75,25 @@ type RecordingSessionResponse = {
   status: string;
 };
 
+type InputDiagnostics = {
+  pointerMoves: number;
+  pointerDowns: number;
+  clicks: number;
+  focusIns: number;
+  lastEvent: string;
+  lastTarget: string;
+};
+
+const describeEventTarget = (target: EventTarget | null): string => {
+  if (!(target instanceof HTMLElement)) {
+    return "unknown";
+  }
+
+  const id = target.id ? `#${target.id}` : "";
+  const classes = target.className ? `.${String(target.className).trim().replace(/\s+/g, ".")}` : "";
+  return `${target.tagName.toLowerCase()}${id}${classes}`;
+};
+
 const getApiBase = (): string => {
   const configured = import.meta.env.VITE_API_URL?.trim();
   if (configured) {
@@ -102,6 +122,8 @@ const getWsBase = (): string => {
 };
 
 const isAutoUpdateEnabled = (): boolean => import.meta.env.VITE_ENABLE_AUTO_UPDATE === "true";
+const isInputDiagnosticsVisible = (): boolean =>
+  import.meta.env.DEV || import.meta.env.VITE_SHOW_INPUT_DIAGNOSTICS === "true";
 
 const formatSeconds = (seconds: number): string => {
   const hrs = Math.floor(seconds / 3600)
@@ -371,6 +393,14 @@ function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [, setRecordingStatus] = useState<RecordingUploadStatus>("idle");
   const [, setRecordingMessage] = useState<string | null>(null);
+  const [inputDiagnostics, setInputDiagnostics] = useState<InputDiagnostics>({
+    pointerMoves: 0,
+    pointerDowns: 0,
+    clicks: 0,
+    focusIns: 0,
+    lastEvent: "mounted",
+    lastTarget: "none",
+  });
 
   const mouseMovesRef = useRef(0);
   const keyPressesRef = useRef(0);
@@ -407,6 +437,52 @@ function App() {
       "Content-Type": "application/json",
     };
   }, [authToken]);
+
+  useEffect(() => {
+    const focusWebview = async () => {
+      try {
+        await getCurrentWebview().setFocus();
+      } catch (error) {
+        console.warn("Unable to focus webview", error);
+      }
+    };
+
+    void focusWebview();
+    window.addEventListener("focus", focusWebview);
+
+    return () => {
+      window.removeEventListener("focus", focusWebview);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isInputDiagnosticsVisible()) {
+      return;
+    }
+
+    const updateDiagnostics = (event: Event) => {
+      setInputDiagnostics((current) => ({
+        pointerMoves: current.pointerMoves + (event.type === "pointermove" ? 1 : 0),
+        pointerDowns: current.pointerDowns + (event.type === "pointerdown" ? 1 : 0),
+        clicks: current.clicks + (event.type === "click" ? 1 : 0),
+        focusIns: current.focusIns + (event.type === "focusin" ? 1 : 0),
+        lastEvent: event.type,
+        lastTarget: describeEventTarget(event.target),
+      }));
+    };
+
+    document.addEventListener("pointermove", updateDiagnostics, true);
+    document.addEventListener("pointerdown", updateDiagnostics, true);
+    document.addEventListener("click", updateDiagnostics, true);
+    document.addEventListener("focusin", updateDiagnostics, true);
+
+    return () => {
+      document.removeEventListener("pointermove", updateDiagnostics, true);
+      document.removeEventListener("pointerdown", updateDiagnostics, true);
+      document.removeEventListener("click", updateDiagnostics, true);
+      document.removeEventListener("focusin", updateDiagnostics, true);
+    };
+  }, []);
 
   const applyAuth = (payload: AgentLoginData) => {
     setAuthToken(payload.token);
@@ -1368,10 +1444,23 @@ function App() {
     }
   };
 
+  const diagnosticsPanel = isInputDiagnosticsVisible() ? (
+    <div className="input-diagnostics" aria-live="polite">
+      <strong>Input diag</strong>
+      <span>move {inputDiagnostics.pointerMoves}</span>
+      <span>down {inputDiagnostics.pointerDowns}</span>
+      <span>click {inputDiagnostics.clicks}</span>
+      <span>focus {inputDiagnostics.focusIns}</span>
+      <span>{inputDiagnostics.lastEvent}</span>
+      <span>{inputDiagnostics.lastTarget}</span>
+    </div>
+  ) : null;
+
   if (!isAuthenticated || !authToken) {
     return (
       <div className="agent-shell">
-        <header className="top-bar" data-tauri-drag-region>
+        {diagnosticsPanel}
+        <header className="top-bar">
           <div className="window-controls">
             <button className="control-dot red" onClick={() => void handleClose()} aria-label="Close window" />
             <button
@@ -1439,8 +1528,9 @@ function App() {
 
   return (
     <div className="agent-shell">
+      {diagnosticsPanel}
       <section className="top-card">
-        <header className="top-bar" data-tauri-drag-region>
+        <header className="top-bar">
           <div className="window-controls">
             <button className="control-dot red" onClick={() => void handleClose()} aria-label="Close window" />
             <button

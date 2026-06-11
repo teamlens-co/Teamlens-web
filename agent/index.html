@@ -9,6 +9,13 @@
 
   <body>
     <div id="root"></div>
+    <button id="test-btn" style="position: fixed; top: 10px; left: 10px; z-index: 99999; background: red; color: white; padding: 10px; border: 2px solid black; pointer-events: auto;">TEST CLICK</button>
+    <script>
+      document.getElementById('test-btn').addEventListener('click', () => {
+        alert('BUTTON WORKS!');
+        console.log('Native button clicked!');
+      });
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
