@@ -44,7 +44,7 @@ if os.path.isdir(nsis_dir):
         installer_name = os.path.basename(exe_files[0])
         with open(sig_files[0]) as f:
             signature = f.read().strip()
-        installer_url = 'https://github.com/teamlens-co/teamlens-web-server/releases/download/agent-v{}/{}'.format(run_number, installer_name)
+        installer_url = 'https://github.com/teamlens-co/Teamlens-web/releases/download/agent-v{}/{}'.format(run_number, installer_name)
 
 # Fallback to MSI
 if not installer_url:
@@ -56,7 +56,7 @@ if not installer_url:
             installer_name = os.path.basename(msi_files[0])
             with open(sig_files[0]) as f:
                 signature = f.read().strip()
-            installer_url = 'https://github.com/teamlens-co/teamlens-web-server/releases/download/agent-v{}/{}'.format(run_number, installer_name)
+            installer_url = 'https://github.com/teamlens-co/Teamlens-web/releases/download/agent-v{}/{}'.format(run_number, installer_name)
 
 data = {
     'version': build_version,
