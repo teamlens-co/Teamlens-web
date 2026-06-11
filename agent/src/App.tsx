@@ -243,9 +243,9 @@ const inferUrlFromTitle = (title: string, browserUrl?: string): string | undefin
 };
 
 const invalidDomainSuffixes = new Set(["app", "css", "html", "js", "jsx", "json", "md", "py", "rs", "tsx", "ts", "txt", "vue", "xml"]);
-const SCREENSHOT_INTERVAL_MIN_MS = 30_000;
-const SCREENSHOT_INTERVAL_MAX_MS = 30_000;
-const AUTO_RECORDING_FPS = 5;
+const SCREENSHOT_INTERVAL_MIN_MS = 60_000;
+const SCREENSHOT_INTERVAL_MAX_MS = 60_000;
+const AUTO_RECORDING_FPS = 3;
 const AUTO_RECORDING_CHUNK_MS = 30_000;
 const AUTO_RECORDING_WIDTH = 1280;
 const AUTO_RECORDING_HEIGHT = 720;
@@ -382,6 +382,7 @@ function App() {
   const recordingChunkIndexRef = useRef(0);
   const recordingChunkStartedAtRef = useRef<number>(0);
   const recordingStopRequestedRef = useRef(false);
+  const recordingCleanupRef = useRef<(() => void) | null>(null);
 
   const apiBase = useMemo(() => getApiBase(), []);
   const webBase = useMemo(() => getWebBase(), []);
@@ -537,6 +538,13 @@ function App() {
   const stopAutoRecording = async (failed = false) => {
     recordingStopRequestedRef.current = true;
 
+    // Call cleanup (removes focus/blur listeners, stops frame timer)
+    if (recordingCleanupRef.current) {
+      recordingCleanupRef.current();
+      recordingCleanupRef.current = null;
+    }
+
+    // Also clear frame timer explicitly as fallback
     if (recordingFrameTimerRef.current !== null) {
       window.clearInterval(recordingFrameTimerRef.current);
       recordingFrameTimerRef.current = null;
@@ -633,9 +641,49 @@ function App() {
       };
 
       await drawNativeFrame();
-      recordingFrameTimerRef.current = window.setInterval(() => {
-        void drawNativeFrame();
-      }, Math.max(1000 / AUTO_RECORDING_FPS, 50));
+
+      const startFrameTimer = () => {
+        if (recordingStopRequestedRef.current) return;
+        recordingFrameTimerRef.current = window.setInterval(() => {
+          void drawNativeFrame();
+        }, Math.max(1000 / AUTO_RECORDING_FPS, 50));
+      };
+      const stopFrameTimer = () => {
+        if (recordingFrameTimerRef.current !== null) {
+          window.clearInterval(recordingFrameTimerRef.current);
+          recordingFrameTimerRef.current = null;
+        }
+      };
+
+      startFrameTimer();
+
+      const handleWindowBlur = () => {
+        stopFrameTimer();
+      };
+      const handleWindowFocus = () => {
+        if (!recordingStopRequestedRef.current) {
+          void drawNativeFrame();
+          startFrameTimer();
+        }
+      };
+      window.addEventListener("blur", handleWindowBlur);
+      window.addEventListener("focus", handleWindowFocus);
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+          handleWindowBlur();
+        } else {
+          handleWindowFocus();
+        }
+      });
+
+      // Store cleanup ref for when recording stops
+      const recordingCleanup = () => {
+        stopFrameTimer();
+        window.removeEventListener("blur", handleWindowBlur);
+        window.removeEventListener("focus", handleWindowFocus);
+        document.removeEventListener("visibilitychange");
+      };
+      recordingCleanupRef.current = recordingCleanup;
 
       const startResponse = await fetch(`${apiBase}/api/agent/recording-sessions/start`, {
         method: "POST",
