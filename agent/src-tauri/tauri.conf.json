@@ -45,7 +45,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM4RDc0QjRFNkY2QzQ4RTgKUldUb1NHeHZUa3ZYeUtHUzZhODJoZHZISG8zZEorZTlZSnBTalcrYWRVUTM1UDQ0UGJZeGRHWjYK",
       "endpoints": [
-        "https://github.com/teamlens-co/teamlens-web-server/releases/latest/download/teamlens-agent-latest.json"
+        "https://github.com/teamlens-co/Teamlens-web/releases/latest/download/teamlens-agent-latest.json"
       ]
     }
   }

@@ -738,14 +738,26 @@ function App() {
     stopLiveScreen("logout");
   };
 
-  const checkForAgentUpdate = async () => {
+  const [updateStatus, setUpdateStatus] = useState<string | null>(null);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+
+  const checkForAgentUpdate = async (showResult = false) => {
     if (!isAutoUpdateEnabled()) {
+      if (showResult) {
+        setUpdateStatus("Auto-update not configured. Download manually from the dashboard.");
+      }
       return;
     }
+
+    setIsCheckingUpdate(true);
+    setUpdateStatus(null);
 
     try {
       const update = await check();
       if (!update) {
+        if (showResult) {
+          setUpdateStatus(`Already on latest version (${appVersion}). ✅`);
+        }
         return;
       }
 
@@ -754,6 +766,11 @@ function App() {
       await relaunch();
     } catch (error) {
       console.error("Agent update check failed", error);
+      if (showResult) {
+        setUpdateStatus("Update check failed. Download manually from dashboard.");
+      }
+    } finally {
+      setIsCheckingUpdate(false);
     }
   };
 
@@ -1430,7 +1447,17 @@ function App() {
                 <button className="signout-link" onClick={() => { setIsSidebarOpen(false); void logout(); }}>
                   Sign out
                 </button>
-                <span className="app-version">Version: {appVersion}</span>
+                <div className="update-section">
+                  <button
+                    className="check-update-link"
+                    onClick={() => void checkForAgentUpdate(true)}
+                    disabled={isCheckingUpdate}
+                  >
+                    {isCheckingUpdate ? "Checking..." : "Check for Updates"}
+                  </button>
+                  {updateStatus && <span className="update-status">{updateStatus}</span>}
+                  <span className="app-version">Version: {appVersion}</span>
+                </div>
               </div>
             </aside>
           </>

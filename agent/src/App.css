@@ -691,8 +691,8 @@ input,
 
 .account-footer {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 8px;
   border-top: none;
   padding: 16px;
 }
@@ -705,10 +705,43 @@ input,
   font-size: 14px;
   cursor: pointer;
   padding: 0;
+  text-align: left;
 }
 
 .signout-link:hover {
   text-decoration: underline;
+}
+
+.update-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.check-update-link {
+  background: none;
+  border: none;
+  color: var(--accent-blue, #6366f1);
+  font-weight: 500;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.check-update-link:hover {
+  text-decoration: underline;
+}
+
+.check-update-link:disabled {
+  color: var(--text-gray);
+  cursor: not-allowed;
+}
+
+.update-status {
+  font-size: 11px;
+  color: var(--text-gray);
+  line-height: 1.3;
 }
 
 .app-version {

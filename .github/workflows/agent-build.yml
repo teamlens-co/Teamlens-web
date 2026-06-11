@@ -17,6 +17,7 @@ env:
   VITE_API_URL: ${{ secrets.AGENT_VITE_API_URL }}
   VITE_WEB_URL: ${{ secrets.AGENT_VITE_WEB_URL }}
   VITE_WS_URL: wss://api.teamlens.co
+  VITE_ENABLE_AUTO_UPDATE: "true"
   VITE_WEBRTC_ICE_SERVERS: ${{ secrets.AGENT_VITE_WEBRTC_ICE_SERVERS }}
   CARGO_BUILD_JOBS: "1"
 
