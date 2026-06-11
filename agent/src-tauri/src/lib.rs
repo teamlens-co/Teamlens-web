@@ -473,7 +473,7 @@ fn get_active_window_info() -> Result<ActiveWindowInfo, String> {
 
 #[tauri::command]
 fn capture_screenshot() -> Result<Vec<u8>, String> {
-    capture_frame_png(CompressionType::Default, PngFilterType::Adaptive)
+    capture_frame_png(CompressionType::Fast, PngFilterType::Adaptive)
 }
 
 #[tauri::command]
