@@ -1022,17 +1022,26 @@ function App() {
   }, [isAuthenticated, authUserId, authHeaders]);
 
   useEffect(() => {
-    if (!isAuthenticated || isClockedIn) {
+    if (!isAuthenticated) {
       return;
     }
 
     void checkForAgentUpdate();
+
+    const handleFocus = () => {
+      void checkForAgentUpdate();
+    };
+    window.addEventListener("focus", handleFocus);
+
     const interval = setInterval(() => {
       void checkForAgentUpdate();
-    }, 6 * 60 * 60 * 1000);
+    }, 5 * 60 * 1000);
 
-    return () => clearInterval(interval);
-  }, [isAuthenticated, isClockedIn]);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      clearInterval(interval);
+    };
+  }, [isAuthenticated]);
 
   const autoClockIn = async () => {
     if (!authHeaders || isClockedIn || isClockActionLoading) {
