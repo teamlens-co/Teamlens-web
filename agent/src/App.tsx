@@ -668,20 +668,21 @@ function App() {
       };
       window.addEventListener("blur", handleWindowBlur);
       window.addEventListener("focus", handleWindowFocus);
-      document.addEventListener("visibilitychange", () => {
+      const handleVisibilityChange = () => {
         if (document.hidden) {
           handleWindowBlur();
         } else {
           handleWindowFocus();
         }
-      });
+      };
+      document.addEventListener("visibilitychange", handleVisibilityChange);
 
       // Store cleanup ref for when recording stops
       const recordingCleanup = () => {
         stopFrameTimer();
         window.removeEventListener("blur", handleWindowBlur);
         window.removeEventListener("focus", handleWindowFocus);
-        document.removeEventListener("visibilitychange");
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
       };
       recordingCleanupRef.current = recordingCleanup;
 
