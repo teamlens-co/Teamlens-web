@@ -10,9 +10,7 @@ import {
   Clock4, ListChecks, Sparkles, CircleAlert, ArrowUpRight,
   Users, BarChart3, Activity, Target, ArrowLeft
 } from "lucide-react";
-} from "lucide-react";
 import { useAuth } from "../../../contexts/AuthContext";
-import Link from "next/link";
 
 type CategoryItem = {
   category: string;

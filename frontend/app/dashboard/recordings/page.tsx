@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Calendar, Clock, Download, HardDrive, Play, Search, Trash2, User, Video } from "lucide-react";
+import { Calendar, Clock, Download, HardDrive, Pause, Play, Search, SkipBack, SkipForward, Trash2, User, Video } from "lucide-react";
 import { useAuth } from "../../../contexts/AuthContext";
 
 type ManualRecording = {
