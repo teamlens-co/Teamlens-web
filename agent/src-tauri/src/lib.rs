@@ -11,6 +11,7 @@ use std::io::{Cursor, ErrorKind};
 use image::codecs::png::{CompressionType, FilterType as PngFilterType, PngEncoder};
 use std::path::Path;
 use std::ptr::null_mut;
+use tauri::Manager;
 
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Foundation::{CloseHandle, HWND};
@@ -490,6 +491,23 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_http::init())
+        .setup(|app| {
+            // Aggressively reset window state to fix input blocking issue
+            if let Some(window) = app.get_webview_window("main") {
+                // Force window to be fully interactive
+                let _ = window.set_ignore_cursor_events(false);
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+                
+                // Open devtools if env var is set
+                if std::env::var("TEAMLENS_OPEN_DEVTOOLS").as_deref() == Ok("true") {
+                    window.open_devtools();
+                }
+            }
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             greet,
             set_auth_token,
