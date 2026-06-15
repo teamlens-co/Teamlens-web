@@ -36,7 +36,15 @@ docker rm -f teamlens-ws-test 2>/dev/null || true
 docker run -d --name teamlens-ws-test --restart unless-stopped \
   --network teamlens-web-server_default \
   -p 4001:4001 \
-  --env-file .env \
+  -e NODE_ENV="production" \
+  -e PORT="4001" \
+  -e DATABASE_URL="postgresql://teamlens:root@teamlens-web-server-postgres-1:5432/teamlens?schema=public" \
+  -e JWT_SECRET="${JWT_SECRET:-teamlens_jwt_secret_key_2025}" \
+  -e JWT_ACCESS_TTL="12h" \
+  -e JWT_AGENT_TTL="30d" \
+  -e INVITE_TTL_HOURS="72" \
+  -e WEB_APP_URL="https://test.teamlens.co" \
+  -e WEBRTC_ICE_SERVERS='[{"urls":["stun:stun.l.google.com:19302","turn:turn.teamlens.co:3478?transport=udp","turn:turn.teamlens.co:443?transport=tcp","turns:turn.teamlens.co:443?transport=tcp"],"username":"teamlens","credential":"cL6dbZdarVNTPT3uSdmoSkWP","credentialType":"password"}]' \
   teamlens-ws:latest
 
 echo "=== Rebuilding Frontend ==="
