@@ -22,6 +22,8 @@ docker run -d --name backend-go --restart unless-stopped \
   -v teamlens_uploads:/app/uploads \
   -e DATABASE_URL="postgresql://teamlens:root@teamlens-web-server-postgres-1:5432/teamlens?sslmode=disable" \
   -e JWT_SECRET="${JWT_SECRET:-teamlens_jwt_secret_key_2025}" \
+  -e JWT_ACCESS_TTL="30d" \
+  -e JWT_AGENT_TTL="30d" \
   -e UPLOAD_DIR="/app/uploads" \
   -e CORS_ORIGINS="https://test.teamlens.co,https://api.teamlens.co" \
   -e WEB_APP_URL="https://test.teamlens.co" \
