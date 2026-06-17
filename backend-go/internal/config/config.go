@@ -33,6 +33,12 @@ type Config struct {
 	// Recording
 	RecordingEnabled        bool
 	RecordingRetentionHours int
+
+	// Monitoring
+	SentryDSN        string
+	SentryEnvironment string
+	PostHogAPIKey    string
+	PostHogHost      string
 }
 
 func Load() (*Config, error) {
@@ -74,6 +80,11 @@ func Load() (*Config, error) {
 		dur = 30 * 24 * time.Hour
 	}
 	cfg.JWTOAgentTTL = dur
+
+	cfg.SentryDSN = getEnv("SENTRY_DSN", "")
+	cfg.SentryEnvironment = getEnv("SENTRY_ENVIRONMENT", getEnv("ENV", "development"))
+	cfg.PostHogAPIKey = getEnv("POSTHOG_API_KEY", "")
+	cfg.PostHogHost = getEnv("POSTHOG_HOST", "https://us.posthog.com")
 
 	return cfg, nil
 }

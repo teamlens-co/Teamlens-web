@@ -10,8 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/getsentry/sentry-go"
+	sentryhttp "github.com/getsentry/sentry-go/http"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
+	"github.com/teamlens/backend-go/internal/analytics"
 	"github.com/teamlens/backend-go/internal/config"
 	"github.com/teamlens/backend-go/internal/cron"
 	"github.com/teamlens/backend-go/internal/database"
@@ -34,6 +37,24 @@ func main() {
 		slog.Error("Failed to load config", "error", err)
 		os.Exit(1)
 	}
+
+	// ─── Monitoring & Analytics ─────────────────────────────────────────────
+
+	if cfg.SentryDSN != "" {
+		err := sentry.Init(sentry.ClientOptions{
+			Dsn:              cfg.SentryDSN,
+			Environment:      cfg.SentryEnvironment,
+			TracesSampleRate: 0.1,
+		})
+		if err != nil {
+			slog.Error("Failed to initialize Sentry", "error", err)
+		}
+		defer sentry.Flush(2 * time.Second)
+	}
+
+	analyticsClient := analytics.New(cfg.PostHogAPIKey, cfg.PostHogHost)
+	analytics.DefaultClient = analyticsClient
+	defer analyticsClient.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -85,6 +106,8 @@ func main() {
 
 	// ─── Router ─────────────────────────────────────────────────────────────
 
+	sentryMiddleware := sentryhttp.New(sentryhttp.Options{Repanic: true})
+
 	r := chi.NewRouter()
 
 	// Global middleware
@@ -92,6 +115,7 @@ func main() {
 	r.Use(chimiddleware.RealIP)
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
+	r.Use(sentryMiddleware.Handle)
 	r.Use(chimiddleware.Timeout(60 * time.Second))
 	r.Use(middleware.CORSMiddleware(cfg.CORSOrigins))
 
