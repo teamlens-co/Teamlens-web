@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Calendar, Clock, Download, HardDrive, Pause, Play, Search, SkipBack, SkipForward, Trash2, User, Video } from "lucide-react";
 import { useAuth } from "../../../contexts/AuthContext";
+import DashboardDateFilter from "../../../components/DashboardDateFilter";
 
 type ManualRecording = {
   id: string;
@@ -329,7 +330,7 @@ function SessionRecordingPlayer({
 }
 
 export default function RecordingsPage() {
-  const { authHeaders, apiBase, user } = useAuth();
+  const { authHeaders, apiBase, user, dateRange } = useAuth();
   const [tab, setTab] = useState<"auto" | "manual">("auto");
   const [sessions, setSessions] = useState<RecordingSession[]>([]);
   const [manualRecordings, setManualRecordings] = useState<ManualRecording[]>([]);
@@ -385,21 +386,38 @@ export default function RecordingsPage() {
     return teamUser?.fullName || teamUser?.email || employeeId.slice(0, 8);
   }, [teamUsers]);
 
+  const isWithinDateRange = useCallback((dateStr: string) => {
+    const date = new Date(dateStr);
+    const from = dateRange?.startDate ? new Date(dateRange.startDate) : null;
+    const to = dateRange?.endDate ? new Date(dateRange.endDate) : null;
+    if (from) {
+      from.setHours(0, 0, 0, 0);
+      if (date < from) return false;
+    }
+    if (to) {
+      to.setHours(23, 59, 59, 999);
+      if (date > to) return false;
+    }
+    return true;
+  }, [dateRange?.startDate, dateRange?.endDate]);
+
   const filteredSessions = useMemo(() => {
     const query = searchQuery.toLowerCase();
     return sessions.filter((session) => {
       const name = (session.employeeName || session.employeeEmail || getEmployeeName(session.employeeId)).toLowerCase();
-      return !query || name.includes(query) || formatDate(session.startedAt).toLowerCase().includes(query) || session.status.includes(query);
+      const matchesSearch = !query || name.includes(query) || formatDate(session.startedAt).toLowerCase().includes(query) || session.status.includes(query);
+      return matchesSearch && isWithinDateRange(session.startedAt);
     });
-  }, [getEmployeeName, searchQuery, sessions]);
+  }, [getEmployeeName, isWithinDateRange, searchQuery, sessions]);
 
   const filteredManual = useMemo(() => {
     const query = searchQuery.toLowerCase();
     return manualRecordings.filter((recording) => {
       const name = getEmployeeName(recording.employeeId).toLowerCase();
-      return !query || name.includes(query) || formatDate(recording.recordedAt).toLowerCase().includes(query);
+      const matchesSearch = !query || name.includes(query) || formatDate(recording.recordedAt).toLowerCase().includes(query);
+      return matchesSearch && isWithinDateRange(recording.recordedAt);
     });
-  }, [getEmployeeName, manualRecordings, searchQuery]);
+  }, [getEmployeeName, isWithinDateRange, manualRecordings, searchQuery]);
 
   const playSession = async (session: RecordingSession) => {
     if (!authHeaders) return;
@@ -450,15 +468,18 @@ export default function RecordingsPage() {
             {sessions.length} auto sessions · {manualRecordings.length} live recordings
           </p>
         </div>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8C837B]" />
-          <input
-            type="text"
-            placeholder="Search recordings..."
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            className="h-9 w-72 rounded-xl border border-[#E1D7CE] bg-white pl-10 pr-4 text-[13px] font-medium text-[#302C28] outline-none transition placeholder:text-[#8C837B] focus:border-brand focus:ring-2 focus:ring-brand/10"
-          />
+        <div className="flex items-center gap-3">
+          <DashboardDateFilter />
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8C837B]" />
+            <input
+              type="text"
+              placeholder="Search recordings..."
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              className="h-9 w-72 rounded-xl border border-[#E1D7CE] bg-white pl-10 pr-4 text-[13px] font-medium text-[#302C28] outline-none transition placeholder:text-[#8C837B] focus:border-brand focus:ring-2 focus:ring-brand/10"
+            />
+          </div>
         </div>
       </div>
 
