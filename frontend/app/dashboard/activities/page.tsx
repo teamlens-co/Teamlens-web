@@ -624,7 +624,6 @@ export default function ActivitiesPage() {
                 {usingProjectorSeedData ? "Demo data preview" : "Backend data"}
               </span>
             </div>
-            <div className="text-sm font-medium text-muted-foreground">Auto refresh every {PROJECTOR_REFRESH_MS / 1000}s</div>
           </div>
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -658,22 +657,28 @@ export default function ActivitiesPage() {
                 <span className="rounded-full bg-brand-light px-3 py-1 text-[11px] font-bold text-brand-dark">Today</span>
               </div>
               <div className="flex h-[240px] items-end gap-1.5">
-                {hourlyStats.map((stat) => {
-                  const activeHeight = Math.max(2, (stat.activeSeconds / maxHourlyWork) * 100);
-                  const idleHeight = Math.max(0, (stat.idleSeconds / maxHourlyWork) * 100);
-                  const hasData = stat.activeSeconds + stat.idleSeconds > 0;
-                  return (
-                    <div key={stat.hour} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-2">
-                      <div className="flex h-[190px] w-full max-w-[28px] items-end overflow-hidden rounded-t-md bg-muted">
-                        <div className="flex w-full flex-col justify-end">
-                          <span className="block w-full bg-border" style={{ height: `${idleHeight}%` }} />
-                          <span className="block w-full bg-brand" style={{ height: `${hasData ? activeHeight : 0}%` }} />
+                {hourlyStats.every((stat) => stat.activeSeconds + stat.idleSeconds === 0) ? (
+                  <div className="flex h-full w-full items-center justify-center rounded-lg bg-muted text-center">
+                    <p className="text-[13px] font-semibold text-muted-foreground">No activity data for this day.</p>
+                  </div>
+                ) : (
+                  hourlyStats.map((stat) => {
+                    const activeHeight = Math.max(2, (stat.activeSeconds / maxHourlyWork) * 100);
+                    const idleHeight = Math.max(0, (stat.idleSeconds / maxHourlyWork) * 100);
+                    const hasData = stat.activeSeconds + stat.idleSeconds > 0;
+                    return (
+                      <div key={stat.hour} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-2">
+                        <div className="flex h-[190px] w-full max-w-[28px] items-end overflow-hidden rounded-t-md bg-muted">
+                          <div className="flex w-full flex-col justify-end">
+                            <span className="block w-full bg-border" style={{ height: `${idleHeight}%` }} />
+                            <span className="block w-full bg-brand" style={{ height: `${hasData ? activeHeight : 0}%` }} />
+                          </div>
                         </div>
+                        <span className="hidden text-[10px] font-semibold text-muted-foreground sm:block">{stat.hour % 3 === 0 ? stat.label : ""}</span>
                       </div>
-                      <span className="hidden text-[10px] font-semibold text-muted-foreground sm:block">{stat.hour % 3 === 0 ? stat.label : ""}</span>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
             </div>
 
