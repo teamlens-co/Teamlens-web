@@ -1,0 +1,24 @@
+# Global fallback — everything needs review from Puse
+* @puse
+
+# Backend services
+/backend-go/internal/services/auth_service.go @puse
+/backend-go/internal/services/user_service.go @puse
+/backend-go/internal/handlers/web/ @puse
+
+# Frontend core
+/frontend/app/dashboard/ @puse
+/frontend/contexts/ @puse
+
+# Agent (Tauri)
+/agent/src-tauri/ @puse
+/agent/src/App.tsx @puse
+
+# Database schema changes
+/schema.sql @puse
+/backend-ws/prisma/migrations/ @puse
+
+# Infrastructure / deploy
+/docker-compose.yml @puse
+/scripts/deploy-*.sh @puse
+/.github/workflows/ @puse

@@ -291,10 +291,19 @@ func (s *AuthService) DeleteEmployee(ctx context.Context, organizationID, employ
 	tables := []string{
 		"agent_tokens", "team_memberships", "manual_time_requests",
 		"activity_logs", "work_sessions", "screenshots",
-		"activity_usage_logs", "live_screen_sessions", "screen_recordings",
+		"activity_usage_logs",
 	}
 	for _, table := range tables {
 		_, err := tx.Exec(ctx, fmt.Sprintf(`DELETE FROM "%s" WHERE user_id = $1`, table), employeeID)
+		if err != nil {
+			return nil, fmt.Errorf("delete from %s: %w", table, err)
+		}
+	}
+
+	// Tables with employee_id column instead of user_id
+	employeeTables := []string{"live_screen_sessions", "screen_recordings"}
+	for _, table := range employeeTables {
+		_, err := tx.Exec(ctx, fmt.Sprintf(`DELETE FROM "%s" WHERE employee_id = $1`, table), employeeID)
 		if err != nil {
 			return nil, fmt.Errorf("delete from %s: %w", table, err)
 		}

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { PostHogProvider } from "@/providers/PostHogProvider";
 
 export const metadata: Metadata = {
   title: "TeamLens",
@@ -18,7 +19,9 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col font-sans" suppressHydrationWarning>
-        {children}
+        <PostHogProvider>
+          {children}
+        </PostHogProvider>
       </body>
     </html>
   );
