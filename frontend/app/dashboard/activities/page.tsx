@@ -157,15 +157,27 @@ const buildHourlyStats = (employees: ActivityEmployee[], rangeStart: Date): Hour
     });
 
     if (!hadSegmentData && (employee.activeSeconds > 0 || employee.idleSeconds > 0 || employee.mouseMoves > 0 || employee.keyPresses > 0)) {
-      const anchor = employee.lastActiveAt ?? employee.firstActiveAt;
-      const anchorMs = anchor ? new Date(anchor).getTime() : rangeStart.getTime();
-      const safeAnchorMs = Number.isFinite(anchorMs) ? anchorMs : rangeStart.getTime();
-      const hour = Math.max(0, Math.min(23, Math.floor((safeAnchorMs - rangeStart.getTime()) / (60 * 60 * 1000))));
+      const first = employee.firstActiveAt ? new Date(employee.firstActiveAt).getTime() : rangeStart.getTime();
+      const last = employee.lastActiveAt ? new Date(employee.lastActiveAt).getTime() : first;
+      const dayStartMs = rangeStart.getTime();
+      const safeFirstMs = Number.isFinite(first) ? first : dayStartMs;
+      const safeLastMs = Number.isFinite(last) && last >= safeFirstMs ? last : safeFirstMs;
 
-      stats[hour].activeSeconds += employee.activeSeconds;
-      stats[hour].idleSeconds += employee.idleSeconds;
-      stats[hour].mouseMoves += employee.mouseMoves;
-      stats[hour].keyPresses += employee.keyPresses;
+      const firstHour = Math.max(0, Math.min(23, Math.floor((safeFirstMs - dayStartMs) / (60 * 60 * 1000))));
+      const lastHour = Math.max(firstHour, Math.min(23, Math.floor((safeLastMs - dayStartMs) / (60 * 60 * 1000))));
+      const coveredHours = Math.max(1, lastHour - firstHour + 1);
+
+      const activePerHour = employee.activeSeconds / coveredHours;
+      const idlePerHour = employee.idleSeconds / coveredHours;
+      const mousePerHour = Math.floor(employee.mouseMoves / coveredHours);
+      const keysPerHour = Math.floor(employee.keyPresses / coveredHours);
+
+      for (let hour = firstHour; hour <= lastHour; hour += 1) {
+        stats[hour].activeSeconds += activePerHour;
+        stats[hour].idleSeconds += idlePerHour;
+        stats[hour].mouseMoves += mousePerHour;
+        stats[hour].keyPresses += keysPerHour;
+      }
     }
   });
 
