@@ -5,7 +5,7 @@ import { getVersion } from "@tauri-apps/api/app";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { relaunch, exit } from "@tauri-apps/plugin-process";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 import { useEmployeeLiveScreen } from "./liveScreen";
 import "./App.css";
