@@ -1,12 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState, useRef } from "react";
-import { Keyboard, MousePointer2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Activity, Clock, Keyboard, MousePointer2, Pause, Play, RefreshCw, Users } from "lucide-react";
 import { useAuth } from "../../../contexts/AuthContext";
 import DashboardDateFilter from "../../../components/DashboardDateFilter";
 import TimeRangeSlider from "../../../components/TimeRangeSlider";
 
 type RangePreset = "24h" | "12h" | "10h" | "custom";
+
+const PROJECTOR_REFRESH_MS = 30_000;
+
+const getInitialProjectorMode = () => {
+  if (typeof window === "undefined") return false;
+  const params = new URLSearchParams(window.location.search);
+  return params.get("view") === "projector" || params.get("mode") === "projector";
+};
 
 const presetWindows: Partial<Record<RangePreset, { startHour: number; endHour: number }>> = {
   "12h": { startHour: 8, endHour: 20 },
@@ -80,6 +88,13 @@ const formatCompactDuration = (seconds: number): string => {
   return `${secs}s`;
 };
 
+const formatLastUpdated = (date: Date | null): string => {
+  if (!date) return "Not updated yet";
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+};
+
+const clampPercent = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
+
 const formatClock = (value: string) =>
   new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 
@@ -94,6 +109,146 @@ const segmentStyle = (segment: TimelineSegment, startMs: number, endMs: number) 
 };
 
 const formatEmptyDate = (date: Date) => date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+
+type HourActivityStat = {
+  hour: number;
+  label: string;
+  activeSeconds: number;
+  idleSeconds: number;
+  mouseMoves: number;
+  keyPresses: number;
+};
+
+const buildHourlyStats = (employees: ActivityEmployee[], rangeStart: Date): HourActivityStat[] => {
+  const stats = Array.from({ length: 24 }, (_, hour) => ({
+    hour,
+    label: formatHourLabel(hour),
+    activeSeconds: 0,
+    idleSeconds: 0,
+    mouseMoves: 0,
+    keyPresses: 0,
+  }));
+
+  employees.forEach((employee) => {
+    let hadSegmentData = false;
+
+    employee.segments.forEach((segment) => {
+      const start = new Date(segment.start).getTime();
+      const end = new Date(segment.end).getTime();
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return;
+      hadSegmentData = true;
+
+      for (let hour = 0; hour < 24; hour += 1) {
+        const hourStartMs = rangeStart.getTime() + hour * 60 * 60 * 1000;
+        const hourEndMs = hourStartMs + 60 * 60 * 1000;
+        const overlapMs = Math.max(0, Math.min(end, hourEndMs) - Math.max(start, hourStartMs));
+        if (overlapMs <= 0) continue;
+
+        const segmentMs = Math.max(1, end - start);
+        const ratio = overlapMs / segmentMs;
+        if (segment.kind === "active") {
+          stats[hour].activeSeconds += overlapMs / 1000;
+        } else {
+          stats[hour].idleSeconds += overlapMs / 1000;
+        }
+        stats[hour].mouseMoves += Math.round(segment.mouseMoves * ratio);
+        stats[hour].keyPresses += Math.round(segment.keyPresses * ratio);
+      }
+    });
+
+    if (!hadSegmentData && (employee.activeSeconds > 0 || employee.idleSeconds > 0 || employee.mouseMoves > 0 || employee.keyPresses > 0)) {
+      const anchor = employee.lastActiveAt ?? employee.firstActiveAt;
+      const anchorMs = anchor ? new Date(anchor).getTime() : rangeStart.getTime();
+      const safeAnchorMs = Number.isFinite(anchorMs) ? anchorMs : rangeStart.getTime();
+      const hour = Math.max(0, Math.min(23, Math.floor((safeAnchorMs - rangeStart.getTime()) / (60 * 60 * 1000))));
+
+      stats[hour].activeSeconds += employee.activeSeconds;
+      stats[hour].idleSeconds += employee.idleSeconds;
+      stats[hour].mouseMoves += employee.mouseMoves;
+      stats[hour].keyPresses += employee.keyPresses;
+    }
+  });
+
+  return stats;
+};
+
+const buildProjectorSeedEmployees = (rangeStart: Date): ActivityEmployee[] => {
+  const names = [
+    ["Aarav Sharma", "aarav@teamlens.demo", 8, 52],
+    ["Meera Kapoor", "meera@teamlens.demo", 9, 34],
+    ["Rohan Mehta", "rohan@teamlens.demo", 10, 18],
+    ["Nisha Verma", "nisha@teamlens.demo", 11, 46],
+  ] as const;
+
+  return names.map(([employeeName, email, startHour, offsetMinutes], index) => {
+    const activeOneStart = new Date(rangeStart);
+    activeOneStart.setHours(startHour, offsetMinutes, 0, 0);
+    const activeOneEnd = new Date(activeOneStart);
+    activeOneEnd.setMinutes(activeOneEnd.getMinutes() + 72 + index * 8);
+    const idleStart = new Date(activeOneEnd);
+    const idleEnd = new Date(idleStart);
+    idleEnd.setMinutes(idleEnd.getMinutes() + 18 + index * 4);
+    const activeTwoStart = new Date(idleEnd);
+    const activeTwoEnd = new Date(activeTwoStart);
+    activeTwoEnd.setMinutes(activeTwoEnd.getMinutes() + 86 - index * 6);
+
+    const segments: TimelineSegment[] = [
+      {
+        start: activeOneStart.toISOString(),
+        end: activeOneEnd.toISOString(),
+        kind: "active",
+        mouseMoves: 480 + index * 120,
+        keyPresses: 220 + index * 90,
+      },
+      {
+        start: idleStart.toISOString(),
+        end: idleEnd.toISOString(),
+        kind: "idle",
+        mouseMoves: 0,
+        keyPresses: 0,
+      },
+      {
+        start: activeTwoStart.toISOString(),
+        end: activeTwoEnd.toISOString(),
+        kind: "active",
+        mouseMoves: 620 + index * 80,
+        keyPresses: 340 + index * 65,
+      },
+    ];
+
+    const activeSeconds = segments
+      .filter((segment) => segment.kind === "active")
+      .reduce((sum, segment) => sum + (new Date(segment.end).getTime() - new Date(segment.start).getTime()) / 1000, 0);
+    const idleSeconds = segments
+      .filter((segment) => segment.kind === "idle")
+      .reduce((sum, segment) => sum + (new Date(segment.end).getTime() - new Date(segment.start).getTime()) / 1000, 0);
+    const workSeconds = activeSeconds + idleSeconds;
+    const mouseMoves = segments.reduce((sum, segment) => sum + segment.mouseMoves, 0);
+    const keyPresses = segments.reduce((sum, segment) => sum + segment.keyPresses, 0);
+
+    return {
+      userId: `seed-${index + 1}`,
+      employeeName,
+      email,
+      activeSeconds,
+      idleSeconds,
+      workSeconds,
+      utilizationPercent: workSeconds > 0 ? clampPercent((activeSeconds / workSeconds) * 100) : 0,
+      mouseMoves,
+      keyPresses,
+      mousePercent: mouseMoves + keyPresses > 0 ? clampPercent((mouseMoves / (mouseMoves + keyPresses)) * 100) : 0,
+      keyboardPercent: mouseMoves + keyPresses > 0 ? clampPercent((keyPresses / (mouseMoves + keyPresses)) * 100) : 0,
+      firstActiveAt: segments[0].start,
+      lastActiveAt: segments[segments.length - 1].end,
+      topApps: [
+        { name: "Chrome", seconds: Math.round(activeSeconds * 0.42) },
+        { name: "VS Code", seconds: Math.round(activeSeconds * 0.28) },
+        { name: "Slack", seconds: Math.round(activeSeconds * 0.16) },
+      ],
+      segments,
+    };
+  });
+};
 
 function ActivityHoverCard({ hover }: { hover: HoverState }) {
   const { employee, segment, x, y } = hover;
@@ -199,6 +354,10 @@ export default function ActivitiesPage() {
   const [rangePreset, setRangePreset] = useState<RangePreset>("24h");
   const [customStartHour, setCustomStartHour] = useState(0);
   const [customEndHour, setCustomEndHour] = useState(24);
+  const [projectorMode, setProjectorMode] = useState(() => getInitialProjectorMode());
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [hover, setHover] = useState<HoverState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -229,40 +388,57 @@ export default function ActivitiesPage() {
     return { start, end };
   }, [dateRange.startDate]);
 
-  useEffect(() => {
+  const fetchTimeline = useCallback(async (silent = false) => {
     if (!authHeaders) return;
 
-    const fetchTimeline = async () => {
+    if (silent) {
+      setRefreshing(true);
+    } else {
       setLoading(true);
-      setError("");
-      try {
-        const params = new URLSearchParams({
-          startDate: effectiveRange.start.toISOString(),
-          endDate: effectiveRange.end.toISOString(),
-        });
-        const response = await fetch(`${apiBase}/api/web/dashboard/activity-timeline?${params.toString()}`, {
-          headers: authHeaders,
-          credentials: "include",
-        });
-        const payload = (await response.json()) as TimelineResponse;
-        if (!response.ok || !payload.success) {
-          setEmployees([]);
-          setError(payload.message || "Unable to load activity timeline.");
-          return;
-        }
-
-        setEmployees(payload.data.employees);
-      } catch (requestError) {
-        console.error("Failed to load activity timeline", requestError);
+    }
+    setError("");
+    try {
+      const params = new URLSearchParams({
+        startDate: effectiveRange.start.toISOString(),
+        endDate: effectiveRange.end.toISOString(),
+      });
+      const response = await fetch(`${apiBase}/api/web/dashboard/activity-timeline?${params.toString()}`, {
+        headers: authHeaders,
+        credentials: "include",
+        cache: "no-store",
+      });
+      const payload = (await response.json()) as TimelineResponse;
+      if (!response.ok || !payload.success) {
         setEmployees([]);
-        setError("Unable to load activity timeline.");
-      } finally {
-        setLoading(false);
+        setError(payload.message || "Unable to load activity timeline.");
+        return;
       }
-    };
 
-    void fetchTimeline();
+      setEmployees(payload.data.employees);
+      setLastUpdatedAt(new Date());
+    } catch (requestError) {
+      console.error("Failed to load activity timeline", requestError);
+      if (!silent) setEmployees([]);
+      setError("Unable to load activity timeline.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, [apiBase, authHeaders, effectiveRange]);
+
+  useEffect(() => {
+    void fetchTimeline();
+  }, [fetchTimeline]);
+
+  useEffect(() => {
+    if (!projectorMode || !autoRefresh || !authHeaders) return;
+
+    const timer = window.setInterval(() => {
+      void fetchTimeline(true);
+    }, PROJECTOR_REFRESH_MS);
+
+    return () => window.clearInterval(timer);
+  }, [authHeaders, autoRefresh, fetchTimeline, projectorMode]);
 
   // Handle auto-scrolling when the visible timeline window changes.
   useEffect(() => {
@@ -295,6 +471,64 @@ export default function ActivitiesPage() {
 
   const startMs = effectiveRange.start.getTime();
   const endMs = effectiveRange.end.getTime();
+  const seedEmployees = useMemo(() => buildProjectorSeedEmployees(effectiveRange.start), [effectiveRange.start]);
+  const hasRealActivityData = employees.some(
+    (employee) =>
+      employee.segments.length > 0 ||
+      employee.activeSeconds > 0 ||
+      employee.idleSeconds > 0 ||
+      employee.mouseMoves > 0 ||
+      employee.keyPresses > 0,
+  );
+  const displayEmployees = projectorMode && !hasRealActivityData ? seedEmployees : employees;
+  const usingProjectorSeedData = projectorMode && !hasRealActivityData;
+
+  const projectorStats = useMemo(() => {
+    const totalEmployees = displayEmployees.length;
+    const activeEmployees = displayEmployees.filter((employee) => {
+      if (!employee.lastActiveAt) return false;
+      return Date.now() - new Date(employee.lastActiveAt).getTime() <= 10 * 60 * 1000;
+    }).length;
+    const activeSeconds = displayEmployees.reduce((sum, employee) => sum + employee.activeSeconds, 0);
+    const idleSeconds = displayEmployees.reduce((sum, employee) => sum + employee.idleSeconds, 0);
+    const workSeconds = displayEmployees.reduce((sum, employee) => sum + employee.workSeconds, 0);
+    const mouseMoves = displayEmployees.reduce((sum, employee) => sum + employee.mouseMoves, 0);
+    const keyPresses = displayEmployees.reduce((sum, employee) => sum + employee.keyPresses, 0);
+    const utilization = workSeconds > 0 ? clampPercent((activeSeconds / workSeconds) * 100) : 0;
+
+    return {
+      totalEmployees,
+      activeEmployees,
+      activeSeconds,
+      idleSeconds,
+      workSeconds,
+      mouseMoves,
+      keyPresses,
+      utilization,
+    };
+  }, [displayEmployees]);
+
+  const hourlyStats = useMemo(() => buildHourlyStats(displayEmployees, effectiveRange.start), [displayEmployees, effectiveRange.start]);
+  const maxHourlyWork = Math.max(1, ...hourlyStats.map((stat) => stat.activeSeconds + stat.idleSeconds));
+  const maxHourlyInput = Math.max(1, ...hourlyStats.map((stat) => stat.mouseMoves + stat.keyPresses));
+  const topEmployees = useMemo(
+    () => [...displayEmployees].sort((a, b) => b.activeSeconds - a.activeSeconds).slice(0, 6),
+    [displayEmployees],
+  );
+
+  const setProjectorView = (enabled: boolean) => {
+    setProjectorMode(enabled);
+    if (typeof window === "undefined") return;
+
+    const url = new URL(window.location.href);
+    if (enabled) {
+      url.searchParams.set("view", "projector");
+    } else {
+      url.searchParams.delete("view");
+      url.searchParams.delete("mode");
+    }
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  };
 
   const hourMarkers = useMemo(() => {
     const markers: { date: Date; label: string; hour: number }[] = [];
@@ -316,18 +550,190 @@ export default function ActivitiesPage() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-none space-y-5">
+    <div className={`mx-auto max-w-none space-y-5 ${projectorMode ? "min-h-screen bg-background p-3 sm:p-5" : ""}`}>
       <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
           <div>
-            <h1 className="text-[18px] font-semibold leading-tight text-[#171717]">Activities</h1>
-            <p className="mt-1 text-[13px] text-[#7E6F65]">Timeline view of all employee activities</p>
+            <h1 className={`${projectorMode ? "text-[26px]" : "text-[18px]"} font-semibold leading-tight text-foreground`}>Activities</h1>
+            <p className={`${projectorMode ? "text-[15px]" : "text-[13px]"} mt-1 text-muted-foreground`}>
+              {projectorMode ? "Projector-ready live activity overview" : "Timeline view of all employee activities"}
+            </p>
           </div>
-          <div className="sm:ml-2">
+          <div className={`sm:ml-2 ${projectorMode ? "hidden lg:block" : ""}`}>
             <DashboardDateFilter />
           </div>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-lg border border-border bg-card p-1 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setProjectorView(false)}
+              className={`rounded-md px-3 py-2 text-[12px] font-semibold transition ${
+                !projectorMode ? "bg-brand text-white" : "text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              Standard
+            </button>
+            <button
+              type="button"
+              onClick={() => setProjectorView(true)}
+              className={`rounded-md px-3 py-2 text-[12px] font-semibold transition ${
+                projectorMode ? "bg-brand text-white" : "text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              Projector
+            </button>
+          </div>
+
+          {projectorMode ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setAutoRefresh((value) => !value)}
+                className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-[12px] font-semibold text-foreground shadow-sm transition hover:bg-muted"
+              >
+                {autoRefresh ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                {autoRefresh ? "Pause Live" : "Resume Live"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void fetchTimeline(true)}
+                className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-[12px] font-semibold text-foreground shadow-sm transition hover:bg-muted"
+              >
+                <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                Refresh
+              </button>
+            </>
+          ) : null}
+        </div>
       </header>
+
+      {projectorMode ? (
+        <section className="space-y-4">
+          <div className="flex flex-col gap-3 rounded-xl border border-border bg-card px-4 py-3 text-foreground shadow-sm lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-4">
+              <span className="inline-flex items-center gap-2 text-sm font-semibold">
+                <span className={`h-2.5 w-2.5 rounded-full ${autoRefresh ? "bg-success" : "bg-warning"}`} />
+                {autoRefresh ? "Live board active" : "Live board paused"}
+              </span>
+              <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                <Clock className="h-4 w-4" />
+                Last updated {formatLastUpdated(lastUpdatedAt)}
+              </span>
+              <span className="rounded-full bg-brand-light px-3 py-1 text-[11px] font-bold text-brand-dark">
+                {usingProjectorSeedData ? "Demo data preview" : "Backend data"}
+              </span>
+            </div>
+            <div className="text-sm font-medium text-muted-foreground">Auto refresh every {PROJECTOR_REFRESH_MS / 1000}s</div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {[
+              { label: "Employees", value: projectorStats.totalEmployees.toString(), detail: `${projectorStats.activeEmployees} active recently`, icon: Users },
+              { label: "Active Time", value: formatCompactDuration(projectorStats.activeSeconds), detail: `${projectorStats.utilization}% utilization`, icon: Activity },
+              { label: "Idle Time", value: formatCompactDuration(projectorStats.idleSeconds), detail: `${formatCompactDuration(projectorStats.workSeconds)} tracked`, icon: Clock },
+              { label: "Mouse / Keys", value: `${projectorStats.mouseMoves.toLocaleString()} / ${projectorStats.keyPresses.toLocaleString()}`, detail: "input signals today", icon: MousePointer2 },
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <div key={item.label} className="rounded-xl border border-border bg-card p-4 shadow-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[12px] font-bold uppercase tracking-wide text-muted-foreground">{item.label}</p>
+                    <Icon className="h-5 w-5 text-brand" />
+                  </div>
+                  <p className="mt-3 text-[26px] font-semibold leading-none text-foreground">{item.value}</p>
+                  <p className="mt-2 text-[13px] font-medium text-muted-foreground">{item.detail}</p>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-[15px] font-semibold text-foreground">Hourly Activity Shape</h2>
+                  <p className="text-[12px] font-medium text-muted-foreground">Active and idle time distribution across the day</p>
+                </div>
+                <span className="rounded-full bg-brand-light px-3 py-1 text-[11px] font-bold text-brand-dark">Today</span>
+              </div>
+              <div className="flex h-[240px] items-end gap-1.5">
+                {hourlyStats.map((stat) => {
+                  const activeHeight = Math.max(2, (stat.activeSeconds / maxHourlyWork) * 100);
+                  const idleHeight = Math.max(0, (stat.idleSeconds / maxHourlyWork) * 100);
+                  const hasData = stat.activeSeconds + stat.idleSeconds > 0;
+                  return (
+                    <div key={stat.hour} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-2">
+                      <div className="flex h-[190px] w-full max-w-[28px] items-end overflow-hidden rounded-t-md bg-muted">
+                        <div className="flex w-full flex-col justify-end">
+                          <span className="block w-full bg-border" style={{ height: `${idleHeight}%` }} />
+                          <span className="block w-full bg-brand" style={{ height: `${hasData ? activeHeight : 0}%` }} />
+                        </div>
+                      </div>
+                      <span className="hidden text-[10px] font-semibold text-muted-foreground sm:block">{stat.hour % 3 === 0 ? stat.label : ""}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+              <div className="mb-4">
+                <h2 className="text-[15px] font-semibold text-foreground">Input Activity</h2>
+                <p className="text-[12px] font-medium text-muted-foreground">Mouse and keyboard movement by hour</p>
+              </div>
+              <div className="space-y-3">
+                {hourlyStats.filter((stat) => stat.mouseMoves + stat.keyPresses > 0).slice(-8).map((stat) => {
+                  const total = stat.mouseMoves + stat.keyPresses;
+                  const mouseWidth = clampPercent((stat.mouseMoves / Math.max(1, total)) * 100);
+                  const totalWidth = clampPercent((total / maxHourlyInput) * 100);
+                  return (
+                    <div key={stat.hour} className="grid grid-cols-[54px_1fr_64px] items-center gap-3">
+                      <span className="text-[11px] font-bold text-muted-foreground">{stat.label}</span>
+                      <span className="block h-3 overflow-hidden rounded-full bg-muted" style={{ width: `${Math.max(10, totalWidth)}%` }}>
+                        <span className="block h-full rounded-full bg-brand" style={{ width: `${mouseWidth}%` }} />
+                      </span>
+                      <span className="text-right text-[11px] font-semibold text-muted-foreground">{total.toLocaleString()}</span>
+                    </div>
+                  );
+                })}
+                {hourlyStats.every((stat) => stat.mouseMoves + stat.keyPresses === 0) ? (
+                  <p className="rounded-lg bg-muted px-3 py-8 text-center text-[12px] font-semibold text-muted-foreground">No input activity yet.</p>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-[15px] font-semibold text-foreground">Most Active Employees</h2>
+                <p className="text-[12px] font-medium text-muted-foreground">Ranked by active time in the selected day</p>
+              </div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {topEmployees.map((employee) => (
+                <div key={employee.userId} className="rounded-lg border border-border bg-surface p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-[13px] font-semibold text-foreground">{employee.employeeName}</p>
+                      <p className="truncate text-[11px] font-medium text-muted-foreground">{employee.email}</p>
+                    </div>
+                    <span className="rounded-full bg-brand-light px-2.5 py-1 text-[11px] font-bold text-brand-dark">{employee.utilizationPercent}%</span>
+                  </div>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+                    <span className="block h-full rounded-full bg-brand" style={{ width: `${clampPercent(employee.utilizationPercent)}%` }} />
+                  </div>
+                  <div className="mt-2 flex items-center justify-between text-[11px] font-semibold text-muted-foreground">
+                    <span>{formatCompactDuration(employee.activeSeconds)} active</span>
+                    <span>{formatCompactDuration(employee.idleSeconds)} idle</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section className="space-y-5">
         <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
@@ -413,15 +819,15 @@ export default function ActivitiesPage() {
               {/* Timeline Body */}
               {loading ? (
                 <div className="px-5 py-20 text-center text-[13px] font-medium uppercase tracking-widest text-[#B4AAA2]">Loading Timeline...</div>
-              ) : error ? (
+              ) : error && !projectorMode ? (
                 <div className="px-5 py-20 text-center text-[13px] text-red-500">{error}</div>
-              ) : employees.length === 0 ? (
+              ) : displayEmployees.length === 0 ? (
                 <div className="px-5 py-20 text-center text-[13px] text-[#7E6F65]">
                   No activity data for {formatEmptyDate(dateRange.startDate)}
                 </div>
               ) : (
                 <div className="divide-y divide-[#F0EAE5]">
-                  {employees.map((employee) => (
+                  {displayEmployees.map((employee) => (
                     <div key={employee.userId} className="grid grid-cols-[200px_1fr] hover:bg-[#FCFAF8] transition-colors">
                       <div className="sticky left-0 z-10 flex h-[52px] items-center bg-white px-5 border-r border-[#DDD2C9]">
                         <p className="truncate text-[13px] font-semibold text-[#3F3833]">{employee.employeeName}</p>

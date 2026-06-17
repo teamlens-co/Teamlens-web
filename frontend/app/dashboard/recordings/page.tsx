@@ -32,6 +32,7 @@ type RecordingSession = {
 type RecordingChunk = {
   id: string;
   chunkIndex: number;
+  fileSize?: number;
   durationMs: number;
   playbackUrl: string;
 };
@@ -77,35 +78,97 @@ function SessionRecordingPlayer({
   const [chunkIndex, setChunkIndex] = useState(0);
   const [speed, setSpeed] = useState(1);
   const [chunkUrl, setChunkUrl] = useState("");
+  const [loadState, setLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [playerMessage, setPlayerMessage] = useState("");
+  const [reloadNonce, setReloadNonce] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const advanceTimerRef = useRef<number | null>(null);
   const chunks = playlist.chunks;
   const current = chunks[chunkIndex];
   const progress = chunks.length ? ((chunkIndex + 1) / chunks.length) * 100 : 0;
 
+  const clearAdvanceTimer = useCallback(() => {
+    if (advanceTimerRef.current) {
+      window.clearTimeout(advanceTimerRef.current);
+      advanceTimerRef.current = null;
+    }
+  }, []);
+
+  const goToChunk = useCallback(
+    (index: number) => {
+      clearAdvanceTimer();
+      const nextIndex = Math.max(0, Math.min(index, Math.max(chunks.length - 1, 0)));
+      setChunkIndex((currentIndex) => {
+        if (currentIndex === nextIndex) {
+          setReloadNonce((value) => value + 1);
+        }
+        return nextIndex;
+      });
+    },
+    [chunks.length, clearAdvanceTimer],
+  );
+
+  const goToNextChunk = useCallback(() => {
+    setChunkIndex((index) => Math.min(index + 1, Math.max(chunks.length - 1, 0)));
+  }, [chunks.length]);
+
+  useEffect(() => {
+    setChunkIndex(0);
+    setChunkUrl("");
+    setLoadState("idle");
+    setPlayerMessage("");
+    clearAdvanceTimer();
+  }, [playlist.session.id, clearAdvanceTimer]);
+
   useEffect(() => {
     let objectUrl = "";
+    let cancelled = false;
+
     const loadChunk = async () => {
       if (!current || !authHeaders) {
         setChunkUrl("");
+        setLoadState("idle");
         return;
       }
-      const response = await fetch(`${apiBase}${current.playbackUrl}`, {
-        headers: authHeaders,
-        credentials: "include",
-      });
-      if (!response.ok) {
+      setLoadState("loading");
+      setPlayerMessage("");
+      clearAdvanceTimer();
+
+      try {
+        const response = await fetch(`${apiBase}${current.playbackUrl}`, {
+          headers: authHeaders,
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          throw new Error(`Chunk ${current.chunkIndex + 1} failed to load (${response.status})`);
+        }
+        const blob = await response.blob();
+        if (!blob.size) {
+          throw new Error(`Chunk ${current.chunkIndex + 1} is empty`);
+        }
+        objectUrl = URL.createObjectURL(blob);
+        if (cancelled) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+        setChunkUrl(objectUrl);
+        setLoadState("ready");
+      } catch (error) {
+        if (cancelled) return;
         setChunkUrl("");
-        return;
+        setLoadState("error");
+        setPlayerMessage(error instanceof Error ? error.message : "Unable to load recording chunk");
       }
-      const blob = await response.blob();
-      objectUrl = URL.createObjectURL(blob);
-      setChunkUrl(objectUrl);
     };
+
     void loadChunk();
     return () => {
+      cancelled = true;
+      clearAdvanceTimer();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [apiBase, authHeaders, current]);
+  }, [apiBase, authHeaders, clearAdvanceTimer, current, reloadNonce]);
 
   useEffect(() => {
     if (videoRef.current && chunkUrl) {
@@ -113,6 +176,34 @@ function SessionRecordingPlayer({
       void videoRef.current.play().catch(() => {});
     }
   }, [chunkUrl, speed]);
+
+  useEffect(() => {
+    clearAdvanceTimer();
+    if (!current || loadState !== "ready" || chunks.length <= 1 || chunkIndex >= chunks.length - 1) return;
+
+    const duration = Math.max(1000, current.durationMs || 0);
+    advanceTimerRef.current = window.setTimeout(() => {
+      goToNextChunk();
+    }, duration / Math.max(speed, 0.25) + 1250);
+
+    return clearAdvanceTimer;
+  }, [chunkIndex, chunks.length, clearAdvanceTimer, current, goToNextChunk, loadState, speed]);
+
+  const handleVideoError = () => {
+    setLoadState("error");
+    setPlayerMessage(`Unable to decode chunk ${current ? current.chunkIndex + 1 : chunkIndex + 1}. Skipping to the next chunk.`);
+    clearAdvanceTimer();
+    if (chunkIndex < chunks.length - 1) {
+      window.setTimeout(() => goToNextChunk(), 700);
+    }
+  };
+
+  const handleEnded = () => {
+    clearAdvanceTimer();
+    if (chunkIndex < chunks.length - 1) {
+      goToNextChunk();
+    }
+  };
 
   return (
     <div className="overflow-hidden rounded-xl border border-[#DDD2C9] bg-white shadow-[0_1px_2px_rgba(45,42,38,0.03)]">
@@ -128,7 +219,7 @@ function SessionRecordingPlayer({
         </button>
       </div>
 
-      <div className="aspect-video bg-[#171717]">
+      <div className="relative aspect-video bg-[#171717]">
         {current && chunkUrl ? (
           <video
             key={current.id}
@@ -137,13 +228,23 @@ function SessionRecordingPlayer({
             controls
             autoPlay
             className="h-full w-full object-contain"
-            onEnded={() => setChunkIndex((index) => Math.min(index + 1, chunks.length - 1))}
+            onCanPlay={() => {
+              setLoadState("ready");
+              if (videoRef.current) videoRef.current.playbackRate = speed;
+            }}
+            onEnded={handleEnded}
+            onError={handleVideoError}
           />
         ) : (
           <div className="flex h-full items-center justify-center text-[13px] font-medium text-white/70">
-            {current ? "Loading recording chunk..." : "No uploaded chunks yet"}
+            {current ? (loadState === "error" ? playerMessage || "Unable to play this chunk" : "Loading recording chunk...") : "No uploaded chunks yet"}
           </div>
         )}
+        {current ? (
+          <div className="pointer-events-none absolute left-3 top-3 rounded-md bg-black/60 px-2.5 py-1 text-[11px] font-semibold text-white">
+            Chunk {chunkIndex + 1} of {chunks.length}
+          </div>
+        ) : null}
       </div>
 
       <div className="space-y-3 border-t border-[#EFE8E2] px-5 py-3">
@@ -152,14 +253,18 @@ function SessionRecordingPlayer({
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => setChunkIndex((index) => Math.max(index - 1, 0))} className="rounded-lg border border-[#E1D7CE] px-3 py-1.5 text-[12px] font-semibold text-[#302C28]">
+            <button type="button" onClick={() => goToChunk(chunkIndex - 1)} className="rounded-lg border border-[#E1D7CE] px-3 py-1.5 text-[12px] font-semibold text-[#302C28]">
               Back
             </button>
-            <button type="button" onClick={() => setChunkIndex((index) => Math.min(index + 1, chunks.length - 1))} className="rounded-lg border border-[#E1D7CE] px-3 py-1.5 text-[12px] font-semibold text-[#302C28]">
+            <button type="button" onClick={() => goToChunk(chunkIndex + 1)} className="rounded-lg border border-[#E1D7CE] px-3 py-1.5 text-[12px] font-semibold text-[#302C28]">
               Next
+            </button>
+            <button type="button" onClick={() => goToChunk(chunkIndex)} className="rounded-lg border border-[#E1D7CE] px-3 py-1.5 text-[12px] font-semibold text-[#302C28]">
+              Retry
             </button>
             <span className="text-[11px] font-medium text-[#8C837B]">
               {chunks.length ? chunkIndex + 1 : 0} / {chunks.length}
+              {current?.durationMs ? ` · ${formatDuration(current.durationMs)}` : ""}
             </span>
           </div>
           <div className="flex items-center gap-1.5">
