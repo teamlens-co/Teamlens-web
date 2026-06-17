@@ -58,6 +58,41 @@ const formatFileSize = (bytes: number): string => {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 };
 
+const getSessionHealth = (session: RecordingSession): {
+  label: string;
+  className: string;
+  message?: string;
+} => {
+  const chunkCount = session.chunkCount || 0;
+  if (chunkCount === 0) {
+    return {
+      label: "No data",
+      className: "bg-rose-50 text-rose-700",
+      message: "No recording chunks were captured.",
+    };
+  }
+  const avgChunkSize = Number(session.totalSize || 0) / chunkCount;
+  // A 30s chunk at 1280x720@3fps with any real screen activity should be > 250 KB
+  if (avgChunkSize < 25 * 1024) {
+    return {
+      label: "Empty / black",
+      className: "bg-rose-50 text-rose-700",
+      message: "Chunks are too small (< 25 KB each). Agent may not have screen-capture permission.",
+    };
+  }
+  if (avgChunkSize < 120 * 1024) {
+    return {
+      label: "Low quality",
+      className: "bg-amber-50 text-amber-700",
+      message: "Chunks are small. Some frames may be missing.",
+    };
+  }
+  return {
+    label: "Healthy",
+    className: "bg-[#EEF9F3] text-[#21845D]",
+  };
+};
+
 const formatDate = (dateStr: string): string =>
   new Date(dateStr).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 
@@ -205,6 +240,8 @@ function SessionRecordingPlayer({
     }
   };
 
+  const sessionHealth = useMemo(() => getSessionHealth(playlist.session), [playlist.session]);
+
   return (
     <div className="overflow-hidden rounded-xl border border-[#DDD2C9] bg-white shadow-[0_1px_2px_rgba(45,42,38,0.03)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#EFE8E2] px-5 py-3">
@@ -218,6 +255,12 @@ function SessionRecordingPlayer({
           Close Player
         </button>
       </div>
+
+      {sessionHealth.message && (
+        <div className={`px-5 py-2 text-[12px] font-medium ${sessionHealth.className} border-b border-[#EFE8E2]`}>
+          {sessionHealth.label}: {sessionHealth.message}
+        </div>
+      )}
 
       <div className="relative aspect-video bg-[#171717]">
         {current && chunkUrl ? (
@@ -457,6 +500,17 @@ export default function RecordingsPage() {
                         <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${session.status === "complete" ? "bg-[#EEF9F3] text-[#21845D]" : session.status === "failed" ? "bg-rose-50 text-rose-700" : "bg-[#FDEBE5] text-brand"}`}>
                           {session.status}
                         </span>
+                        {(() => {
+                          const health = getSessionHealth(session);
+                          return (
+                            <span
+                              title={health.message || health.label}
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${health.className}`}
+                            >
+                              {health.label}
+                            </span>
+                          );
+                        })()}
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] font-medium text-[#8C837B]">
                         <span>{formatDate(session.startedAt)} · {formatTime(session.startedAt)}</span>
@@ -464,7 +518,7 @@ export default function RecordingsPage() {
                         <span>{session.fps} FPS</span>
                         <span>{session.width}x{session.height}</span>
                         <span>{session.chunkCount || 0} chunks</span>
-                        <span>{formatFileSize(Number(session.totalSize || 0))}</span>
+                        <span>avg {formatFileSize(session.chunkCount ? Number(session.totalSize || 0) / session.chunkCount : 0)}/chunk</span>
                       </div>
                     </div>
                   </div>

@@ -250,6 +250,7 @@ const SCREENSHOT_INTERVAL_MIN_MS = 60_000;
 const SCREENSHOT_INTERVAL_MAX_MS = 60_000;
 const AUTO_RECORDING_FPS = 3;
 const AUTO_RECORDING_CHUNK_MS = 30_000;
+const AUTO_RECORDING_MIN_CHUNK_BYTES = 25 * 1024; // Reject tiny/broken chunks
 const AUTO_RECORDING_WIDTH = 1280;
 const AUTO_RECORDING_HEIGHT = 720;
 const AUTO_RECORDING_MIME_CANDIDATES = [
@@ -612,11 +613,17 @@ function App() {
       const stream = canvas.captureStream(AUTO_RECORDING_FPS);
       mediaStreamRef.current = stream;
       let lastFrameStarted = false;
+      let consecutiveCaptureFailures = 0;
+      const MAX_CAPTURE_FAILURES = 3;
       const drawNativeFrame = async () => {
         if (lastFrameStarted || recordingStopRequestedRef.current || !recordingCanvasRef.current) return;
         lastFrameStarted = true;
         try {
           const frameData = await invoke<number[]>("capture_live_frame");
+          if (!frameData || frameData.length === 0) {
+            throw new Error("Empty frame data from native capture");
+          }
+          consecutiveCaptureFailures = 0;
           const blob = new Blob([new Uint8Array(frameData)], { type: "image/png" });
           const bitmap = await createImageBitmap(blob);
           const activeCanvas = recordingCanvasRef.current;
@@ -639,7 +646,12 @@ function App() {
           ctx.drawImage(bitmap, x, y, width, height);
           bitmap.close();
         } catch (frameError) {
-          console.error("Native recording frame capture failed", frameError);
+          consecutiveCaptureFailures += 1;
+          console.error("Native recording frame capture failed", frameError, "consecutive", consecutiveCaptureFailures);
+          if (consecutiveCaptureFailures >= MAX_CAPTURE_FAILURES) {
+            setRecordingStatus("error");
+            setRecordingMessage("Screen capture failed repeatedly. Check OS screen-capture permissions and restart the agent.");
+          }
         } finally {
           lastFrameStarted = false;
         }
@@ -711,10 +723,22 @@ function App() {
           const recordingSessionId = recordingSessionIdRef.current;
           const durationMs = Date.now() - recordingChunkStartedAtRef.current;
           if (recordingSessionId && chunks.length > 0) {
-            const chunkIndex = recordingChunkIndexRef.current;
-            recordingChunkIndexRef.current += 1;
             const blob = new Blob(chunks, { type: mimeType || "video/webm" });
-            void uploadRecordingChunk(recordingSessionId, chunkIndex, blob, durationMs);
+            if (blob.size < AUTO_RECORDING_MIN_CHUNK_BYTES) {
+              console.warn("Skipping tiny recording chunk", blob.size, "bytes");
+              if (consecutiveCaptureFailures < MAX_CAPTURE_FAILURES) {
+                consecutiveCaptureFailures += 1;
+              }
+              if (consecutiveCaptureFailures >= MAX_CAPTURE_FAILURES) {
+                setRecordingStatus("error");
+                setRecordingMessage("Screen capture produced no usable video frames. Check OS screen-capture permissions.");
+              }
+            } else {
+              consecutiveCaptureFailures = 0;
+              const chunkIndex = recordingChunkIndexRef.current;
+              recordingChunkIndexRef.current += 1;
+              void uploadRecordingChunk(recordingSessionId, chunkIndex, blob, durationMs);
+            }
           }
           if (!recordingStopRequestedRef.current) {
             window.setTimeout(recordNextChunk, 0);
