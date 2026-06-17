@@ -44,7 +44,7 @@ docker run -d --name teamlens-ws-test --restart unless-stopped \
   -e JWT_AGENT_TTL="30d" \
   -e INVITE_TTL_HOURS="72" \
   -e WEB_APP_URL="https://test.teamlens.co" \
-  -e WEBRTC_ICE_SERVERS='[{"urls":["stun:stun.l.google.com:19302","turn:turn.teamlens.co:3478?transport=udp","turn:turn.teamlens.co:443?transport=tcp","turns:turn.teamlens.co:443?transport=tcp"],"username":"teamlens","credential":"cL6dbZdarVNTPT3uSdmoSkWP","credentialType":"password"}]' \
+  -e WEBRTC_ICE_SERVERS='[{"urls":["stun:stun.l.google.com:19302"]},{"urls":["turn:91.108.105.211:3478?transport=udp","turn:91.108.105.211:3478?transport=tcp"],"username":"teamlens","credential":"cL6dbZdarVNTPT3uSdmoSkWP","credentialType":"password"}]' \
   teamlens-ws:latest
 
 echo "=== Rebuilding Frontend ==="
