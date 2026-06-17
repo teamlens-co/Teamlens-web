@@ -12,6 +12,8 @@ use image::codecs::png::{CompressionType, FilterType as PngFilterType, PngEncode
 use std::path::Path;
 use std::ptr::null_mut;
 use tauri::Manager;
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton};
 
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Foundation::{CloseHandle, HWND};
@@ -44,6 +46,9 @@ struct InputCounts {
     mouse_moves: u64,
     key_presses: u64,
 }
+
+static INPUT_TRACKER_RUNNING: OnceLock<Arc<std::sync::atomic::AtomicBool>> = OnceLock::new();
+static INPUT_TRACKER_STARTED: OnceLock<std::sync::atomic::AtomicBool> = OnceLock::new();
 
 #[derive(Serialize)]
 struct ActiveWindowInfo {
@@ -166,8 +171,21 @@ fn capture_frame_png(compression: CompressionType, filter: PngFilterType) -> Res
 }
 
 fn start_global_input_tracker() {
+    let already_started = INPUT_TRACKER_STARTED
+        .get_or_init(|| std::sync::atomic::AtomicBool::new(false));
+    if already_started.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        // Thread already spawned, just make sure it's unpaused.
+        let running = INPUT_TRACKER_RUNNING
+            .get_or_init(|| Arc::new(std::sync::atomic::AtomicBool::new(true)));
+        running.store(true, std::sync::atomic::Ordering::SeqCst);
+        return;
+    }
+
     let counter = INPUT_COUNTER
         .get_or_init(|| Arc::new(Mutex::new(InputCounter::default())))
+        .clone();
+    let running = INPUT_TRACKER_RUNNING
+        .get_or_init(|| Arc::new(std::sync::atomic::AtomicBool::new(true)))
         .clone();
 
     thread::spawn(move || {
@@ -176,6 +194,15 @@ fn start_global_input_tracker() {
         let mut last_keys: HashSet<Keycode> = device_state.get_keys().into_iter().collect();
 
         loop {
+            if !running.load(std::sync::atomic::Ordering::SeqCst) {
+                // Paused — sleep longer and don't poll input devices.
+                thread::sleep(Duration::from_millis(500));
+                // Reset baseline so we don't get phantom deltas on resume.
+                last_mouse = device_state.get_mouse().coords;
+                last_keys = device_state.get_keys().into_iter().collect();
+                continue;
+            }
+
             let mouse = device_state.get_mouse().coords;
             let keys_now_vec = device_state.get_keys();
             let keys_now: HashSet<Keycode> = keys_now_vec.into_iter().collect();
@@ -198,6 +225,12 @@ fn start_global_input_tracker() {
             thread::sleep(Duration::from_millis(100));
         }
     });
+}
+
+fn stop_global_input_tracker() {
+    let running = INPUT_TRACKER_RUNNING
+        .get_or_init(|| Arc::new(std::sync::atomic::AtomicBool::new(false)));
+    running.store(false, std::sync::atomic::Ordering::SeqCst);
 }
 
 #[tauri::command]
@@ -482,9 +515,27 @@ fn capture_live_frame() -> Result<Vec<u8>, String> {
     capture_frame_png(CompressionType::Fast, PngFilterType::NoFilter)
 }
 
+#[tauri::command]
+fn start_input_tracking() {
+    start_global_input_tracker();
+}
+
+#[tauri::command]
+fn stop_input_tracking() {
+    stop_global_input_tracker();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    start_global_input_tracker();
+    // Disable GPU hardware acceleration in WebView2 on Windows to fix issues on dual-GPU (Intel + NVIDIA) laptops.
+    // This resolves issues where WebView2 hangs, freezes, or ignores clicks due to GPU composition handoff conflicts.
+    #[cfg(target_os = "windows")]
+    std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--ignore-gpu-blocklist --disable-gpu-driver-bug-workarounds");
+
+    // Do NOT start the global input tracker here — it creates system-wide
+    // input hooks (via device_query) that can steal WM_INPUT messages from
+    // the WebView2 process on Windows, making the UI completely unresponsive.
+    // The tracker is started lazily by the frontend on clock-in.
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -492,19 +543,85 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_http::init())
         .setup(|app| {
-            // Aggressively reset window state to fix input blocking issue
-            if let Some(window) = app.get_webview_window("main") {
-                // Force window to be fully interactive
+            // Create main window programmatically to enforce WebView2 GPU configurations
+            // and work around hit-test region bugs on dual-GPU systems on Windows.
+            use tauri::webview::WebviewWindowBuilder;
+            use tauri::WebviewUrl;
+
+            let window_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+                .title("TeamLens Desktop Agent")
+                .inner_size(360.0, 720.0)
+                .min_inner_size(360.0, 720.0)
+                .max_inner_size(360.0, 720.0)
+                .decorations(false)
+                .resizable(true)
+                .maximizable(false)
+                .center()
+                .focused(true)
+                .disable_drag_drop_handler();
+
+            #[cfg(target_os = "windows")]
+            let window_builder = window_builder.additional_browser_args("--ignore-gpu-blocklist --disable-gpu-driver-bug-workarounds");
+
+            if let Ok(window) = window_builder.build() {
                 let _ = window.set_ignore_cursor_events(false);
                 let _ = window.show();
-                let _ = window.unminimize();
                 let _ = window.set_focus();
-                
-                // Open devtools if env var is set
-                if std::env::var("TEAMLENS_OPEN_DEVTOOLS").as_deref() == Ok("true") {
-                    window.open_devtools();
-                }
+
+                // Always open devtools in debug builds for diagnosis.
+                #[cfg(debug_assertions)]
+                window.open_devtools();
+
+                // WebView2 on Windows sometimes needs a delayed re-focus
+                // after the compositor finishes its first paint.
+                let win_clone = window.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(500));
+                    let _ = win_clone.set_focus();
+                });
             }
+
+            // Setup System Tray
+            let quit_i = MenuItem::with_id(app, "quit", "Quit TeamLens", true, None::<&str>)?;
+            let show_i = MenuItem::with_id(app, "show", "Open TeamLens", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
+
+            let icon = app.default_window_icon().cloned();
+            let mut tray_builder = TrayIconBuilder::new()
+                .menu(&menu)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.unminimize();
+                            let _ = window.set_focus();
+                        }
+                    }
+                });
+
+            if let Some(icon) = icon {
+                tray_builder = tray_builder.icon(icon);
+            }
+
+            let _tray = tray_builder.build(app)?;
 
             Ok(())
         })
@@ -516,7 +633,9 @@ pub fn run() {
             get_and_reset_input_counts,
             get_active_window_info,
             capture_screenshot,
-            capture_live_frame
+            capture_live_frame,
+            start_input_tracking,
+            stop_input_tracking
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

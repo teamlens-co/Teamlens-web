@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, urlparse
 import psycopg
 from apscheduler.schedulers.background import BackgroundScheduler
 
+import analytics
 from config import AppConfig, load_config
 from daily_report_generator import DailyReportGenerator
 from database_manager import DatabaseManager
@@ -154,6 +155,13 @@ class ScreenshotAIWorker:
                 status="success",
             )
             logging.info("Analyzed screenshot", extra={"screenshot_id": record.id, "category": analysis.category})
+            analytics.capture(record.user_id, "screenshot_analyzed", {
+                "screenshot_id": record.id,
+                "category": analysis.category,
+                "focus_level": analysis.focus_level,
+                "confidence": analysis.confidence,
+                "application_name": analysis.application_name,
+            })
         except Exception as error:
             if "Model response did not include message.content" in str(error):
                 self.insert_metadata_fallback(record, locals().get("image_sha256", ""), metadata, str(error))
@@ -161,6 +169,10 @@ class ScreenshotAIWorker:
 
             logging.exception("Screenshot analysis failed", extra={"screenshot_id": record.id})
             self.insert_failure(record, locals().get("image_sha256", ""), str(error))
+            analytics.capture(record.user_id, "screenshot_analysis_failed", {
+                "screenshot_id": record.id,
+                "error": str(error),
+            })
 
     def insert_metadata_fallback(
         self,
@@ -234,6 +246,10 @@ class ScreenshotAIWorker:
             status="skipped",
         )
         logging.info("Skipped screenshot analysis", extra={"screenshot_id": record.id, "reason": reason})
+        analytics.capture(record.user_id, "screenshot_skipped", {
+            "screenshot_id": record.id,
+            "reason": reason,
+        })
 
     def insert_failure(self, record: ScreenshotRecord, image_sha256: str, error_message: str) -> None:
         self.db.insert_analysis(
@@ -386,6 +402,13 @@ class ScreenshotAIWorker:
                         extra={"user_id": user_id, "start": start_iso, "end": end_iso,
                                "screenshots": summary["total_analyzed_screenshots"], "score": summary["productivity_score"]},
                     )
+                    analytics.capture(user_id, "periodic_summary_generated", {
+                        "start": start_iso,
+                        "end": end_iso,
+                        "screenshot_count": summary["total_analyzed_screenshots"],
+                        "productivity_score": summary["productivity_score"],
+                        "interval_minutes": interval,
+                    })
                 except Exception as error:
                     logging.exception("Periodic summary failed for user", extra={"user_id": user_id, "window": start_iso, "error": str(error)})
 
@@ -858,6 +881,10 @@ def run_forever(worker: ScreenshotAIWorker) -> None:
     worker.generate_today_report_if_due()
 
     logging.info("Screenshot AI worker started", extra={"poll_interval_seconds": worker.config.poll_interval_seconds})
+    analytics.capture("screenshot-ai-worker", "worker_started", {
+        "poll_interval_seconds": worker.config.poll_interval_seconds,
+        "periodic_interval_minutes": initial_interval,
+    })
     try:
         while not stop_event.is_set():
             worker.run_once()
@@ -865,6 +892,8 @@ def run_forever(worker: ScreenshotAIWorker) -> None:
     finally:
         scheduler.shutdown(wait=False)
         summary_server.shutdown()
+        analytics.capture("screenshot-ai-worker", "worker_stopped", {})
+        analytics.shutdown()
         logging.info("Screenshot AI worker stopped")
 
 

@@ -10,26 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [
-      {
-        "label": "main",
-        "title": "TeamLens Desktop Agent",
-        "width": 360,
-        "height": 720,
-        "minWidth": 360,
-        "minHeight": 720,
-        "maxWidth": 360,
-        "maxHeight": 720,
-        "decorations": true,
-        "resizable": false,
-        "maximizable": false,
-        "center": true,
-        "visible": true,
-        "focus": true,
-        "transparent": false,
-        "alwaysOnTop": false
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }

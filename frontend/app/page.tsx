@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import type { Variants } from "framer-motion";
 import TeamLensLogo from "../components/TeamLensLogo";
+import AgentDownloadModal from "../components/AgentDownloadModal";
 import {
   Activity,
   CheckSquare,
@@ -75,6 +76,7 @@ export default function Home() {
   const router = useRouter();
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [loadingSession, setLoadingSession] = useState(true);
+  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
   // Showcase Interactive State
@@ -256,13 +258,13 @@ export default function Home() {
               <Lock size={16} />
               Manager sign in
             </Link>
-            <a
-              href={agentDownloadHref}
+            <button
+              onClick={() => setIsDownloadModalOpen(true)}
               className="inline-flex items-center gap-2 rounded-full border border-[#E8E4DF] bg-white/80 px-7 py-3.5 text-sm font-medium text-[#2D2A26] shadow-[0_10px_24px_rgba(0,0,0,0.05)] transition hover:-translate-y-0.5 hover:bg-white"
             >
               <Download size={16} />
               Download agent
-            </a>
+            </button>
           </motion.div>
 
           <motion.div variants={fadeUp} className="flex items-center justify-center gap-[18px] mb-12 text-[#E8E4DF]">
@@ -384,8 +386,8 @@ export default function Home() {
 
               {/* Install Agent Button */}
               <div className="absolute bottom-8 w-full flex justify-center z-20">
-                <a 
-                  href={agentDownloadHref}
+                <button 
+                  onClick={() => setIsDownloadModalOpen(true)}
                   className="bg-[#E85A3C] text-white px-[24px] py-[12px] rounded-[1.3rem] flex items-center gap-[12px] hover:bg-[#D44D30] transition shadow-[0_10px_20px_rgba(232,90,60,0.15)]"
                 >
                   <Download size={20} className="text-white/90" strokeWidth={2.5} />
@@ -393,7 +395,7 @@ export default function Home() {
                     <p className="text-[10px] text-white/70 mb-[4px] font-medium tracking-wide">Stealth or Visible mode</p>
                     <p className="text-[15px] font-medium tracking-wide">Deploy Agent</p>
                   </div>
-                </a>
+                </button>
               </div>
             </motion.div>
 
@@ -638,13 +640,13 @@ export default function Home() {
               </p>
               
               <div className="mt-12 mb-16 flex flex-col sm:flex-row items-center justify-center gap-4">
-                  <a
-                    href={agentDownloadHref}
+                  <button
+                    onClick={() => setIsDownloadModalOpen(true)}
                     className="inline-flex items-center gap-2 rounded-full bg-[#E85A3C] px-8 py-4 text-[14px] font-medium text-white transition hover:bg-[#D44D30] shadow-[0_10px_30px_rgba(232,90,60,0.2)]"
                   >
                     <Download size={18} className="text-white" />
                     Download Mac/Win Agent
-                  </a>
+                  </button>
                   <Link
                     href="/manager/sign-in"
                     className="inline-flex items-center gap-2 rounded-full bg-transparent border border-[#E8E4DF] px-8 py-4 text-[14px] font-medium text-[#2D2A26] transition hover:bg-[#FCFAF8]"
@@ -691,13 +693,13 @@ export default function Home() {
               <Lock size={16} />
               Manager sign in
             </Link>
-            <a
-              href={agentDownloadHref}
+            <button
+              onClick={() => setIsDownloadModalOpen(true)}
               className="inline-flex items-center gap-2 rounded-full border border-[#E8E4DF] bg-white/80 px-7 py-3.5 text-sm font-medium text-[#2D2A26] shadow-[0_10px_24px_rgba(0,0,0,0.05)] transition hover:-translate-y-0.5 hover:bg-white"
             >
               <Download size={16} />
               Download agent
-            </a>
+            </button>
           </div>
         </section>
 
@@ -706,6 +708,11 @@ export default function Home() {
             {loadingSession ? "Loading your session..." : `Signed in as ${sessionUser.fullName}`}
           </div>
         ) : null}
+        <AgentDownloadModal
+          isOpen={isDownloadModalOpen}
+          onClose={() => setIsDownloadModalOpen(false)}
+          windowsDownloadUrl={agentDownloadHref}
+        />
       </main>
     </div>
   );

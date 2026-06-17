@@ -18,6 +18,7 @@ export function PostHogProvider({ children }: PostHogProviderProps) {
 
     posthog.init(apiKey, {
       api_host: apiHost,
+      defaults: '2026-01-30',
       person_profiles: 'identified_only',
       capture_pageview: false, // We capture manually in PostHogPageView
       capture_pageleave: true,
@@ -30,6 +31,33 @@ export function PostHogProvider({ children }: PostHogProviderProps) {
         if (process.env.NODE_ENV === 'development') posthog.debug(false)
       },
     })
+
+    const captureException = (error: unknown, properties?: Record<string, unknown>) => {
+      if ('captureException' in posthog && typeof posthog.captureException === 'function') {
+        posthog.captureException(error, properties)
+      }
+    }
+
+    const handleError = (event: ErrorEvent) => {
+      captureException(event.error || event.message, {
+        source: 'window.onerror',
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno,
+      })
+    }
+
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      captureException(event.reason, { source: 'window.onunhandledrejection' })
+    }
+
+    window.addEventListener('error', handleError)
+    window.addEventListener('unhandledrejection', handleUnhandledRejection)
+
+    return () => {
+      window.removeEventListener('error', handleError)
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection)
+    }
   }, [])
 
   return (
