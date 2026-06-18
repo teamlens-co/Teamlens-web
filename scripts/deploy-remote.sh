@@ -63,14 +63,15 @@ docker run -d --name teamlens-frontend-v2-test --restart unless-stopped \
   teamlens-frontend-v2:test
 
 echo "=== Nginx reload ==="
-# Try multiple methods to reload nginx
-if command -v systemctl &>/dev/null && systemctl is-active nginx &>/dev/null; then
-  systemctl reload nginx || systemctl restart nginx
-elif [ -f /var/run/nginx.pid ]; then
+# Robust nginx reload/restart: handle empty or stale PID files.
+NGINX_PID=$(cat /run/nginx.pid 2>/dev/null || cat /var/run/nginx.pid 2>/dev/null || true)
+if [ -n "$NGINX_PID" ] && kill -0 "$NGINX_PID" 2>/dev/null; then
   nginx -s reload
-elif [ -f /run/nginx.pid ]; then
-  nginx -s reload
+elif command -v systemctl &>/dev/null; then
+  systemctl is-active nginx &>/dev/null && { systemctl reload nginx || systemctl restart nginx; } || systemctl start nginx
+elif command -v service &>/dev/null; then
+  service nginx start || service nginx restart
 else
-  nginx -t && { nginx -s reload 2>/dev/null || nginx -c /etc/nginx/nginx.conf; }
+  nginx -t && nginx
 fi
 echo "=== Deployment complete ==="
