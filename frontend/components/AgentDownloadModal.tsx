@@ -8,13 +8,17 @@ interface AgentDownloadModalProps {
   isOpen: boolean;
   onClose: () => void;
   windowsDownloadUrl: string;
+  windowsMsiDownloadUrl?: string;
 }
 
 export default function AgentDownloadModal({
   isOpen,
   onClose,
   windowsDownloadUrl,
+  windowsMsiDownloadUrl,
 }: AgentDownloadModalProps) {
+  const msiDownloadUrl =
+    windowsMsiDownloadUrl || `${windowsDownloadUrl}${windowsDownloadUrl.includes("?") ? "&" : "?"}type=msi`;
   // Prevent background scrolling when modal is open
   useEffect(() => {
     if (isOpen) {
@@ -73,7 +77,7 @@ export default function AgentDownloadModal({
             <div className="space-y-4">
               {/* WINDOWS EXE (Active) */}
               <a
-                href="/downloads/TeamLens_0.1.50_x64-setup.exe"
+                href={windowsDownloadUrl}
                 onClick={onClose}
                 className="flex items-center gap-5 p-5 bg-[#FCFAF8] hover:bg-[#FEF0ED]/30 dark:bg-white/5 dark:hover:bg-[#E85A3C]/10 border border-[#E8E4DF] dark:border-[#5C5854]/20 hover:border-[#E85A3C]/30 rounded-3xl transition-all group cursor-pointer"
                 download
@@ -87,7 +91,7 @@ export default function AgentDownloadModal({
                       Download for Windows (.exe)
                     </span>
                     <span className="px-2 py-0.5 bg-[#E85A3C]/10 text-[#E85A3C] text-[9px] font-bold rounded-md font-mono">
-                      v0.1.50
+                      Latest
                     </span>
                   </div>
                   <p className="text-[12px] text-[#8C8780] mt-0.5 truncate">
@@ -101,7 +105,7 @@ export default function AgentDownloadModal({
 
               {/* WINDOWS MSI (Active) */}
               <a
-                href="/downloads/TeamLens_0.1.50_x64_en-US.msi"
+                href={msiDownloadUrl}
                 onClick={onClose}
                 className="flex items-center gap-5 p-5 bg-[#FCFAF8] hover:bg-[#FEF0ED]/30 dark:bg-white/5 dark:hover:bg-[#E85A3C]/10 border border-[#E8E4DF] dark:border-[#5C5854]/20 hover:border-[#E85A3C]/30 rounded-3xl transition-all group cursor-pointer"
                 download
@@ -115,7 +119,7 @@ export default function AgentDownloadModal({
                       Download for Windows (.msi)
                     </span>
                     <span className="px-2 py-0.5 bg-[#E85A3C]/10 text-[#E85A3C] text-[9px] font-bold rounded-md font-mono">
-                      v0.1.50
+                      Latest
                     </span>
                   </div>
                   <p className="text-[12px] text-[#8C8780] mt-0.5 truncate">
