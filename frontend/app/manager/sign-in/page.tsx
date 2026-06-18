@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import TeamLensLogo from "../../../components/TeamLensLogo";
+import AgentDownloadModal from "../../../components/AgentDownloadModal";
 
 const ACCESS_TOKEN_STORAGE_KEY = "teamlens_access_token";
 
@@ -40,6 +41,7 @@ const getRuntimeApiBases = () => {
 export default function ManagerSignInPage() {
   const router = useRouter();
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
 
   const [signupName, setSignupName] = useState("");
   const [signupEmail, setSignupEmail] = useState("");
@@ -390,13 +392,13 @@ export default function ManagerSignInPage() {
           {/* Download Agent Button */}
           <div className="mt-8 pt-8 border-t border-[#E8E4DF] text-center">
             <p className="text-[10px] font-medium text-[#8C8780] uppercase tracking-widest mb-3">TeamLens Desktop Agent</p>
-            <a
-              href="/download/agent"
+            <button
+              onClick={() => setIsDownloadModalOpen(true)}
               className="inline-flex items-center gap-2 bg-[#FCFAF8] border border-[#E8E4DF] rounded-full py-3 px-6 text-[12px] font-medium text-[#2D2A26] hover:bg-white hover:border-brand/20 hover:text-brand transition-all group"
             >
               <Download size={14} className="group-hover:text-brand transition-colors" />
               Download Agent for Windows
-            </a>
+            </button>
           </div>
 
           <div className="mt-8 text-center">
@@ -421,6 +423,11 @@ export default function ManagerSignInPage() {
            <span className="text-[9px] font-medium text-[#8C8780] uppercase tracking-widest">Enterprise Cloud</span>
            <span className="text-[9px] font-medium text-[#8C8780] uppercase tracking-widest">TLS 1.3 Secure</span>
         </div>
+        <AgentDownloadModal
+          isOpen={isDownloadModalOpen}
+          onClose={() => setIsDownloadModalOpen(false)}
+          windowsDownloadUrl="/download/agent"
+        />
       </div>
     </div>
   );

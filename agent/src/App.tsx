@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react"; 
 import { invoke } from "@tauri-apps/api/core";
 import { fetch } from "@tauri-apps/plugin-http";
 import { getVersion } from "@tauri-apps/api/app";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
@@ -75,24 +75,6 @@ type RecordingSessionResponse = {
   status: string;
 };
 
-type InputDiagnostics = {
-  pointerMoves: number;
-  pointerDowns: number;
-  clicks: number;
-  focusIns: number;
-  lastEvent: string;
-  lastTarget: string;
-};
-
-const describeEventTarget = (target: EventTarget | null): string => {
-  if (!(target instanceof HTMLElement)) {
-    return "unknown";
-  }
-
-  const id = target.id ? `#${target.id}` : "";
-  const classes = target.className ? `.${String(target.className).trim().replace(/\s+/g, ".")}` : "";
-  return `${target.tagName.toLowerCase()}${id}${classes}`;
-};
 
 const getApiBase = (): string => {
   const configured = import.meta.env.VITE_API_URL?.trim();
@@ -122,8 +104,7 @@ const getWsBase = (): string => {
 };
 
 const isAutoUpdateEnabled = (): boolean => import.meta.env.VITE_ENABLE_AUTO_UPDATE === "true";
-const isInputDiagnosticsVisible = (): boolean =>
-  import.meta.env.DEV || import.meta.env.VITE_SHOW_INPUT_DIAGNOSTICS === "true";
+
 
 const formatSeconds = (seconds: number): string => {
   const hrs = Math.floor(seconds / 3600)
@@ -360,6 +341,7 @@ const toSessionEntries = (sessions: WorkSession[]): SessionEntry[] => {
 };
 
 function App() {
+  const appWindow = getCurrentWebviewWindow();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [authUserId, setAuthUserId] = useState<string | null>(null);
@@ -393,14 +375,6 @@ function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [, setRecordingStatus] = useState<RecordingUploadStatus>("idle");
   const [, setRecordingMessage] = useState<string | null>(null);
-  const [inputDiagnostics, setInputDiagnostics] = useState<InputDiagnostics>({
-    pointerMoves: 0,
-    pointerDowns: 0,
-    clicks: 0,
-    focusIns: 0,
-    lastEvent: "mounted",
-    lastTarget: "none",
-  });
 
   const mouseMovesRef = useRef(0);
   const keyPressesRef = useRef(0);
@@ -438,51 +412,7 @@ function App() {
     };
   }, [authToken]);
 
-  useEffect(() => {
-    const focusWebview = async () => {
-      try {
-        await getCurrentWebview().setFocus();
-      } catch (error) {
-        console.warn("Unable to focus webview", error);
-      }
-    };
-
-    void focusWebview();
-    window.addEventListener("focus", focusWebview);
-
-    return () => {
-      window.removeEventListener("focus", focusWebview);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isInputDiagnosticsVisible()) {
-      return;
-    }
-
-    const updateDiagnostics = (event: Event) => {
-      setInputDiagnostics((current) => ({
-        pointerMoves: current.pointerMoves + (event.type === "pointermove" ? 1 : 0),
-        pointerDowns: current.pointerDowns + (event.type === "pointerdown" ? 1 : 0),
-        clicks: current.clicks + (event.type === "click" ? 1 : 0),
-        focusIns: current.focusIns + (event.type === "focusin" ? 1 : 0),
-        lastEvent: event.type,
-        lastTarget: describeEventTarget(event.target),
-      }));
-    };
-
-    document.addEventListener("pointermove", updateDiagnostics, true);
-    document.addEventListener("pointerdown", updateDiagnostics, true);
-    document.addEventListener("click", updateDiagnostics, true);
-    document.addEventListener("focusin", updateDiagnostics, true);
-
-    return () => {
-      document.removeEventListener("pointermove", updateDiagnostics, true);
-      document.removeEventListener("pointerdown", updateDiagnostics, true);
-      document.removeEventListener("click", updateDiagnostics, true);
-      document.removeEventListener("focusin", updateDiagnostics, true);
-    };
-  }, []);
+  // No aggressive webview focus stealing — it can interfere with input delivery.
 
   const applyAuth = (payload: AgentLoginData) => {
     setAuthToken(payload.token);
@@ -733,32 +663,9 @@ function App() {
 
       startFrameTimer();
 
-      const handleWindowBlur = () => {
-        stopFrameTimer();
-      };
-      const handleWindowFocus = () => {
-        if (!recordingStopRequestedRef.current) {
-          void drawNativeFrame();
-          startFrameTimer();
-        }
-      };
-      window.addEventListener("blur", handleWindowBlur);
-      window.addEventListener("focus", handleWindowFocus);
-      const handleVisibilityChange = () => {
-        if (document.hidden) {
-          handleWindowBlur();
-        } else {
-          handleWindowFocus();
-        }
-      };
-      document.addEventListener("visibilitychange", handleVisibilityChange);
-
       // Store cleanup ref for when recording stops
       const recordingCleanup = () => {
         stopFrameTimer();
-        window.removeEventListener("blur", handleWindowBlur);
-        window.removeEventListener("focus", handleWindowFocus);
-        document.removeEventListener("visibilitychange", handleVisibilityChange);
       };
       recordingCleanupRef.current = recordingCleanup;
 
@@ -1081,6 +988,43 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const handleMouseDown = async (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      // Only drag if the click started in the top bar (header)
+      const header = target.closest(".top-bar");
+      if (!header) return;
+
+      // Do NOT drag if clicking on buttons, inputs, profile-icon, or close/minimize controls
+      if (target.closest("button, input, a, .profile-icon, .control-dot")) {
+        return;
+      }
+
+      try {
+        await appWindow.startDragging();
+      } catch (err) {
+        console.error("Failed to start window dragging", err);
+      }
+    };
+
+    window.addEventListener("mousedown", handleMouseDown);
+    return () => {
+      window.removeEventListener("mousedown", handleMouseDown);
+    };
+  }, [appWindow]);
+
+  useEffect(() => {
+    if (isClockedIn) {
+      invoke("start_input_tracking").catch((err) =>
+        console.error("Failed to start input tracking:", err)
+      );
+    } else {
+      invoke("stop_input_tracking").catch((err) =>
+        console.error("Failed to stop input tracking:", err)
+      );
+    }
+  }, [isClockedIn]);
+
+  useEffect(() => {
     const onMouseMove = () => {
       if (isClockedIn) {
         mouseMovesRef.current += 1;
@@ -1400,26 +1344,8 @@ function App() {
     ? startedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : "--:--";
 
-  const appWindow = getCurrentWindow();
-
   const handleClose = async () => {
-    if (isClockedIn && authHeaders) {
-      await sendData();
-      await stopAutoRecording(false);
-      try {
-        await fetch(`${apiBase}/api/agent/clock-out`, {
-          method: "POST",
-          headers: authHeaders,
-          body: JSON.stringify({
-            sessionId: sessionId ?? undefined,
-            timestamp: new Date().toISOString(),
-          }),
-        });
-      } catch (error) {
-        console.error("Clock-out on close failed", error);
-      }
-    }
-    await appWindow.close();
+    await appWindow.hide();
   };
 
   const handleMinimize = async () => {
@@ -1444,22 +1370,10 @@ function App() {
     }
   };
 
-  const diagnosticsPanel = isInputDiagnosticsVisible() ? (
-    <div className="input-diagnostics" aria-live="polite">
-      <strong>Input diag</strong>
-      <span>move {inputDiagnostics.pointerMoves}</span>
-      <span>down {inputDiagnostics.pointerDowns}</span>
-      <span>click {inputDiagnostics.clicks}</span>
-      <span>focus {inputDiagnostics.focusIns}</span>
-      <span>{inputDiagnostics.lastEvent}</span>
-      <span>{inputDiagnostics.lastTarget}</span>
-    </div>
-  ) : null;
 
   if (!isAuthenticated || !authToken) {
     return (
       <div className="agent-shell">
-        {diagnosticsPanel}
         <header className="top-bar">
           <div className="window-controls">
             <button className="control-dot red" onClick={() => void handleClose()} aria-label="Close window" />
@@ -1528,7 +1442,6 @@ function App() {
 
   return (
     <div className="agent-shell">
-      {diagnosticsPanel}
       <section className="top-card">
         <header className="top-bar">
           <div className="window-controls">
