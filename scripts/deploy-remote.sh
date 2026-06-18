@@ -63,12 +63,18 @@ docker run -d --name teamlens-frontend-v2-test --restart unless-stopped \
   teamlens-frontend-v2:test
 
 echo "=== Nginx reload ==="
-# Robust nginx reload/restart: handle empty or stale PID files.
+# Robust nginx reload/restart: handle empty/stale PID files and orphaned nginx processes.
 NGINX_PID=$(cat /run/nginx.pid 2>/dev/null || cat /var/run/nginx.pid 2>/dev/null || true)
 if [ -n "$NGINX_PID" ] && kill -0 "$NGINX_PID" 2>/dev/null; then
   nginx -s reload
+elif pgrep -x nginx > /dev/null 2>&1; then
+  # nginx is running but PID file is missing/stale (likely started outside systemd).
+  # Gracefully stop it, then start via systemd so future reloads work.
+  nginx -s quit 2>/dev/null || killall -TERM nginx 2>/dev/null || true
+  sleep 3
+  systemctl start nginx || systemctl restart nginx
 elif command -v systemctl &>/dev/null; then
-  systemctl is-active nginx &>/dev/null && { systemctl reload nginx || systemctl restart nginx; } || systemctl start nginx
+  systemctl start nginx || systemctl restart nginx
 elif command -v service &>/dev/null; then
   service nginx start || service nginx restart
 else
