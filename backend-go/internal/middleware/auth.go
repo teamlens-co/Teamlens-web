@@ -65,6 +65,22 @@ func AuthMiddleware(jwtSvc *services.JWTService, pool *pgxpool.Pool) func(http.H
 				}
 			}
 
+			// Verify organization is active for non-superadmins
+			if role != models.RoleSuperAdmin && orgID != "" {
+				var isActive bool
+				err := pool.QueryRow(r.Context(),
+					`SELECT COALESCE(is_active, TRUE) FROM organizations WHERE id = $1`, orgID,
+				).Scan(&isActive)
+				if err != nil {
+					writeForbidden(w, "Access Denied")
+					return
+				}
+				if !isActive {
+					writeForbidden(w, "Organization is suspended")
+					return
+				}
+			}
+
 			auth := &models.AuthContext{
 				UserID:         userID,
 				OrganizationID: orgID,
@@ -99,6 +115,7 @@ func OptionalAuthMiddleware(jwtSvc *services.JWTService, pool *pgxpool.Pool) fun
 			userID, _ := claims["sub"].(string)
 			orgID, _ := claims["orgId"].(string)
 			roleStr, _ := claims["role"].(string)
+			role := models.AuthRole(roleStr)
 
 			if tokenType == "agent" {
 				tokenHash := services.SHA256(tokenStr)
@@ -118,10 +135,22 @@ func OptionalAuthMiddleware(jwtSvc *services.JWTService, pool *pgxpool.Pool) fun
 				}
 			}
 
+			// Verify organization is active for non-superadmins
+			if role != models.RoleSuperAdmin && orgID != "" {
+				var isActive bool
+				err := pool.QueryRow(r.Context(),
+					`SELECT COALESCE(is_active, TRUE) FROM organizations WHERE id = $1`, orgID,
+				).Scan(&isActive)
+				if err != nil || !isActive {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+
 			auth := &models.AuthContext{
 				UserID:         userID,
 				OrganizationID: orgID,
-				Role:           models.AuthRole(roleStr),
+				Role:           role,
 				TokenType:      models.AuthTokenType(tokenType),
 				Token:          tokenStr,
 			}

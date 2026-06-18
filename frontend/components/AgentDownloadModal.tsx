@@ -8,24 +8,17 @@ interface AgentDownloadModalProps {
   isOpen: boolean;
   onClose: () => void;
   windowsDownloadUrl: string;
-<<<<<<< HEAD
-=======
   windowsMsiDownloadUrl?: string;
->>>>>>> fc62392400250dab3dd7024a7c2b9de9f1c4c8cf
 }
 
 export default function AgentDownloadModal({
   isOpen,
   onClose,
   windowsDownloadUrl,
-<<<<<<< HEAD
-}: AgentDownloadModalProps) {
-=======
   windowsMsiDownloadUrl,
 }: AgentDownloadModalProps) {
   const msiDownloadUrl =
     windowsMsiDownloadUrl || `${windowsDownloadUrl}${windowsDownloadUrl.includes("?") ? "&" : "?"}type=msi`;
->>>>>>> fc62392400250dab3dd7024a7c2b9de9f1c4c8cf
   // Prevent background scrolling when modal is open
   useEffect(() => {
     if (isOpen) {
@@ -82,19 +75,12 @@ export default function AgentDownloadModal({
 
             {/* Platform Selection List */}
             <div className="space-y-4">
-<<<<<<< HEAD
-              {/* WINDOWS (Active) */}
-=======
               {/* WINDOWS EXE (Active) */}
->>>>>>> fc62392400250dab3dd7024a7c2b9de9f1c4c8cf
               <a
                 href={windowsDownloadUrl}
                 onClick={onClose}
                 className="flex items-center gap-5 p-5 bg-[#FCFAF8] hover:bg-[#FEF0ED]/30 dark:bg-white/5 dark:hover:bg-[#E85A3C]/10 border border-[#E8E4DF] dark:border-[#5C5854]/20 hover:border-[#E85A3C]/30 rounded-3xl transition-all group cursor-pointer"
-<<<<<<< HEAD
-=======
                 download
->>>>>>> fc62392400250dab3dd7024a7c2b9de9f1c4c8cf
               >
                 <div className="w-12 h-12 rounded-2xl bg-[#E85A3C]/10 dark:bg-[#E85A3C]/20 text-[#E85A3C] flex items-center justify-center shrink-0">
                   <Monitor size={22} className="group-hover:scale-110 transition-transform" />
@@ -102,16 +88,6 @@ export default function AgentDownloadModal({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-[15px] text-[#2D2A26] dark:text-white">
-<<<<<<< HEAD
-                      Download for Windows
-                    </span>
-                    <span className="px-2 py-0.5 bg-[#E85A3C]/10 text-[#E85A3C] text-[9px] font-bold rounded-md font-mono">
-                      v0.1.50
-                    </span>
-                  </div>
-                  <p className="text-[12px] text-[#8C8780] mt-0.5 truncate">
-                    Native installer (.msi) for Windows 10/11 x64
-=======
                       Download for Windows (.exe)
                     </span>
                     <span className="px-2 py-0.5 bg-[#E85A3C]/10 text-[#E85A3C] text-[9px] font-bold rounded-md font-mono">
@@ -148,7 +124,6 @@ export default function AgentDownloadModal({
                   </div>
                   <p className="text-[12px] text-[#8C8780] mt-0.5 truncate">
                     Enterprise Installer for Windows 10/11 x64
->>>>>>> fc62392400250dab3dd7024a7c2b9de9f1c4c8cf
                   </p>
                 </div>
                 <div className="w-10 h-10 rounded-full bg-white dark:bg-white/5 border border-[#E8E4DF] dark:border-[#5C5854]/20 flex items-center justify-center text-[#8C8780] dark:text-slate-300 group-hover:bg-[#E85A3C] group-hover:text-white group-hover:border-[#E85A3C] transition-all">

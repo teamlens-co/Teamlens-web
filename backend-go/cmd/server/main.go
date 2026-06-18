@@ -22,6 +22,7 @@ import (
 	handlersmobile "github.com/teamlens/backend-go/internal/handlers/mobile"
 	handlersweb "github.com/teamlens/backend-go/internal/handlers/web"
 	"github.com/teamlens/backend-go/internal/middleware"
+	"github.com/teamlens/backend-go/internal/models"
 	"github.com/teamlens/backend-go/internal/services"
 )
 
@@ -91,6 +92,8 @@ func main() {
 	webRecHandler := handlersweb.NewRecordingHandler(recordingSvc, cfg.UploadDir)
 	webRecordingSessionHandler := handlersweb.NewRecordingSessionHandler(recordingSessionSvc, cfg.UploadDir)
 	webSettingsHandler := handlersweb.NewSettingsHandler(pool.Pool, locationSvc, activitySvc, authSvc)
+	webSuperAdminHandler := handlersweb.NewSuperAdminHandler(pool.Pool)
+	webLeadHandler := handlersweb.NewLeadHandler(pool.Pool)
 
 	agentAuthHandler := handlersagent.NewAuthHandler(agentAuthSvc)
 	agentActivityHandler := handlersagent.NewActivityHandler(activitySvc)
@@ -245,6 +248,21 @@ func main() {
 		r.Get("/dashboard/attendance", webDashHandler.GetAttendance)
 		r.Get("/dashboard/activity-timeline", webDashHandler.GetActivityTimeline)
 		r.Get("/dashboard/usage-report", agentUsageHandler.GetUsageReport)
+
+		// Super Admin Management (superadmin only)
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireRole(models.RoleSuperAdmin))
+			r.Get("/superadmin/stats", webSuperAdminHandler.GetStats)
+			r.Get("/superadmin/organizations", webSuperAdminHandler.ListOrganizations)
+			r.Get("/superadmin/organizations/{orgId}/details", webSuperAdminHandler.GetOrgDetails)
+			r.Put("/superadmin/organizations/{orgId}/status", webSuperAdminHandler.UpdateOrgStatus)
+			r.Put("/superadmin/organizations/{orgId}/subscription", webSuperAdminHandler.UpdateOrgSubscription)
+			r.Get("/superadmin/leads", webLeadHandler.ListLeads)
+			r.Post("/superadmin/leads", webLeadHandler.CreateLead)
+			r.Put("/superadmin/leads/{leadId}/status", webLeadHandler.UpdateLeadStatus)
+			r.Put("/superadmin/leads/{leadId}/notes", webLeadHandler.UpdateLeadNotes)
+			r.Delete("/superadmin/leads/{leadId}", webLeadHandler.DeleteLead)
+		})
 	})
 
 	r.Mount("/api/web", webr)

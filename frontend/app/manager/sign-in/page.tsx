@@ -90,7 +90,11 @@ export default function ManagerSignInPage() {
             if (employeeId) nextParams.set("employeeId", employeeId);
             if (mobileApiBase || candidate) nextParams.set("mobileApiBase", mobileApiBase || candidate);
             if (mobileWsBase) nextParams.set("mobileWsBase", mobileWsBase);
-            router.replace(`/dashboard${employeeId ? "/live" : ""}${nextParams.toString() ? `?${nextParams.toString()}` : ""}`);
+            if (payload.data?.role === "SUPERADMIN") {
+              router.replace("/superadmin/dashboard");
+            } else {
+              router.replace(`/dashboard${employeeId ? "/live" : ""}${nextParams.toString() ? `?${nextParams.toString()}` : ""}`);
+            }
             return;
           }
         } catch {
@@ -139,7 +143,12 @@ export default function ManagerSignInPage() {
         if (payload.data?.accessToken) {
           window.localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, payload.data.accessToken);
         }
-        onAuthSuccess();
+        if ((payload as any).data?.user?.role === "SUPERADMIN") {
+          setStatusMessage("Synchronization complete. Access granted.");
+          router.push("/superadmin/dashboard");
+        } else {
+          onAuthSuccess();
+        }
       } else {
         setStatusMessage(`Error: ${payload?.message ?? "Invalid credentials"}`);
         setLoadingAuth(false);
@@ -427,10 +436,7 @@ export default function ManagerSignInPage() {
           isOpen={isDownloadModalOpen}
           onClose={() => setIsDownloadModalOpen(false)}
           windowsDownloadUrl="/download/agent"
-<<<<<<< HEAD
-=======
           windowsMsiDownloadUrl="/download/agent?type=msi"
->>>>>>> fc62392400250dab3dd7024a7c2b9de9f1c4c8cf
         />
       </div>
     </div>

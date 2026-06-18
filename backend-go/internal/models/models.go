@@ -7,8 +7,9 @@ import "time"
 type AuthRole string
 
 const (
-	RoleManager  AuthRole = "MANAGER"
-	RoleEmployee AuthRole = "EMPLOYEE"
+	RoleManager    AuthRole = "MANAGER"
+	RoleEmployee   AuthRole = "EMPLOYEE"
+	RoleSuperAdmin AuthRole = "SUPERADMIN"
 )
 
 type AuthTokenType string

@@ -7,7 +7,7 @@ import posthog from "posthog-js";
 import type { DateRange } from "../components/DateFilter";
 import { getPresetRange } from "../components/DateFilter";
 
-export type Role = "MANAGER" | "EMPLOYEE";
+export type Role = "MANAGER" | "EMPLOYEE" | "SUPERADMIN";
 
 export type UserProfile = {
   id: string;

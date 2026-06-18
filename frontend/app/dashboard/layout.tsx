@@ -87,8 +87,12 @@ function SidebarLayout({ children }: { children: React.ReactNode }) {
   } = useAuth();
 
   useEffect(() => {
-    if (!isLoading && (!user || !organization)) {
-      router.replace("/manager/sign-in");
+    if (!isLoading) {
+      if (!user || !organization) {
+        router.replace("/manager/sign-in");
+      } else if (user.role === "SUPERADMIN") {
+        router.replace("/superadmin/dashboard");
+      }
     }
   }, [isLoading, organization, router, user]);
 

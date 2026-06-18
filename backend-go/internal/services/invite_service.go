@@ -36,6 +36,22 @@ func (s *InviteService) CreateInvite(ctx context.Context, managerID, organizatio
 		r = *role
 	}
 
+	if r == models.RoleEmployee {
+		var activeEmployees int
+		var employeeLimit int
+		err := s.pool.QueryRow(ctx, `
+			SELECT 
+				(SELECT COUNT(*) FROM users WHERE organization_id = $1 AND role = 'EMPLOYEE'),
+				(SELECT COALESCE(employee_limit, 10) FROM organizations WHERE id = $1)
+		`, organizationID).Scan(&activeEmployees, &employeeLimit)
+		if err != nil {
+			return nil, fmt.Errorf("check employee limit: %w", err)
+		}
+		if activeEmployees >= employeeLimit {
+			return nil, fmt.Errorf("employee limit reached (%d/%d). Please contact platform administrator to upgrade subscription seats", activeEmployees, employeeLimit)
+		}
+	}
+
 	expiresAt := time.Now().Add(time.Duration(s.inviteTTL) * time.Hour)
 	token := RandomToken(24)
 
@@ -113,6 +129,22 @@ func (s *InviteService) AcceptInvite(ctx context.Context, token, fullName, passw
 	v, err := s.ValidateInvite(ctx, token)
 	if err != nil {
 		return nil, err
+	}
+
+	if v.Role == models.RoleEmployee {
+		var activeEmployees int
+		var employeeLimit int
+		err := s.pool.QueryRow(ctx, `
+			SELECT 
+				(SELECT COUNT(*) FROM users WHERE organization_id = $1 AND role = 'EMPLOYEE'),
+				(SELECT COALESCE(employee_limit, 10) FROM organizations WHERE id = $1)
+		`, v.Organization.ID).Scan(&activeEmployees, &employeeLimit)
+		if err != nil {
+			return nil, fmt.Errorf("check employee limit: %w", err)
+		}
+		if activeEmployees >= employeeLimit {
+			return nil, fmt.Errorf("employee limit reached (%d/%d) for this organization. Cannot accept invite", activeEmployees, employeeLimit)
+		}
 	}
 
 	// Check user doesn't already exist
