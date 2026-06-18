@@ -13,11 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-<<<<<<< HEAD
 tauri = { version = "2", features = ["devtools", "tray-icon", "image-png", "image-ico"] }
-=======
-tauri = { version = "2", features = ["devtools", "tray-icon"] }
->>>>>>> fc62392400250dab3dd7024a7c2b9de9f1c4c8cf
 tauri-plugin-opener = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"

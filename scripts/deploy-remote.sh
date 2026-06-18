@@ -30,7 +30,7 @@ docker run -d --name backend-go --restart unless-stopped \
   teamlens-api-go:latest
 
 echo "=== Rebuilding WebSocket ==="
-cd ../
+cd ../backend-ws
 docker build -t teamlens-ws:latest .
 docker rm -f teamlens-ws-test 2>/dev/null || true
 docker run -d --name teamlens-ws-test --restart unless-stopped \

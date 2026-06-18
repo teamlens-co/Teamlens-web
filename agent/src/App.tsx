@@ -3,11 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { fetch } from "@tauri-apps/plugin-http";
 import { getVersion } from "@tauri-apps/api/app";
 
-<<<<<<< HEAD
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-=======
-import { getCurrentWindow } from "@tauri-apps/api/window";
->>>>>>> fc62392400250dab3dd7024a7c2b9de9f1c4c8cf
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
@@ -1027,7 +1023,6 @@ function App() {
   }, []);
 
   useEffect(() => {
-<<<<<<< HEAD
     const handleMouseDown = async (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       // Only drag if the click started in the top bar (header)
@@ -1053,8 +1048,6 @@ function App() {
   }, [appWindow]);
 
   useEffect(() => {
-=======
->>>>>>> fc62392400250dab3dd7024a7c2b9de9f1c4c8cf
     if (isClockedIn) {
       invoke("start_input_tracking").catch((err) =>
         console.error("Failed to start input tracking:", err)

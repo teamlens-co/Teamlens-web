@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 
 const DOWNLOAD_CONFIG_ERROR =
   "Agent download is not configured. Please contact support.";
-const LOCAL_AGENT_DOWNLOAD_PATH = "/downloads/TeamLens_0.1.50_x64_en-US.msi";
 
 const UPDATER_JSON_URL =
   "https://github.com/teamlens-co/Teamlens-web/releases/latest/download/teamlens-agent-latest.json";

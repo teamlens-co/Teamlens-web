@@ -18,7 +18,8 @@ export default function AgentDownloadModal({
   windowsMsiDownloadUrl,
 }: AgentDownloadModalProps) {
   const msiDownloadUrl =
-    windowsMsiDownloadUrl || `${windowsDownloadUrl}${windowsDownloadUrl.includes("?") ? "&" : "?"}type=msi`;
+    windowsMsiDownloadUrl ||
+    `${windowsDownloadUrl}${windowsDownloadUrl.includes("?") ? "&" : "?"}type=msi`;
   // Prevent background scrolling when modal is open
   useEffect(() => {
     if (isOpen) {
@@ -79,8 +80,8 @@ export default function AgentDownloadModal({
               <a
                 href={windowsDownloadUrl}
                 onClick={onClose}
-                className="flex items-center gap-5 p-5 bg-[#FCFAF8] hover:bg-[#FEF0ED]/30 dark:bg-white/5 dark:hover:bg-[#E85A3C]/10 border border-[#E8E4DF] dark:border-[#5C5854]/20 hover:border-[#E85A3C]/30 rounded-3xl transition-all group cursor-pointer"
                 download
+                className="flex items-center gap-5 p-5 bg-[#FCFAF8] hover:bg-[#FEF0ED]/30 dark:bg-white/5 dark:hover:bg-[#E85A3C]/10 border border-[#E8E4DF] dark:border-[#5C5854]/20 hover:border-[#E85A3C]/30 rounded-3xl transition-all group cursor-pointer"
               >
                 <div className="w-12 h-12 rounded-2xl bg-[#E85A3C]/10 dark:bg-[#E85A3C]/20 text-[#E85A3C] flex items-center justify-center shrink-0">
                   <Monitor size={22} className="group-hover:scale-110 transition-transform" />
@@ -107,8 +108,8 @@ export default function AgentDownloadModal({
               <a
                 href={msiDownloadUrl}
                 onClick={onClose}
-                className="flex items-center gap-5 p-5 bg-[#FCFAF8] hover:bg-[#FEF0ED]/30 dark:bg-white/5 dark:hover:bg-[#E85A3C]/10 border border-[#E8E4DF] dark:border-[#5C5854]/20 hover:border-[#E85A3C]/30 rounded-3xl transition-all group cursor-pointer"
                 download
+                className="flex items-center gap-5 p-5 bg-[#FCFAF8] hover:bg-[#FEF0ED]/30 dark:bg-white/5 dark:hover:bg-[#E85A3C]/10 border border-[#E8E4DF] dark:border-[#5C5854]/20 hover:border-[#E85A3C]/30 rounded-3xl transition-all group cursor-pointer"
               >
                 <div className="w-12 h-12 rounded-2xl bg-[#E85A3C]/10 dark:bg-[#E85A3C]/20 text-[#E85A3C] flex items-center justify-center shrink-0">
                   <Monitor size={22} className="group-hover:scale-110 transition-transform" />
