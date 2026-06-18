@@ -427,6 +427,10 @@ export default function ManagerSignInPage() {
           isOpen={isDownloadModalOpen}
           onClose={() => setIsDownloadModalOpen(false)}
           windowsDownloadUrl="/download/agent"
+<<<<<<< HEAD
+=======
+          windowsMsiDownloadUrl="/download/agent?type=msi"
+>>>>>>> fc62392400250dab3dd7024a7c2b9de9f1c4c8cf
         />
       </div>
     </div>

@@ -255,7 +255,7 @@ export default function EmployeesPage() {
     setError("");
 
     try {
-      const response = await fetch(`${apiBase}/api/web/users/${employee.id}`, {
+      const response = await fetch(`${apiBase}/api/web/employees/${employee.id}`, {
         method: "DELETE",
         headers: authHeaders,
         credentials: "include",

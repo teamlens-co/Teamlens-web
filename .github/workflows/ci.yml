@@ -1,0 +1,99 @@
+name: CI — Build & Test
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build-backend:
+    name: Build Go Backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build backend
+        working-directory: backend-go
+        run: go build -v ./...
+
+      - name: Vet backend
+        working-directory: backend-go
+        run: go vet ./...
+
+  build-ws:
+    name: Build WS Service
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: backend-ws/package-lock.json
+
+      - name: Install dependencies
+        working-directory: backend-ws
+        run: npm ci
+
+      - name: Build WS service
+        working-directory: backend-ws
+        run: npm run build
+
+      - name: Run Prisma generate
+        working-directory: backend-ws
+        run: npx prisma generate
+
+  build-frontend:
+    name: Build Next.js Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+  build-agent:
+    name: Check Agent Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: agent/package-lock.json
+
+      - name: Install agent dependencies
+        working-directory: agent
+        run: npm ci
+
+      - name: Type-check agent
+        working-directory: agent
+        run: npx tsc --noEmit
+
+      - name: Check Tauri build
+        working-directory: agent
+        run: npm run tauri build
+        continue-on-error: true  # Tauri needs Rust, may fail in CI without setup

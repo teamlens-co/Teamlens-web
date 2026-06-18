@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import posthog from "posthog-js";
 
 import type { DateRange } from "../components/DateFilter";
 import { getPresetRange } from "../components/DateFilter";
@@ -190,6 +191,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [accessToken, user]);
 
   useEffect(() => {
+    if (user) {
+      posthog.identify(user.id, {
+        email: user.email,
+        name: user.fullName,
+        role: user.role,
+        organizationId: user.organizationId,
+        organizationName: organization?.name,
+      });
+      return;
+    }
+
+    posthog.reset();
+  }, [organization?.name, user]);
+
+  useEffect(() => {
     const restoreSession = async () => {
       try {
         let storedToken = typeof window !== "undefined" ? window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY) ?? "" : "";
@@ -289,6 +305,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setOrganization(null);
     setAccessToken("");
+    posthog.reset();
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
     }

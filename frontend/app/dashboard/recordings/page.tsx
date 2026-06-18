@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Calendar, Clock, Download, HardDrive, Play, Search, Trash2, User, Video } from "lucide-react";
+import { Calendar, Clock, Download, HardDrive, Pause, Play, Search, SkipBack, SkipForward, Trash2, User, Video } from "lucide-react";
 import { useAuth } from "../../../contexts/AuthContext";
+import DashboardDateFilter from "../../../components/DashboardDateFilter";
 
 type ManualRecording = {
   id: string;
@@ -32,6 +33,7 @@ type RecordingSession = {
 type RecordingChunk = {
   id: string;
   chunkIndex: number;
+  fileSize?: number;
   durationMs: number;
   playbackUrl: string;
 };
@@ -57,6 +59,41 @@ const formatFileSize = (bytes: number): string => {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 };
 
+const getSessionHealth = (session: RecordingSession): {
+  label: string;
+  className: string;
+  message?: string;
+} => {
+  const chunkCount = session.chunkCount || 0;
+  if (chunkCount === 0) {
+    return {
+      label: "No data",
+      className: "bg-rose-50 text-rose-700",
+      message: "No recording chunks were captured.",
+    };
+  }
+  const avgChunkSize = Number(session.totalSize || 0) / chunkCount;
+  // A 30s chunk at 1280x720@3fps with any real screen activity should be > 250 KB
+  if (avgChunkSize < 25 * 1024) {
+    return {
+      label: "Empty / black",
+      className: "bg-rose-50 text-rose-700",
+      message: "Chunks are too small (< 25 KB each). Agent may not have screen-capture permission.",
+    };
+  }
+  if (avgChunkSize < 120 * 1024) {
+    return {
+      label: "Low quality",
+      className: "bg-amber-50 text-amber-700",
+      message: "Chunks are small. Some frames may be missing.",
+    };
+  }
+  return {
+    label: "Healthy",
+    className: "bg-[#EEF9F3] text-[#21845D]",
+  };
+};
+
 const formatDate = (dateStr: string): string =>
   new Date(dateStr).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 
@@ -77,35 +114,97 @@ function SessionRecordingPlayer({
   const [chunkIndex, setChunkIndex] = useState(0);
   const [speed, setSpeed] = useState(1);
   const [chunkUrl, setChunkUrl] = useState("");
+  const [loadState, setLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [playerMessage, setPlayerMessage] = useState("");
+  const [reloadNonce, setReloadNonce] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const advanceTimerRef = useRef<number | null>(null);
   const chunks = playlist.chunks;
   const current = chunks[chunkIndex];
   const progress = chunks.length ? ((chunkIndex + 1) / chunks.length) * 100 : 0;
 
+  const clearAdvanceTimer = useCallback(() => {
+    if (advanceTimerRef.current) {
+      window.clearTimeout(advanceTimerRef.current);
+      advanceTimerRef.current = null;
+    }
+  }, []);
+
+  const goToChunk = useCallback(
+    (index: number) => {
+      clearAdvanceTimer();
+      const nextIndex = Math.max(0, Math.min(index, Math.max(chunks.length - 1, 0)));
+      setChunkIndex((currentIndex) => {
+        if (currentIndex === nextIndex) {
+          setReloadNonce((value) => value + 1);
+        }
+        return nextIndex;
+      });
+    },
+    [chunks.length, clearAdvanceTimer],
+  );
+
+  const goToNextChunk = useCallback(() => {
+    setChunkIndex((index) => Math.min(index + 1, Math.max(chunks.length - 1, 0)));
+  }, [chunks.length]);
+
+  useEffect(() => {
+    setChunkIndex(0);
+    setChunkUrl("");
+    setLoadState("idle");
+    setPlayerMessage("");
+    clearAdvanceTimer();
+  }, [playlist.session.id, clearAdvanceTimer]);
+
   useEffect(() => {
     let objectUrl = "";
+    let cancelled = false;
+
     const loadChunk = async () => {
       if (!current || !authHeaders) {
         setChunkUrl("");
+        setLoadState("idle");
         return;
       }
-      const response = await fetch(`${apiBase}${current.playbackUrl}`, {
-        headers: authHeaders,
-        credentials: "include",
-      });
-      if (!response.ok) {
+      setLoadState("loading");
+      setPlayerMessage("");
+      clearAdvanceTimer();
+
+      try {
+        const response = await fetch(`${apiBase}${current.playbackUrl}`, {
+          headers: authHeaders,
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          throw new Error(`Chunk ${current.chunkIndex + 1} failed to load (${response.status})`);
+        }
+        const blob = await response.blob();
+        if (!blob.size) {
+          throw new Error(`Chunk ${current.chunkIndex + 1} is empty`);
+        }
+        objectUrl = URL.createObjectURL(blob);
+        if (cancelled) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+        setChunkUrl(objectUrl);
+        setLoadState("ready");
+      } catch (error) {
+        if (cancelled) return;
         setChunkUrl("");
-        return;
+        setLoadState("error");
+        setPlayerMessage(error instanceof Error ? error.message : "Unable to load recording chunk");
       }
-      const blob = await response.blob();
-      objectUrl = URL.createObjectURL(blob);
-      setChunkUrl(objectUrl);
     };
+
     void loadChunk();
     return () => {
+      cancelled = true;
+      clearAdvanceTimer();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [apiBase, authHeaders, current]);
+  }, [apiBase, authHeaders, clearAdvanceTimer, current, reloadNonce]);
 
   useEffect(() => {
     if (videoRef.current && chunkUrl) {
@@ -113,6 +212,36 @@ function SessionRecordingPlayer({
       void videoRef.current.play().catch(() => {});
     }
   }, [chunkUrl, speed]);
+
+  useEffect(() => {
+    clearAdvanceTimer();
+    if (!current || loadState !== "ready" || chunks.length <= 1 || chunkIndex >= chunks.length - 1) return;
+
+    const duration = Math.max(1000, current.durationMs || 0);
+    advanceTimerRef.current = window.setTimeout(() => {
+      goToNextChunk();
+    }, duration / Math.max(speed, 0.25) + 1250);
+
+    return clearAdvanceTimer;
+  }, [chunkIndex, chunks.length, clearAdvanceTimer, current, goToNextChunk, loadState, speed]);
+
+  const handleVideoError = () => {
+    setLoadState("error");
+    setPlayerMessage(`Unable to decode chunk ${current ? current.chunkIndex + 1 : chunkIndex + 1}. Skipping to the next chunk.`);
+    clearAdvanceTimer();
+    if (chunkIndex < chunks.length - 1) {
+      window.setTimeout(() => goToNextChunk(), 700);
+    }
+  };
+
+  const handleEnded = () => {
+    clearAdvanceTimer();
+    if (chunkIndex < chunks.length - 1) {
+      goToNextChunk();
+    }
+  };
+
+  const sessionHealth = useMemo(() => getSessionHealth(playlist.session), [playlist.session]);
 
   return (
     <div className="overflow-hidden rounded-xl border border-[#DDD2C9] bg-white shadow-[0_1px_2px_rgba(45,42,38,0.03)]">
@@ -128,7 +257,13 @@ function SessionRecordingPlayer({
         </button>
       </div>
 
-      <div className="aspect-video bg-[#171717]">
+      {sessionHealth.message && (
+        <div className={`px-5 py-2 text-[12px] font-medium ${sessionHealth.className} border-b border-[#EFE8E2]`}>
+          {sessionHealth.label}: {sessionHealth.message}
+        </div>
+      )}
+
+      <div className="relative aspect-video bg-[#171717]">
         {current && chunkUrl ? (
           <video
             key={current.id}
@@ -137,13 +272,23 @@ function SessionRecordingPlayer({
             controls
             autoPlay
             className="h-full w-full object-contain"
-            onEnded={() => setChunkIndex((index) => Math.min(index + 1, chunks.length - 1))}
+            onCanPlay={() => {
+              setLoadState("ready");
+              if (videoRef.current) videoRef.current.playbackRate = speed;
+            }}
+            onEnded={handleEnded}
+            onError={handleVideoError}
           />
         ) : (
           <div className="flex h-full items-center justify-center text-[13px] font-medium text-white/70">
-            {current ? "Loading recording chunk..." : "No uploaded chunks yet"}
+            {current ? (loadState === "error" ? playerMessage || "Unable to play this chunk" : "Loading recording chunk...") : "No uploaded chunks yet"}
           </div>
         )}
+        {current ? (
+          <div className="pointer-events-none absolute left-3 top-3 rounded-md bg-black/60 px-2.5 py-1 text-[11px] font-semibold text-white">
+            Chunk {chunkIndex + 1} of {chunks.length}
+          </div>
+        ) : null}
       </div>
 
       <div className="space-y-3 border-t border-[#EFE8E2] px-5 py-3">
@@ -152,14 +297,18 @@ function SessionRecordingPlayer({
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => setChunkIndex((index) => Math.max(index - 1, 0))} className="rounded-lg border border-[#E1D7CE] px-3 py-1.5 text-[12px] font-semibold text-[#302C28]">
+            <button type="button" onClick={() => goToChunk(chunkIndex - 1)} className="rounded-lg border border-[#E1D7CE] px-3 py-1.5 text-[12px] font-semibold text-[#302C28]">
               Back
             </button>
-            <button type="button" onClick={() => setChunkIndex((index) => Math.min(index + 1, chunks.length - 1))} className="rounded-lg border border-[#E1D7CE] px-3 py-1.5 text-[12px] font-semibold text-[#302C28]">
+            <button type="button" onClick={() => goToChunk(chunkIndex + 1)} className="rounded-lg border border-[#E1D7CE] px-3 py-1.5 text-[12px] font-semibold text-[#302C28]">
               Next
+            </button>
+            <button type="button" onClick={() => goToChunk(chunkIndex)} className="rounded-lg border border-[#E1D7CE] px-3 py-1.5 text-[12px] font-semibold text-[#302C28]">
+              Retry
             </button>
             <span className="text-[11px] font-medium text-[#8C837B]">
               {chunks.length ? chunkIndex + 1 : 0} / {chunks.length}
+              {current?.durationMs ? ` · ${formatDuration(current.durationMs)}` : ""}
             </span>
           </div>
           <div className="flex items-center gap-1.5">
@@ -181,7 +330,7 @@ function SessionRecordingPlayer({
 }
 
 export default function RecordingsPage() {
-  const { authHeaders, apiBase, user } = useAuth();
+  const { authHeaders, apiBase, user, dateRange } = useAuth();
   const [tab, setTab] = useState<"auto" | "manual">("auto");
   const [sessions, setSessions] = useState<RecordingSession[]>([]);
   const [manualRecordings, setManualRecordings] = useState<ManualRecording[]>([]);
@@ -237,21 +386,38 @@ export default function RecordingsPage() {
     return teamUser?.fullName || teamUser?.email || employeeId.slice(0, 8);
   }, [teamUsers]);
 
+  const isWithinDateRange = useCallback((dateStr: string) => {
+    const date = new Date(dateStr);
+    const from = dateRange?.startDate ? new Date(dateRange.startDate) : null;
+    const to = dateRange?.endDate ? new Date(dateRange.endDate) : null;
+    if (from) {
+      from.setHours(0, 0, 0, 0);
+      if (date < from) return false;
+    }
+    if (to) {
+      to.setHours(23, 59, 59, 999);
+      if (date > to) return false;
+    }
+    return true;
+  }, [dateRange?.startDate, dateRange?.endDate]);
+
   const filteredSessions = useMemo(() => {
     const query = searchQuery.toLowerCase();
     return sessions.filter((session) => {
       const name = (session.employeeName || session.employeeEmail || getEmployeeName(session.employeeId)).toLowerCase();
-      return !query || name.includes(query) || formatDate(session.startedAt).toLowerCase().includes(query) || session.status.includes(query);
+      const matchesSearch = !query || name.includes(query) || formatDate(session.startedAt).toLowerCase().includes(query) || session.status.includes(query);
+      return matchesSearch && isWithinDateRange(session.startedAt);
     });
-  }, [getEmployeeName, searchQuery, sessions]);
+  }, [getEmployeeName, isWithinDateRange, searchQuery, sessions]);
 
   const filteredManual = useMemo(() => {
     const query = searchQuery.toLowerCase();
     return manualRecordings.filter((recording) => {
       const name = getEmployeeName(recording.employeeId).toLowerCase();
-      return !query || name.includes(query) || formatDate(recording.recordedAt).toLowerCase().includes(query);
+      const matchesSearch = !query || name.includes(query) || formatDate(recording.recordedAt).toLowerCase().includes(query);
+      return matchesSearch && isWithinDateRange(recording.recordedAt);
     });
-  }, [getEmployeeName, manualRecordings, searchQuery]);
+  }, [getEmployeeName, isWithinDateRange, manualRecordings, searchQuery]);
 
   const playSession = async (session: RecordingSession) => {
     if (!authHeaders) return;
@@ -302,15 +468,18 @@ export default function RecordingsPage() {
             {sessions.length} auto sessions · {manualRecordings.length} live recordings
           </p>
         </div>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8C837B]" />
-          <input
-            type="text"
-            placeholder="Search recordings..."
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            className="h-9 w-72 rounded-xl border border-[#E1D7CE] bg-white pl-10 pr-4 text-[13px] font-medium text-[#302C28] outline-none transition placeholder:text-[#8C837B] focus:border-brand focus:ring-2 focus:ring-brand/10"
-          />
+        <div className="flex items-center gap-3">
+          <DashboardDateFilter />
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8C837B]" />
+            <input
+              type="text"
+              placeholder="Search recordings..."
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              className="h-9 w-72 rounded-xl border border-[#E1D7CE] bg-white pl-10 pr-4 text-[13px] font-medium text-[#302C28] outline-none transition placeholder:text-[#8C837B] focus:border-brand focus:ring-2 focus:ring-brand/10"
+            />
+          </div>
         </div>
       </div>
 
@@ -352,6 +521,17 @@ export default function RecordingsPage() {
                         <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${session.status === "complete" ? "bg-[#EEF9F3] text-[#21845D]" : session.status === "failed" ? "bg-rose-50 text-rose-700" : "bg-[#FDEBE5] text-brand"}`}>
                           {session.status}
                         </span>
+                        {(() => {
+                          const health = getSessionHealth(session);
+                          return (
+                            <span
+                              title={health.message || health.label}
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${health.className}`}
+                            >
+                              {health.label}
+                            </span>
+                          );
+                        })()}
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] font-medium text-[#8C837B]">
                         <span>{formatDate(session.startedAt)} · {formatTime(session.startedAt)}</span>
@@ -359,7 +539,7 @@ export default function RecordingsPage() {
                         <span>{session.fps} FPS</span>
                         <span>{session.width}x{session.height}</span>
                         <span>{session.chunkCount || 0} chunks</span>
-                        <span>{formatFileSize(Number(session.totalSize || 0))}</span>
+                        <span>avg {formatFileSize(session.chunkCount ? Number(session.totalSize || 0) / session.chunkCount : 0)}/chunk</span>
                       </div>
                     </div>
                   </div>

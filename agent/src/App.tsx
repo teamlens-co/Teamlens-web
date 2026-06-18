@@ -3,7 +3,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { fetch } from "@tauri-apps/plugin-http";
 import { getVersion } from "@tauri-apps/api/app";
 
+<<<<<<< HEAD
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+=======
+import { getCurrentWindow } from "@tauri-apps/api/window";
+>>>>>>> fc62392400250dab3dd7024a7c2b9de9f1c4c8cf
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
@@ -82,7 +86,7 @@ const getApiBase = (): string => {
     return configured.replace(/\/$/, "");
   }
 
-  throw new Error("VITE_API_URL is required");
+  return "https://api.teamlens.co";
 };
 
 const getWebBase = (): string => {
@@ -91,7 +95,7 @@ const getWebBase = (): string => {
     return configured.replace(/\/$/, "");
   }
 
-  throw new Error("VITE_WEB_URL is required");
+  return "https://test.teamlens.co";
 };
 
 const getWsBase = (): string => {
@@ -100,7 +104,7 @@ const getWsBase = (): string => {
     return configured.replace(/\/$/, "");
   }
 
-  return "http://localhost:4000";
+  return "https://api.teamlens.co";
 };
 
 const isAutoUpdateEnabled = (): boolean => import.meta.env.VITE_ENABLE_AUTO_UPDATE === "true";
@@ -250,6 +254,7 @@ const SCREENSHOT_INTERVAL_MIN_MS = 60_000;
 const SCREENSHOT_INTERVAL_MAX_MS = 60_000;
 const AUTO_RECORDING_FPS = 3;
 const AUTO_RECORDING_CHUNK_MS = 30_000;
+const AUTO_RECORDING_MIN_CHUNK_BYTES = 25 * 1024; // Reject tiny/broken chunks
 const AUTO_RECORDING_WIDTH = 1280;
 const AUTO_RECORDING_HEIGHT = 720;
 const AUTO_RECORDING_MIME_CANDIDATES = [
@@ -613,11 +618,17 @@ function App() {
       const stream = canvas.captureStream(AUTO_RECORDING_FPS);
       mediaStreamRef.current = stream;
       let lastFrameStarted = false;
+      let consecutiveCaptureFailures = 0;
+      const MAX_CAPTURE_FAILURES = 3;
       const drawNativeFrame = async () => {
         if (lastFrameStarted || recordingStopRequestedRef.current || !recordingCanvasRef.current) return;
         lastFrameStarted = true;
         try {
           const frameData = await invoke<number[]>("capture_live_frame");
+          if (!frameData || frameData.length === 0) {
+            throw new Error("Empty frame data from native capture");
+          }
+          consecutiveCaptureFailures = 0;
           const blob = new Blob([new Uint8Array(frameData)], { type: "image/png" });
           const bitmap = await createImageBitmap(blob);
           const activeCanvas = recordingCanvasRef.current;
@@ -640,7 +651,12 @@ function App() {
           ctx.drawImage(bitmap, x, y, width, height);
           bitmap.close();
         } catch (frameError) {
-          console.error("Native recording frame capture failed", frameError);
+          consecutiveCaptureFailures += 1;
+          console.error("Native recording frame capture failed", frameError, "consecutive", consecutiveCaptureFailures);
+          if (consecutiveCaptureFailures >= MAX_CAPTURE_FAILURES) {
+            setRecordingStatus("error");
+            setRecordingMessage("Screen capture failed repeatedly. Check OS screen-capture permissions and restart the agent.");
+          }
         } finally {
           lastFrameStarted = false;
         }
@@ -712,10 +728,22 @@ function App() {
           const recordingSessionId = recordingSessionIdRef.current;
           const durationMs = Date.now() - recordingChunkStartedAtRef.current;
           if (recordingSessionId && chunks.length > 0) {
-            const chunkIndex = recordingChunkIndexRef.current;
-            recordingChunkIndexRef.current += 1;
             const blob = new Blob(chunks, { type: mimeType || "video/webm" });
-            void uploadRecordingChunk(recordingSessionId, chunkIndex, blob, durationMs);
+            if (blob.size < AUTO_RECORDING_MIN_CHUNK_BYTES) {
+              console.warn("Skipping tiny recording chunk", blob.size, "bytes");
+              if (consecutiveCaptureFailures < MAX_CAPTURE_FAILURES) {
+                consecutiveCaptureFailures += 1;
+              }
+              if (consecutiveCaptureFailures >= MAX_CAPTURE_FAILURES) {
+                setRecordingStatus("error");
+                setRecordingMessage("Screen capture produced no usable video frames. Check OS screen-capture permissions.");
+              }
+            } else {
+              consecutiveCaptureFailures = 0;
+              const chunkIndex = recordingChunkIndexRef.current;
+              recordingChunkIndexRef.current += 1;
+              void uploadRecordingChunk(recordingSessionId, chunkIndex, blob, durationMs);
+            }
           }
           if (!recordingStopRequestedRef.current) {
             window.setTimeout(recordNextChunk, 0);
@@ -845,20 +873,31 @@ function App() {
 
     let mouseMoves = 0;
     let keyPresses = 0;
+    let inputSource: "global" | "fallback" = "global";
 
     try {
       const globalCounts = await invoke<GlobalInputCounts>("get_and_reset_input_counts");
       mouseMoves = Number(globalCounts.mouse_moves) || 0;
       keyPresses = Number(globalCounts.key_presses) || 0;
-      setLastInputSource("global");
     } catch (error) {
       console.error("Unable to read global input counters", error);
-      // Fallback only when native counter is unavailable.
-      mouseMoves = mouseMovesRef.current;
-      keyPresses = keyPressesRef.current;
-      setLastInputSource("fallback");
+      inputSource = "fallback";
     }
 
+    // If the native tracker reports zero, fall back to the JS counters.
+    // This usually means the native global hook is not working in this session
+    // (e.g. missing permissions or multi-monitor/Desktop Window Manager issues).
+    if (mouseMoves === 0 && keyPresses === 0) {
+      const jsMouseMoves = mouseMovesRef.current;
+      const jsKeyPresses = keyPressesRef.current;
+      if (jsMouseMoves > 0 || jsKeyPresses > 0) {
+        mouseMoves = jsMouseMoves;
+        keyPresses = jsKeyPresses;
+        inputSource = "fallback";
+      }
+    }
+
+    setLastInputSource(inputSource);
     setLastSentMouseMoves(mouseMoves);
     setLastSentKeyPresses(keyPresses);
 
@@ -988,6 +1027,7 @@ function App() {
   }, []);
 
   useEffect(() => {
+<<<<<<< HEAD
     const handleMouseDown = async (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       // Only drag if the click started in the top bar (header)
@@ -1013,6 +1053,8 @@ function App() {
   }, [appWindow]);
 
   useEffect(() => {
+=======
+>>>>>>> fc62392400250dab3dd7024a7c2b9de9f1c4c8cf
     if (isClockedIn) {
       invoke("start_input_tracking").catch((err) =>
         console.error("Failed to start input tracking:", err)
@@ -1388,16 +1430,16 @@ function App() {
               aria-label="Window size locked"
             />
           </div>
-          <div className="brand-name">
-            <span className="tl-brand-mark" aria-hidden="true">
-              <span></span>
-              <span></span>
-              <span></span>
-              <span></span>
+          <div className="brand-name" data-tauri-drag-region>
+            <span className="tl-brand-mark" aria-hidden="true" data-tauri-drag-region>
+              <span data-tauri-drag-region></span>
+              <span data-tauri-drag-region></span>
+              <span data-tauri-drag-region></span>
+              <span data-tauri-drag-region></span>
             </span>{" "}
             TeamLens
           </div>
-          <div className="bar-spacer" />
+          <div className="bar-spacer" data-tauri-drag-region />
         </header>
 
         <div className="auth-shell">
@@ -1457,16 +1499,16 @@ function App() {
               aria-label="Window size locked"
             />
           </div>
-          <div className="brand-name">
-            <span className="tl-brand-mark" aria-hidden="true">
-              <span></span>
-              <span></span>
-              <span></span>
-              <span></span>
+          <div className="brand-name" data-tauri-drag-region>
+            <span className="tl-brand-mark" aria-hidden="true" data-tauri-drag-region>
+              <span data-tauri-drag-region></span>
+              <span data-tauri-drag-region></span>
+              <span data-tauri-drag-region></span>
+              <span data-tauri-drag-region></span>
             </span>{" "}
             TeamLens
           </div>
-          <div className="bar-spacer">
+          <div className="bar-spacer" data-tauri-drag-region>
             <div className="profile-icon" onClick={() => setIsSidebarOpen(true)} title="Profile">
               {authUserName.substring(0, 2).toUpperCase() || "PM"}
             </div>

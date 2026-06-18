@@ -36,7 +36,15 @@ docker rm -f teamlens-ws-test 2>/dev/null || true
 docker run -d --name teamlens-ws-test --restart unless-stopped \
   --network teamlens-web-server_default \
   -p 4001:4001 \
-  --env-file .env \
+  -e NODE_ENV="production" \
+  -e PORT="4001" \
+  -e DATABASE_URL="postgresql://teamlens:root@teamlens-web-server-postgres-1:5432/teamlens?schema=public" \
+  -e JWT_SECRET="${JWT_SECRET:-teamlens_jwt_secret_key_2025}" \
+  -e JWT_ACCESS_TTL="12h" \
+  -e JWT_AGENT_TTL="30d" \
+  -e INVITE_TTL_HOURS="72" \
+  -e WEB_APP_URL="https://test.teamlens.co" \
+  -e WEBRTC_ICE_SERVERS='[{"urls":["stun:stun.l.google.com:19302"]},{"urls":["turn:91.108.105.211:3478?transport=udp","turn:91.108.105.211:3478?transport=tcp"],"username":"teamlens","credential":"cL6dbZdarVNTPT3uSdmoSkWP","credentialType":"password"}]' \
   teamlens-ws:latest
 
 echo "=== Rebuilding Frontend ==="
@@ -55,14 +63,21 @@ docker run -d --name teamlens-frontend-v2-test --restart unless-stopped \
   teamlens-frontend-v2:test
 
 echo "=== Nginx reload ==="
-# Try multiple methods to reload nginx
-if command -v systemctl &>/dev/null && systemctl is-active nginx &>/dev/null; then
-  systemctl reload nginx || systemctl restart nginx
-elif [ -f /var/run/nginx.pid ]; then
+# Robust nginx reload/restart: handle empty/stale PID files and orphaned nginx processes.
+NGINX_PID=$(cat /run/nginx.pid 2>/dev/null || cat /var/run/nginx.pid 2>/dev/null || true)
+if [ -n "$NGINX_PID" ] && kill -0 "$NGINX_PID" 2>/dev/null; then
   nginx -s reload
-elif [ -f /run/nginx.pid ]; then
-  nginx -s reload
+elif pgrep -x nginx > /dev/null 2>&1; then
+  # nginx is running but PID file is missing/stale (likely started outside systemd).
+  # Gracefully stop it, then start via systemd so future reloads work.
+  nginx -s quit 2>/dev/null || killall -TERM nginx 2>/dev/null || true
+  sleep 3
+  systemctl start nginx || systemctl restart nginx
+elif command -v systemctl &>/dev/null; then
+  systemctl start nginx || systemctl restart nginx
+elif command -v service &>/dev/null; then
+  service nginx start || service nginx restart
 else
-  nginx -t && { nginx -s reload 2>/dev/null || nginx -c /etc/nginx/nginx.conf; }
+  nginx -t && nginx
 fi
 echo "=== Deployment complete ==="

@@ -5,3 +5,4 @@ psycopg[binary]>=3.2.13,<4
 python-dotenv>=1.0.1,<2
 requests>=2.32.3,<3
 pytest>=8.3.2,<9
+posthog>=3.0.0,<4

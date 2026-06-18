@@ -1,44 +1,68 @@
 import { NextResponse } from "next/server";
 
 const DOWNLOAD_CONFIG_ERROR =
+<<<<<<< HEAD
   "Agent download is not configured. Please contact support.";
 const LOCAL_AGENT_DOWNLOAD_PATH = "/downloads/TeamLens_0.1.50_x64_en-US.msi";
+=======
+  "Agent download is not available right now. Please try again later.";
+>>>>>>> fc62392400250dab3dd7024a7c2b9de9f1c4c8cf
 
-function resolveDownloadUrl(): string | null {
-  const configuredUrl =
-    process.env.AGENT_DOWNLOAD_URL?.trim() ||
-    process.env.NEXT_PUBLIC_AGENT_DOWNLOAD_URL?.trim();
+const UPDATER_JSON_URL =
+  "https://github.com/teamlens-co/Teamlens-web/releases/latest/download/teamlens-agent-latest.json";
+const GITHUB_LATEST_RELEASE_API =
+  "https://api.github.com/repos/teamlens-co/Teamlens-web/releases/latest";
 
-  if (!configuredUrl) {
-    return LOCAL_AGENT_DOWNLOAD_PATH;
-  }
+export const dynamic = "force-dynamic";
 
+async function resolveExeUrl(): Promise<string | null> {
   try {
-    const parsed = new URL(configuredUrl);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return null;
-    }
-
-    return parsed.toString();
+    const res = await fetch(UPDATER_JSON_URL, {
+      headers: { Accept: "application/json" },
+      next: { revalidate: 60 },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.platforms?.["windows-x86_64"]?.url || null;
   } catch {
     return null;
   }
 }
 
-export function GET(request: Request) {
-  const downloadUrl = resolveDownloadUrl();
+async function resolveMsiUrl(): Promise<string | null> {
+  try {
+    const res = await fetch(GITHUB_LATEST_RELEASE_API, {
+      headers: { Accept: "application/vnd.github+json" },
+      next: { revalidate: 60 },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const asset = (data.assets || []).find((a: { name: string }) =>
+      a.name.endsWith(".msi"),
+    );
+    return asset?.browser_download_url || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const type = searchParams.get("type") || "exe";
+  const configuredUrl = process.env.AGENT_DOWNLOAD_URL?.trim();
+
+  let downloadUrl: string | null = configuredUrl || null;
+
+  if (!downloadUrl) {
+    downloadUrl = type === "msi" ? await resolveMsiUrl() : await resolveExeUrl();
+  }
 
   if (!downloadUrl) {
     return NextResponse.json(
-      {
-        success: false,
-        message: DOWNLOAD_CONFIG_ERROR,
-      },
+      { success: false, message: DOWNLOAD_CONFIG_ERROR },
       { status: 503 },
     );
   }
 
-  const host = request.headers.get("host") || new URL(request.url).host;
-  const protocol = request.headers.get("x-forwarded-proto") || "https";
-  return NextResponse.redirect(new URL(downloadUrl, `${protocol}://${host}`), { status: 302 });
+  return NextResponse.redirect(downloadUrl, { status: 302 });
 }

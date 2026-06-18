@@ -530,7 +530,11 @@ pub fn run() {
     // Disable GPU hardware acceleration in WebView2 on Windows to fix issues on dual-GPU (Intel + NVIDIA) laptops.
     // This resolves issues where WebView2 hangs, freezes, or ignores clicks due to GPU composition handoff conflicts.
     #[cfg(target_os = "windows")]
+<<<<<<< HEAD
     std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-gpu --disable-gpu-compositing");
+=======
+    std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--ignore-gpu-blocklist --disable-gpu-driver-bug-workarounds");
+>>>>>>> fc62392400250dab3dd7024a7c2b9de9f1c4c8cf
 
     // Do NOT start the global input tracker here — it creates system-wide
     // input hooks (via device_query) that can steal WM_INPUT messages from
@@ -548,11 +552,15 @@ pub fn run() {
             use tauri::webview::WebviewWindowBuilder;
             use tauri::WebviewUrl;
 
+<<<<<<< HEAD
             let app_icon = app.default_window_icon().cloned().or_else(|| {
                 tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png")).ok()
             });
 
             let mut window_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+=======
+            let window_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+>>>>>>> fc62392400250dab3dd7024a7c2b9de9f1c4c8cf
                 .title("TeamLens Desktop Agent")
                 .inner_size(360.0, 720.0)
                 .min_inner_size(360.0, 720.0)
@@ -564,12 +572,17 @@ pub fn run() {
                 .focused(true)
                 .disable_drag_drop_handler();
 
+<<<<<<< HEAD
             if let Some(ref icon) = app_icon {
                 window_builder = window_builder.icon(icon.clone())?;
             }
 
             #[cfg(target_os = "windows")]
             let window_builder = window_builder.additional_browser_args("--disable-gpu --disable-gpu-compositing");
+=======
+            #[cfg(target_os = "windows")]
+            let window_builder = window_builder.additional_browser_args("--ignore-gpu-blocklist --disable-gpu-driver-bug-workarounds");
+>>>>>>> fc62392400250dab3dd7024a7c2b9de9f1c4c8cf
 
             if let Ok(window) = window_builder.build() {
                 let _ = window.set_ignore_cursor_events(false);
@@ -594,6 +607,10 @@ pub fn run() {
             let show_i = MenuItem::with_id(app, "show", "Open TeamLens", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
 
+<<<<<<< HEAD
+=======
+            let icon = app.default_window_icon().cloned();
+>>>>>>> fc62392400250dab3dd7024a7c2b9de9f1c4c8cf
             let mut tray_builder = TrayIconBuilder::new()
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
@@ -624,7 +641,11 @@ pub fn run() {
                     }
                 });
 
+<<<<<<< HEAD
             if let Some(icon) = app_icon {
+=======
+            if let Some(icon) = icon {
+>>>>>>> fc62392400250dab3dd7024a7c2b9de9f1c4c8cf
                 tray_builder = tray_builder.icon(icon);
             }
 

@@ -496,7 +496,7 @@ export default function RealTimeInsightsPage() {
           <div>
             <h2 className="text-[13px] font-semibold text-[#302C28]">Employee activity now</h2>
             <p className="mt-0.5 text-[12px] font-medium text-[#8C837B]">
-              {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Refreshes every 30 seconds"}
+              {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : null}
             </p>
           </div>
           <span className="rounded-full bg-[var(--brand-tint)] px-2 py-0.5 text-[11px] font-medium text-primary">

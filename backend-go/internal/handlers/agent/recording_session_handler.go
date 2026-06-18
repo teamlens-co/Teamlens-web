@@ -141,6 +141,14 @@ func (h *RecordingSessionHandler) UploadChunk(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	const minChunkBytes = 10 * 1024
+	if size < minChunkBytes {
+		_ = os.Remove(filePath)
+		slog.Warn("Rejected tiny recording chunk", "sessionId", sessionID, "chunkIndex", chunkIndex, "size", size)
+		middleware.Error(w, http.StatusBadRequest, "Recording chunk too small or empty")
+		return
+	}
+
 	chunk, err := h.recordingSvc.SaveChunk(r.Context(), services.SaveRecordingChunkPayload{
 		SessionID:  sessionID,
 		ChunkIndex: chunkIndex,
