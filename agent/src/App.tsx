@@ -868,20 +868,31 @@ function App() {
 
     let mouseMoves = 0;
     let keyPresses = 0;
+    let inputSource: "global" | "fallback" = "global";
 
     try {
       const globalCounts = await invoke<GlobalInputCounts>("get_and_reset_input_counts");
       mouseMoves = Number(globalCounts.mouse_moves) || 0;
       keyPresses = Number(globalCounts.key_presses) || 0;
-      setLastInputSource("global");
     } catch (error) {
       console.error("Unable to read global input counters", error);
-      // Fallback only when native counter is unavailable.
-      mouseMoves = mouseMovesRef.current;
-      keyPresses = keyPressesRef.current;
-      setLastInputSource("fallback");
+      inputSource = "fallback";
     }
 
+    // If the native tracker reports zero, fall back to the JS counters.
+    // This usually means the native global hook is not working in this session
+    // (e.g. missing permissions or multi-monitor/Desktop Window Manager issues).
+    if (mouseMoves === 0 && keyPresses === 0) {
+      const jsMouseMoves = mouseMovesRef.current;
+      const jsKeyPresses = keyPressesRef.current;
+      if (jsMouseMoves > 0 || jsKeyPresses > 0) {
+        mouseMoves = jsMouseMoves;
+        keyPresses = jsKeyPresses;
+        inputSource = "fallback";
+      }
+    }
+
+    setLastInputSource(inputSource);
     setLastSentMouseMoves(mouseMoves);
     setLastSentKeyPresses(keyPresses);
 
