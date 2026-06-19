@@ -2,8 +2,10 @@ package web
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -77,6 +79,68 @@ func (h *SuperAdminHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	middleware.Success(w, http.StatusOK, stats)
+}
+
+type SuperAdminUserItem struct {
+	ID             string `json:"id"`
+	FullName       string `json:"fullName"`
+	Email          string `json:"email"`
+	Role           string `json:"role"`
+	Status         string `json:"status"`
+	OrganizationID string `json:"organizationId"`
+	Organization   string `json:"organization"`
+	CreatedAt      string `json:"createdAt"`
+}
+
+func (h *SuperAdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	roleFilter := r.URL.Query().Get("role")
+	search := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("search")))
+
+	query := `
+		SELECT u.id, u.full_name, u.email, u.role, u.status, u.organization_id, o.name, u.created_at
+		FROM users u
+		JOIN organizations o ON o.id = u.organization_id
+		WHERE 1=1
+	`
+	args := []interface{}{}
+	argIdx := 1
+
+	if roleFilter != "" {
+		query += fmt.Sprintf(" AND u.role = $%d", argIdx)
+		args = append(args, roleFilter)
+		argIdx++
+	}
+	if search != "" {
+		query += fmt.Sprintf(" AND (LOWER(u.full_name) LIKE $%d OR LOWER(u.email) LIKE $%d)", argIdx, argIdx+1)
+		args = append(args, "%"+search+"%", "%"+search+"%")
+		argIdx += 2
+	}
+
+	query += ` ORDER BY u.created_at DESC`
+
+	rows, err := h.pool.Query(ctx, query, args...)
+	if err != nil {
+		slog.Error("ListUsers: failed to query users", "error", err)
+		middleware.Error(w, http.StatusInternalServerError, "Failed to list users")
+		return
+	}
+	defer rows.Close()
+
+	users := []SuperAdminUserItem{}
+	for rows.Next() {
+		var u SuperAdminUserItem
+		var createdAt time.Time
+		if err := rows.Scan(&u.ID, &u.FullName, &u.Email, &u.Role, &u.Status, &u.OrganizationID, &u.Organization, &createdAt); err != nil {
+			slog.Error("ListUsers: failed to scan user row", "error", err)
+			continue
+		}
+		u.CreatedAt = createdAt.Format("2006-01-02 15:04")
+		users = append(users, u)
+	}
+
+	middleware.Success(w, http.StatusOK, users)
 }
 
 type SuperAdminOrgItem struct {

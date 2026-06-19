@@ -257,6 +257,7 @@ func main() {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireRole(models.RoleSuperAdmin))
 			r.Get("/superadmin/stats", webSuperAdminHandler.GetStats)
+			r.Get("/superadmin/users", webSuperAdminHandler.ListUsers)
 			r.Get("/superadmin/organizations", webSuperAdminHandler.ListOrganizations)
 			r.Get("/superadmin/organizations/{orgId}/details", webSuperAdminHandler.GetOrgDetails)
 			r.Put("/superadmin/organizations/{orgId}/status", webSuperAdminHandler.UpdateOrgStatus)
