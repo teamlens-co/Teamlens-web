@@ -187,6 +187,15 @@ func (s *InviteService) AcceptInvite(ctx context.Context, token, fullName, passw
 	}
 
 	_, err = tx.Exec(ctx,
+		`INSERT INTO organization_memberships (id, user_id, organization_id, role, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, NOW(), NOW())`,
+		RandomToken(16), userID, v.Organization.ID, v.Role,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create organization membership: %w", err)
+	}
+
+	_, err = tx.Exec(ctx,
 		`UPDATE invite_tokens SET status = 'ACCEPTED', accepted_at = NOW() WHERE token = $1`, token,
 	)
 	if err != nil {

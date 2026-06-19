@@ -74,6 +74,15 @@ func (s *AuthService) SignupManager(ctx context.Context, input struct {
 		return nil, fmt.Errorf("create user: %w", err)
 	}
 
+	_, err = tx.Exec(ctx,
+		`INSERT INTO organization_memberships (id, user_id, organization_id, role, created_at, updated_at)
+		 VALUES ($1, $2, $3, 'MANAGER', NOW(), NOW())`,
+		RandomToken(16), userID, orgID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create organization membership: %w", err)
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit tx: %w", err)
 	}
@@ -173,31 +182,111 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*model
 	}, nil
 }
 
-func (s *AuthService) Me(ctx context.Context, userID string) (*models.UserResponse, error) {
+func (s *AuthService) Me(ctx context.Context, userID, activeOrgID string) (*models.UserResponse, error) {
 	var user models.UserResponse
-	var orgName, orgSlug, status string
-	var orgID string
+	var status string
 
+	// Get user base profile details
 	err := s.pool.QueryRow(ctx,
-		`SELECT u.id, u.full_name, u.email, u.role, u.status, u.organization_id, o.name, o.slug
-		 FROM users u
-		 JOIN organizations o ON o.id = u.organization_id
-		 WHERE u.id = $1`, userID,
-	).Scan(&user.ID, &user.FullName, &user.Email, &user.Role, &status, &orgID, &orgName, &orgSlug)
+		`SELECT id, full_name, email, status
+		 FROM users
+		 WHERE id = $1`, userID,
+	).Scan(&user.ID, &user.FullName, &user.Email, &status)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, errors.New("User not found")
 		}
 		return nil, fmt.Errorf("query user: %w", err)
 	}
-
 	user.Status = status
-	user.OrganizationID = orgID
-	user.Organization = &models.OrgResponse{
-		ID:   orgID,
-		Name: orgName,
-		Slug: orgSlug,
+
+	// Query all organizations the user belongs to
+	rows, err := s.pool.Query(ctx,
+		`SELECT o.id, o.name, o.slug, om.role
+		 FROM organization_memberships om
+		 JOIN organizations o ON o.id = om.organization_id
+		 WHERE om.user_id = $1`, userID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query memberships: %w", err)
 	}
+	defer rows.Close()
+
+	user.Organizations = []models.OrgResponse{}
+	var activeOrgFound bool
+	var activeRole models.AuthRole
+
+	for rows.Next() {
+		var org models.OrgResponse
+		var roleStr string
+		if err := rows.Scan(&org.ID, &org.Name, &org.Slug, &roleStr); err != nil {
+			return nil, fmt.Errorf("scan membership: %w", err)
+		}
+		user.Organizations = append(user.Organizations, org)
+
+		// Check if this org is the active one the user is operating under
+		if org.ID == activeOrgID {
+			activeOrgFound = true
+			activeRole = models.AuthRole(roleStr)
+			user.OrganizationID = org.ID
+			orgCopy := org
+			user.Organization = &orgCopy
+		}
+	}
+
+	if activeOrgID == "combined" {
+		activeOrgFound = true
+		activeRole = models.RoleManager
+		user.OrganizationID = "combined"
+		user.Organization = &models.OrgResponse{
+			ID:   "combined",
+			Name: "All Companies (Combined)",
+			Slug: "combined",
+		}
+	}
+
+	// Fallback to first membership if activeOrgID is not provided or not found
+	if !activeOrgFound && len(user.Organizations) > 0 {
+		firstOrg := user.Organizations[0]
+		user.OrganizationID = firstOrg.ID
+		user.Organization = &firstOrg
+
+		// Query role for firstOrg
+		var roleStr string
+		err = s.pool.QueryRow(ctx,
+			`SELECT role FROM organization_memberships WHERE user_id = $1 AND organization_id = $2`,
+			userID, firstOrg.ID,
+		).Scan(&roleStr)
+		if err == nil {
+			user.Role = models.AuthRole(roleStr)
+		} else {
+			user.Role = models.RoleEmployee
+		}
+	} else if activeOrgFound {
+		user.Role = activeRole
+	} else {
+		// If no memberships exist, fall back to the users table organization_id
+		var orgID, orgName, orgSlug, roleStr string
+		err = s.pool.QueryRow(ctx,
+			`SELECT u.role, u.organization_id, o.name, o.slug
+			 FROM users u
+			 JOIN organizations o ON o.id = u.organization_id
+			 WHERE u.id = $1`, userID,
+		).Scan(&roleStr, &orgID, &orgName, &orgSlug)
+		if err == nil {
+			user.Role = models.AuthRole(roleStr)
+			user.OrganizationID = orgID
+			user.Organization = &models.OrgResponse{
+				ID:   orgID,
+				Name: orgName,
+				Slug: orgSlug,
+			}
+			user.Organizations = append(user.Organizations, *user.Organization)
+		} else {
+			user.Role = models.RoleEmployee
+		}
+	}
+
 	return &user, nil
 }
 
@@ -240,27 +329,36 @@ func (s *AuthService) CreateAgentConnectToken(ctx context.Context, userID, organ
 	}, nil
 }
 
-func (s *AuthService) GetTeamUsers(ctx context.Context, organizationID string) ([]models.UserResponse, error) {
-	rows, err := s.pool.Query(ctx,
-		`SELECT id, full_name, email, role, status, created_at
-		 FROM users
-		 WHERE organization_id = $1
-		 ORDER BY created_at ASC`,
-		organizationID,
-	)
+func (s *AuthService) GetTeamUsers(ctx context.Context, organizationID, viewerUserID string) ([]models.UserResponse, error) {
+	var query string
+	var args []interface{}
+	if organizationID == "combined" {
+		query = `SELECT id, full_name, email, role, status, organization_id, created_at
+				 FROM users
+				 WHERE organization_id IN (SELECT organization_id FROM organization_memberships WHERE user_id = $1)
+				 ORDER BY created_at ASC`
+		args = []interface{}{viewerUserID}
+	} else {
+		query = `SELECT id, full_name, email, role, status, organization_id, created_at
+				 FROM users
+				 WHERE organization_id = $1
+				 ORDER BY created_at ASC`
+		args = []interface{}{organizationID}
+	}
+
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query team users: %w", err)
 	}
 	defer rows.Close()
 
-	var users []models.UserResponse
+	users := []models.UserResponse{}
 	for rows.Next() {
 		var u models.UserResponse
 		var createdAt time.Time
-		if err := rows.Scan(&u.ID, &u.FullName, &u.Email, &u.Role, &u.Status, &createdAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.FullName, &u.Email, &u.Role, &u.Status, &u.OrganizationID, &createdAt); err != nil {
 			return nil, fmt.Errorf("scan user: %w", err)
 		}
-		u.OrganizationID = organizationID
 		users = append(users, u)
 	}
 	return users, nil
@@ -356,4 +454,97 @@ func (s *AuthService) GetUserByID(ctx context.Context, userID string) (*models.U
 		return nil, fmt.Errorf("get user: %w", err)
 	}
 	return &u, nil
+}
+
+func (s *AuthService) SwitchOrganization(ctx context.Context, userID, orgID string) (*models.TokenPair, error) {
+	var roleStr string
+	if orgID == "combined" {
+		var exists bool
+		err := s.pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM organization_memberships WHERE user_id = $1)`,
+			userID,
+		).Scan(&exists)
+		if err != nil {
+			return nil, fmt.Errorf("check memberships: %w", err)
+		}
+		if !exists {
+			return nil, errors.New("user has no associated organizations")
+		}
+		roleStr = string(models.RoleManager)
+	} else {
+		// 1. Verify user is a member of the organization
+		err := s.pool.QueryRow(ctx,
+			`SELECT role FROM organization_memberships
+			 WHERE user_id = $1 AND organization_id = $2`,
+			userID, orgID,
+		).Scan(&roleStr)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, errors.New("User is not a member of the specified organization")
+			}
+			return nil, fmt.Errorf("verify membership: %w", err)
+		}
+	}
+	role := models.AuthRole(roleStr)
+
+	// 2. Fetch the user details and organization details
+	userResponse, err := s.Me(ctx, userID, orgID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3. Sign new access token with the target org and role
+	token, err := s.jwt.SignAccessToken(userID, orgID, role)
+	if err != nil {
+		return nil, fmt.Errorf("sign token: %w", err)
+	}
+
+	return &models.TokenPair{
+		AccessToken:  token,
+		User:         *userResponse,
+		Organization: *userResponse.Organization,
+	}, nil
+}
+
+func (s *AuthService) CreateOrganization(ctx context.Context, userID, orgName string) (*models.TokenPair, error) {
+	orgName = strings.TrimSpace(orgName)
+	if orgName == "" {
+		return nil, errors.New("organization name is required")
+	}
+
+	slug := buildUniqueSlug(ctx, s.pool, orgName)
+	orgID := RandomToken(16)
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// 1. Insert organization
+	_, err = tx.Exec(ctx,
+		`INSERT INTO organizations (id, name, slug, created_at, updated_at)
+		 VALUES ($1, $2, $3, NOW(), NOW())`,
+		orgID, orgName, slug,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create organization: %w", err)
+	}
+
+	// 2. Insert organization membership as MANAGER
+	_, err = tx.Exec(ctx,
+		`INSERT INTO organization_memberships (id, user_id, organization_id, role, created_at, updated_at)
+		 VALUES ($1, $2, $3, 'MANAGER', NOW(), NOW())`,
+		RandomToken(16), userID, orgID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create membership: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit tx: %w", err)
+	}
+
+	// 3. Fetch switch result
+	return s.SwitchOrganization(ctx, userID, orgID)
 }

@@ -209,6 +209,10 @@ func main() {
 		// Employee management (manager only)
 		r.Delete("/employees/{employeeId}", webAuthHandler.DeleteEmployee)
 
+		// Organization switcher and creation
+		r.Post("/auth/switch-org", webAuthHandler.SwitchOrganization)
+		r.Post("/organizations", webAuthHandler.CreateOrganization)
+
 		// Environment
 		r.Get("/env", webSettingsHandler.GetPublicEnv)
 		r.Get("/users/me", webSettingsHandler.GetUser)

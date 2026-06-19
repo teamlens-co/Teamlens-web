@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/teamlens/backend-go/internal/models"
 )
@@ -21,16 +22,16 @@ func NewTeamService(pool *pgxpool.Pool, dashSvc *DashboardService) *TeamService 
 	return &TeamService{pool: pool, dashboardService: dashSvc}
 }
 
-func (s *TeamService) CreateTeam(ctx context.Context, name, managerID string) (*models.TeamResponse, error) {
+func (s *TeamService) CreateTeam(ctx context.Context, name, managerID, organizationID string) (*models.TeamResponse, error) {
 	id := RandomToken(16)
 
 	var team models.TeamResponse
 	err := s.pool.QueryRow(ctx,
-		`INSERT INTO teams (id, name, manager_id, created_at)
-		 VALUES ($1, $2, $3, NOW())
-		 RETURNING id, name, manager_id, created_at::text`,
-		id, strings.TrimSpace(name), managerID,
-	).Scan(&team.ID, &team.Name, &team.ManagerID, &team.CreatedAt)
+		`INSERT INTO teams (id, name, manager_id, organization_id, created_at)
+		 VALUES ($1, $2, $3, $4, NOW())
+		 RETURNING id, name, manager_id, organization_id, created_at::text`,
+		id, strings.TrimSpace(name), managerID, organizationID,
+	).Scan(&team.ID, &team.Name, &team.ManagerID, &team.OrganizationID, &team.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("create team: %w", err)
 	}
@@ -40,26 +41,41 @@ func (s *TeamService) CreateTeam(ctx context.Context, name, managerID string) (*
 	return &team, nil
 }
 
-func (s *TeamService) ListTeams(ctx context.Context, managerID string) ([]models.TeamResponse, error) {
-	rows, err := s.pool.Query(ctx,
-		`SELECT t.id, t.name, t.manager_id, t.created_at::text,
-		        COUNT(tm.id)::int AS member_count
-		 FROM teams t
-		 LEFT JOIN team_memberships tm ON tm.team_id = t.id
-		 WHERE t.manager_id = $1
-		 GROUP BY t.id
-		 ORDER BY t.created_at DESC`,
-		managerID,
-	)
+func (s *TeamService) ListTeams(ctx context.Context, managerID, organizationID string) ([]models.TeamResponse, error) {
+	var rows pgx.Rows
+	var err error
+	if organizationID == "combined" {
+		rows, err = s.pool.Query(ctx,
+			`SELECT t.id, t.name, t.manager_id, t.organization_id, t.created_at::text,
+			        COUNT(tm.id)::int AS member_count
+			 FROM teams t
+			 LEFT JOIN team_memberships tm ON tm.team_id = t.id
+			 WHERE t.organization_id IN (SELECT organization_id FROM organization_memberships WHERE user_id = $1)
+			 GROUP BY t.id
+			 ORDER BY t.created_at DESC`,
+			managerID,
+		)
+	} else {
+		rows, err = s.pool.Query(ctx,
+			`SELECT t.id, t.name, t.manager_id, t.organization_id, t.created_at::text,
+			        COUNT(tm.id)::int AS member_count
+			 FROM teams t
+			 LEFT JOIN team_memberships tm ON tm.team_id = t.id
+			 WHERE t.organization_id = $1
+			 GROUP BY t.id
+			 ORDER BY t.created_at DESC`,
+			organizationID,
+		)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("list teams: %w", err)
 	}
 	defer rows.Close()
 
-	var teams []models.TeamResponse
+	teams := []models.TeamResponse{}
 	for rows.Next() {
 		var team models.TeamResponse
-		if err := rows.Scan(&team.ID, &team.Name, &team.ManagerID, &team.CreatedAt, &team.MemberCount); err != nil {
+		if err := rows.Scan(&team.ID, &team.Name, &team.ManagerID, &team.OrganizationID, &team.CreatedAt, &team.MemberCount); err != nil {
 			return nil, fmt.Errorf("scan team: %w", err)
 		}
 		members, _ := s.ListMembersForTeam(ctx, team.ID)
@@ -69,8 +85,8 @@ func (s *TeamService) ListTeams(ctx context.Context, managerID string) ([]models
 	return teams, nil
 }
 
-func (s *TeamService) GetTeam(ctx context.Context, teamID, managerID string) (*models.TeamResponse, error) {
-	team, err := s.getOwnedTeam(ctx, teamID, managerID)
+func (s *TeamService) GetTeam(ctx context.Context, teamID, managerID, organizationID string) (*models.TeamResponse, error) {
+	team, err := s.getOwnedTeam(ctx, teamID, managerID, organizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +94,7 @@ func (s *TeamService) GetTeam(ctx context.Context, teamID, managerID string) (*m
 		return nil, nil
 	}
 
-	members, err := s.ListMembers(ctx, teamID, managerID)
+	members, err := s.ListMembers(ctx, teamID, managerID, organizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -90,22 +106,43 @@ func (s *TeamService) GetTeam(ctx context.Context, teamID, managerID string) (*m
 	return team, nil
 }
 
-func (s *TeamService) UpdateTeam(ctx context.Context, teamID, managerID, name string) (*models.TeamResponse, error) {
-	_, err := s.pool.Exec(ctx,
-		`UPDATE teams SET name = $1 WHERE id = $2 AND manager_id = $3`,
-		strings.TrimSpace(name), teamID, managerID,
-	)
+func (s *TeamService) UpdateTeam(ctx context.Context, teamID, managerID, organizationID, name string) (*models.TeamResponse, error) {
+	var err error
+	if organizationID == "combined" {
+		_, err = s.pool.Exec(ctx,
+			`UPDATE teams SET name = $1
+			 WHERE id = $2
+			   AND organization_id IN (SELECT organization_id FROM organization_memberships WHERE user_id = $3)`,
+			strings.TrimSpace(name), teamID, managerID,
+		)
+	} else {
+		_, err = s.pool.Exec(ctx,
+			`UPDATE teams SET name = $1 WHERE id = $2 AND organization_id = $3`,
+			strings.TrimSpace(name), teamID, organizationID,
+		)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("update team: %w", err)
 	}
-	return s.GetTeam(ctx, teamID, managerID)
+	return s.GetTeam(ctx, teamID, managerID, organizationID)
 }
 
-func (s *TeamService) DeleteTeam(ctx context.Context, teamID, managerID string) error {
-	tag, err := s.pool.Exec(ctx,
-		`DELETE FROM teams WHERE id = $1 AND manager_id = $2`,
-		teamID, managerID,
-	)
+func (s *TeamService) DeleteTeam(ctx context.Context, teamID, managerID, organizationID string) error {
+	var tag pgconn.CommandTag
+	var err error
+	if organizationID == "combined" {
+		tag, err = s.pool.Exec(ctx,
+			`DELETE FROM teams
+			 WHERE id = $1
+			   AND organization_id IN (SELECT organization_id FROM organization_memberships WHERE user_id = $2)`,
+			teamID, managerID,
+		)
+	} else {
+		tag, err = s.pool.Exec(ctx,
+			`DELETE FROM teams WHERE id = $1 AND organization_id = $2`,
+			teamID, organizationID,
+		)
+	}
 	if err != nil {
 		return fmt.Errorf("delete team: %w", err)
 	}
@@ -118,17 +155,29 @@ func (s *TeamService) DeleteTeam(ctx context.Context, teamID, managerID string) 
 func (s *TeamService) AddMember(ctx context.Context, teamID, managerID, organizationID, userID string) (*struct {
 	Members []models.UserResponse
 }, error) {
-	team, err := s.getOwnedTeam(ctx, teamID, managerID)
+	team, err := s.getOwnedTeam(ctx, teamID, managerID, organizationID)
 	if err != nil || team == nil {
 		return nil, errors.New("team not found")
 	}
 
-	// Verify user exists in this org and is active
+	// Verify user exists in this org and is active (or user's org matches if combined)
 	var exists bool
-	err = s.pool.QueryRow(ctx,
-		`SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND organization_id = $2 AND status = 'ACTIVE')`,
-		userID, organizationID,
-	).Scan(&exists)
+	if organizationID == "combined" {
+		err = s.pool.QueryRow(ctx,
+			`SELECT EXISTS(
+			   SELECT 1 FROM users
+			   WHERE id = $1
+			     AND status = 'ACTIVE'
+			     AND organization_id IN (SELECT organization_id FROM organization_memberships WHERE user_id = $2)
+			 )`,
+			userID, managerID,
+		).Scan(&exists)
+	} else {
+		err = s.pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND organization_id = $2 AND status = 'ACTIVE')`,
+			userID, organizationID,
+		).Scan(&exists)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("check user: %w", err)
 	}
@@ -146,7 +195,7 @@ func (s *TeamService) AddMember(ctx context.Context, teamID, managerID, organiza
 		return nil, fmt.Errorf("add member: %w", err)
 	}
 
-	members, err := s.ListMembers(ctx, teamID, managerID)
+	members, err := s.ListMembers(ctx, teamID, managerID, organizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -154,8 +203,8 @@ func (s *TeamService) AddMember(ctx context.Context, teamID, managerID, organiza
 	return &struct{ Members []models.UserResponse }{Members: members}, nil
 }
 
-func (s *TeamService) RemoveMember(ctx context.Context, teamID, managerID, userID string) error {
-	team, err := s.getOwnedTeam(ctx, teamID, managerID)
+func (s *TeamService) RemoveMember(ctx context.Context, teamID, managerID, organizationID, userID string) error {
+	team, err := s.getOwnedTeam(ctx, teamID, managerID, organizationID)
 	if err != nil || team == nil {
 		return errors.New("team not found")
 	}
@@ -170,8 +219,8 @@ func (s *TeamService) RemoveMember(ctx context.Context, teamID, managerID, userI
 	return nil
 }
 
-func (s *TeamService) ListMembers(ctx context.Context, teamID, managerID string) ([]models.UserResponse, error) {
-	team, err := s.getOwnedTeam(ctx, teamID, managerID)
+func (s *TeamService) ListMembers(ctx context.Context, teamID, managerID, organizationID string) ([]models.UserResponse, error) {
+	team, err := s.getOwnedTeam(ctx, teamID, managerID, organizationID)
 	if err != nil || team == nil {
 		return nil, nil
 	}
@@ -192,7 +241,7 @@ func (s *TeamService) ListMembersForTeam(ctx context.Context, teamID string) ([]
 	}
 	defer rows.Close()
 
-	var members []models.UserResponse
+	members := []models.UserResponse{}
 	for rows.Next() {
 		var m models.UserResponse
 		if err := rows.Scan(&m.ID, &m.FullName, &m.Email, &m.Role, &m.Status); err != nil {
@@ -203,13 +252,13 @@ func (s *TeamService) ListMembersForTeam(ctx context.Context, teamID string) ([]
 	return members, nil
 }
 
-func (s *TeamService) GetAnalytics(ctx context.Context, teamID, managerID string, start, end time.Time) (*models.TeamAnalytics, error) {
-	team, err := s.getOwnedTeam(ctx, teamID, managerID)
+func (s *TeamService) GetAnalytics(ctx context.Context, teamID, managerID, organizationID string, start, end time.Time) (*models.TeamAnalytics, error) {
+	team, err := s.getOwnedTeam(ctx, teamID, managerID, organizationID)
 	if err != nil || team == nil {
 		return nil, errors.New("team not found")
 	}
 
-	members, err := s.ListMembers(ctx, teamID, managerID)
+	members, err := s.ListMembers(ctx, teamID, managerID, organizationID)
 	if err != nil {
 		return nil, errors.New("team not found")
 	}
@@ -260,18 +309,31 @@ func (s *TeamService) GetAnalytics(ctx context.Context, teamID, managerID string
 	}, nil
 }
 
-func (s *TeamService) getOwnedTeam(ctx context.Context, teamID, managerID string) (*models.TeamResponse, error) {
+func (s *TeamService) getOwnedTeam(ctx context.Context, teamID, managerID, organizationID string) (*models.TeamResponse, error) {
 	var team models.TeamResponse
-	err := s.pool.QueryRow(ctx,
-		`SELECT t.id, t.name, t.manager_id, t.created_at::text,
-		        COUNT(tm.id)::int AS member_count
-		 FROM teams t
-		 LEFT JOIN team_memberships tm ON tm.team_id = t.id
-		 WHERE t.id = $1 AND t.manager_id = $2
-		 GROUP BY t.id
-		 LIMIT 1`,
-		teamID, managerID,
-	).Scan(&team.ID, &team.Name, &team.ManagerID, &team.CreatedAt, &team.MemberCount)
+	var query string
+	var args []interface{}
+	if organizationID == "combined" {
+		query = `SELECT t.id, t.name, t.manager_id, t.organization_id, t.created_at::text,
+		                COUNT(tm.id)::int AS member_count
+		         FROM teams t
+		         LEFT JOIN team_memberships tm ON tm.team_id = t.id
+		         WHERE t.id = $1 AND t.organization_id IN (SELECT organization_id FROM organization_memberships WHERE user_id = $2)
+		         GROUP BY t.id
+		         LIMIT 1`
+		args = []interface{}{teamID, managerID}
+	} else {
+		query = `SELECT t.id, t.name, t.manager_id, t.organization_id, t.created_at::text,
+		                COUNT(tm.id)::int AS member_count
+		         FROM teams t
+		         LEFT JOIN team_memberships tm ON tm.team_id = t.id
+		         WHERE t.id = $1 AND t.organization_id = $2
+		         GROUP BY t.id
+		         LIMIT 1`
+		args = []interface{}{teamID, organizationID}
+	}
+
+	err := s.pool.QueryRow(ctx, query, args...).Scan(&team.ID, &team.Name, &team.ManagerID, &team.OrganizationID, &team.CreatedAt, &team.MemberCount)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil

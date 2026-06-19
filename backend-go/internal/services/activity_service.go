@@ -272,20 +272,32 @@ func (s *ActivityService) GetCalendarHeatmap(ctx context.Context, userID string,
 	return s.dashboardSvc.GetCalendarHeatmap(ctx, userID, year, month)
 }
 
-func (s *ActivityService) GetActivityTimeline(ctx context.Context, organizationID string, start, end time.Time) (*ActivityTimeline, error) {
-	rows, err := s.pool.Query(ctx,
-		`SELECT id, full_name, email
-		 FROM users
-		 WHERE organization_id = $1 AND role = 'EMPLOYEE'
-		 ORDER BY full_name ASC, email ASC`,
-		organizationID,
-	)
+func (s *ActivityService) GetActivityTimeline(ctx context.Context, organizationID, viewerUserID string, start, end time.Time) (*ActivityTimeline, error) {
+	var query string
+	var args []interface{}
+
+	if organizationID == "combined" {
+		query = `SELECT id, full_name, email
+				 FROM users
+				 WHERE organization_id IN (SELECT organization_id FROM organization_memberships WHERE user_id = $1)
+				   AND role = 'EMPLOYEE'
+				 ORDER BY full_name ASC, email ASC`
+		args = []interface{}{viewerUserID}
+	} else {
+		query = `SELECT id, full_name, email
+				 FROM users
+				 WHERE organization_id = $1 AND role = 'EMPLOYEE'
+				 ORDER BY full_name ASC, email ASC`
+		args = []interface{}{organizationID}
+	}
+
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query activity timeline users: %w", err)
 	}
 	defer rows.Close()
 
-	var employees []ActivityTimelineEmployee
+	employees := []ActivityTimelineEmployee{}
 	for rows.Next() {
 		var employee ActivityTimelineEmployee
 		if err := rows.Scan(&employee.UserID, &employee.EmployeeName, &employee.Email); err != nil {

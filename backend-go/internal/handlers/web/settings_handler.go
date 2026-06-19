@@ -164,7 +164,7 @@ func (h *SettingsHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.authSvc.Me(r.Context(), auth.UserID)
+	user, err := h.authSvc.Me(r.Context(), auth.UserID, auth.OrganizationID)
 	if err != nil {
 		middleware.Error(w, http.StatusNotFound, err.Error())
 		return

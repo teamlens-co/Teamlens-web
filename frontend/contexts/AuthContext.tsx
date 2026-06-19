@@ -15,6 +15,7 @@ export type UserProfile = {
   email: string;
   role: Role;
   organizationId: string;
+  organizations?: Organization[];
 };
 
 export type Organization = {
@@ -26,6 +27,7 @@ export type Organization = {
 type AuthContextType = {
   user: UserProfile | null;
   organization: Organization | null;
+  organizations: Organization[];
   apiBase: string;
   wsBase: string;
   authHeaders: { "Content-Type": string; Authorization?: string } | null;
@@ -35,6 +37,8 @@ type AuthContextType = {
   setSelectedTeamId: (id: string) => void;
   dateRange: DateRange;
   setDateRange: (range: DateRange) => void;
+  switchOrganization: (orgId: string) => Promise<void>;
+  createOrganization: (name: string) => Promise<void>;
   logout: () => void;
   isLoading: boolean;
 };
@@ -129,6 +133,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [user, setUser] = useState<UserProfile | null>(null);
   const [organization, setOrganization] = useState<Organization | null>(null);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [accessToken, setAccessToken] = useState<string>("");
   const [selectedUserId, setSelectedUserId] = useState<string>("");
   const [selectedTeamId, setSelectedTeamIdState] = useState<string>("");
@@ -258,6 +263,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             organizationId: payload.data.organization.id,
           });
           setOrganization(payload.data.organization);
+          setOrganizations((payload.data as any).organizations || []);
           setAccessToken(storedToken);
           
           if (!selectedUserId) {
@@ -266,6 +272,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
           setUser(null);
           setOrganization(null);
+          setOrganizations([]);
           setAccessToken("");
           if (typeof window !== "undefined") {
             window.localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
@@ -295,6 +302,76 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const switchOrganization = async (orgId: string) => {
+    if (!authHeaders) return;
+    try {
+      const res = await fetch(`${apiBase}/api/web/auth/switch-org`, {
+        method: "POST",
+        headers: authHeaders as any,
+        body: JSON.stringify({ organizationId: orgId }),
+      });
+      const payload = await res.json();
+      if (res.ok && payload.success && payload.data) {
+        if (payload.data.accessToken) {
+          setAccessToken(payload.data.accessToken);
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, payload.data.accessToken);
+          }
+        }
+        setUser({
+          id: payload.data.user.id,
+          fullName: payload.data.user.fullName,
+          email: payload.data.user.email,
+          role: payload.data.user.role,
+          organizationId: payload.data.user.organizationId,
+        });
+        setOrganization(payload.data.organization);
+        setOrganizations(payload.data.user.organizations || []);
+        // Force refresh page to reload data under the new company context
+        router.refresh();
+      } else {
+        console.error("Switch org failed:", payload.message);
+      }
+    } catch (err) {
+      console.error("Switch org network error:", err);
+    }
+  };
+
+  const createOrganization = async (name: string) => {
+    if (!authHeaders) return;
+    try {
+      const res = await fetch(`${apiBase}/api/web/organizations`, {
+        method: "POST",
+        headers: authHeaders as any,
+        body: JSON.stringify({ name }),
+      });
+      const payload = await res.json();
+      if (res.ok && payload.success && payload.data) {
+        if (payload.data.accessToken) {
+          setAccessToken(payload.data.accessToken);
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, payload.data.accessToken);
+          }
+        }
+        setUser({
+          id: payload.data.user.id,
+          fullName: payload.data.user.fullName,
+          email: payload.data.user.email,
+          role: payload.data.user.role,
+          organizationId: payload.data.user.organizationId,
+        });
+        setOrganization(payload.data.organization);
+        setOrganizations(payload.data.user.organizations || []);
+        // Force refresh page
+        router.refresh();
+      } else {
+        console.error("Create org failed:", payload.message);
+      }
+    } catch (err) {
+      console.error("Create org network error:", err);
+    }
+  };
+
   const logout = () => {
     void fetch(`${apiBase}/api/web/auth/logout`, {
       method: "POST",
@@ -304,6 +381,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     setUser(null);
     setOrganization(null);
+    setOrganizations([]);
     setAccessToken("");
     posthog.reset();
     if (typeof window !== "undefined") {
@@ -319,6 +397,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         user,
         organization,
+        organizations,
         apiBase,
         wsBase,
         authHeaders,
@@ -328,6 +407,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSelectedTeamId,
         dateRange,
         setDateRange,
+        switchOrganization,
+        createOrganization,
         logout,
         isLoading,
       }}

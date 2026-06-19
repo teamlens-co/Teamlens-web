@@ -42,7 +42,12 @@ func (h *TeamHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	team, err := h.teamSvc.CreateTeam(r.Context(), input.Name, auth.UserID)
+	if auth.OrganizationID == "combined" {
+		middleware.Error(w, http.StatusBadRequest, "Cannot create team in combined view")
+		return
+	}
+
+	team, err := h.teamSvc.CreateTeam(r.Context(), input.Name, auth.UserID, auth.OrganizationID)
 	if err != nil {
 		middleware.Error(w, http.StatusInternalServerError, err.Error())
 		return
@@ -63,7 +68,7 @@ func (h *TeamHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	teams, err := h.teamSvc.ListTeams(r.Context(), auth.UserID)
+	teams, err := h.teamSvc.ListTeams(r.Context(), auth.UserID, auth.OrganizationID)
 	if err != nil {
 		middleware.Error(w, http.StatusInternalServerError, err.Error())
 		return
@@ -92,7 +97,7 @@ func (h *TeamHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	team, err := h.teamSvc.GetTeam(r.Context(), teamID, auth.UserID)
+	team, err := h.teamSvc.GetTeam(r.Context(), teamID, auth.UserID, auth.OrganizationID)
 	if err != nil {
 		middleware.Error(w, http.StatusInternalServerError, err.Error())
 		return
@@ -129,7 +134,12 @@ func (h *TeamHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	team, err := h.teamSvc.UpdateTeam(r.Context(), teamID, auth.UserID, input.Name)
+	if auth.OrganizationID == "combined" {
+		middleware.Error(w, http.StatusBadRequest, "Cannot update team in combined view")
+		return
+	}
+
+	team, err := h.teamSvc.UpdateTeam(r.Context(), teamID, auth.UserID, auth.OrganizationID, input.Name)
 	if err != nil {
 		middleware.Error(w, http.StatusInternalServerError, err.Error())
 		return
@@ -155,7 +165,12 @@ func (h *TeamHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.teamSvc.DeleteTeam(r.Context(), teamID, auth.UserID); err != nil {
+	if auth.OrganizationID == "combined" {
+		middleware.Error(w, http.StatusBadRequest, "Cannot delete team in combined view")
+		return
+	}
+
+	if err := h.teamSvc.DeleteTeam(r.Context(), teamID, auth.UserID, auth.OrganizationID); err != nil {
 		middleware.Error(w, http.StatusNotFound, err.Error())
 		return
 	}
@@ -179,7 +194,7 @@ func (h *TeamHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	members, err := h.teamSvc.ListMembers(r.Context(), teamID, auth.UserID)
+	members, err := h.teamSvc.ListMembers(r.Context(), teamID, auth.UserID, auth.OrganizationID)
 	if err != nil {
 		middleware.Error(w, http.StatusInternalServerError, err.Error())
 		return
@@ -221,6 +236,11 @@ func (h *TeamHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if auth.OrganizationID == "combined" {
+		middleware.Error(w, http.StatusBadRequest, "Cannot add member in combined view")
+		return
+	}
+
 	result, err := h.teamSvc.AddMember(r.Context(), teamID, auth.UserID, auth.OrganizationID, input.UserID)
 	if err != nil {
 		msg := err.Error()
@@ -254,7 +274,12 @@ func (h *TeamHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.teamSvc.RemoveMember(r.Context(), teamID, auth.UserID, userID); err != nil {
+	if auth.OrganizationID == "combined" {
+		middleware.Error(w, http.StatusBadRequest, "Cannot remove member in combined view")
+		return
+	}
+
+	if err := h.teamSvc.RemoveMember(r.Context(), teamID, auth.UserID, auth.OrganizationID, userID); err != nil {
 		middleware.Error(w, http.StatusNotFound, err.Error())
 		return
 	}
@@ -307,7 +332,7 @@ func (h *TeamHandler) GetAnalytics(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := h.teamSvc.GetAnalytics(r.Context(), teamID, auth.UserID, start.UTC(), end.UTC())
+	result, err := h.teamSvc.GetAnalytics(r.Context(), teamID, auth.UserID, auth.OrganizationID, start.UTC(), end.UTC())
 	if err != nil {
 		middleware.Error(w, http.StatusNotFound, err.Error())
 		return

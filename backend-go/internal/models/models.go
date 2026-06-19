@@ -60,13 +60,14 @@ type AgentLoginResponse struct {
 }
 
 type UserResponse struct {
-	ID             string       `json:"id"`
-	FullName       string       `json:"fullName"`
-	Email          string       `json:"email"`
-	Role           AuthRole     `json:"role"`
-	OrganizationID string       `json:"organizationId,omitempty"`
-	Organization   *OrgResponse `json:"organization,omitempty"`
-	Status         string       `json:"status,omitempty"`
+	ID             string        `json:"id"`
+	FullName       string        `json:"fullName"`
+	Email          string        `json:"email"`
+	Role           AuthRole      `json:"role"`
+	OrganizationID string        `json:"organizationId,omitempty"`
+	Organization   *OrgResponse  `json:"organization,omitempty"`
+	Organizations  []OrgResponse `json:"organizations,omitempty"`
+	Status         string        `json:"status,omitempty"`
 }
 
 type OrgResponse struct {
@@ -247,12 +248,13 @@ type AcceptInviteInput struct {
 // ─── Team ──────────────────────────────────────────────────────────────────
 
 type TeamResponse struct {
-	ID          string         `json:"id"`
-	Name        string         `json:"name"`
-	ManagerID   string         `json:"managerId"`
-	CreatedAt   string         `json:"createdAt"`
-	MemberCount int            `json:"memberCount"`
-	Members     []UserResponse `json:"members,omitempty"`
+	ID             string         `json:"id"`
+	OrganizationID string         `json:"organizationId,omitempty"`
+	Name           string         `json:"name"`
+	ManagerID      string         `json:"managerId"`
+	CreatedAt      string         `json:"createdAt"`
+	MemberCount    int            `json:"memberCount"`
+	Members        []UserResponse `json:"members,omitempty"`
 }
 
 type CreateTeamInput struct {

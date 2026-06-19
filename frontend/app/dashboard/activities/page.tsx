@@ -426,7 +426,7 @@ export default function ActivitiesPage() {
         return;
       }
 
-      setEmployees(payload.data.employees);
+      setEmployees(payload.data?.employees || []);
       setLastUpdatedAt(new Date());
     } catch (requestError) {
       console.error("Failed to load activity timeline", requestError);
@@ -484,7 +484,7 @@ export default function ActivitiesPage() {
   const startMs = effectiveRange.start.getTime();
   const endMs = effectiveRange.end.getTime();
   const seedEmployees = useMemo(() => buildProjectorSeedEmployees(effectiveRange.start), [effectiveRange.start]);
-  const hasRealActivityData = employees.some(
+  const hasRealActivityData = (employees || []).some(
     (employee) =>
       employee.segments.length > 0 ||
       employee.activeSeconds > 0 ||
@@ -492,7 +492,7 @@ export default function ActivitiesPage() {
       employee.mouseMoves > 0 ||
       employee.keyPresses > 0,
   );
-  const displayEmployees = projectorMode && !hasRealActivityData ? seedEmployees : employees;
+  const displayEmployees = projectorMode && !hasRealActivityData ? seedEmployees : (employees || []);
   const usingProjectorSeedData = projectorMode && !hasRealActivityData;
 
   const projectorStats = useMemo(() => {

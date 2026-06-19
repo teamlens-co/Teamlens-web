@@ -101,7 +101,7 @@ func (h *DashboardHandler) GetActivityTimeline(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	result, err := h.activitySvc.GetActivityTimeline(r.Context(), auth.OrganizationID, start, end)
+	result, err := h.activitySvc.GetActivityTimeline(r.Context(), auth.OrganizationID, auth.UserID, start, end)
 	if err != nil {
 		slog.Error("Activity timeline failed", "error", err)
 		middleware.Error(w, http.StatusInternalServerError, "Unable to fetch activity timeline")

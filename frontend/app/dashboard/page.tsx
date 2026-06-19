@@ -180,15 +180,15 @@ export default function DashboardOverview() {
 
       if (analyticsJson.success) setAnalytics(analyticsJson.data);
 
-      const allUsers = (usersJson?.success ? usersJson.data : user ? [user] : []) as ApiUser[];
-      const teamList = (teamsJson?.success ? teamsJson.data : []) as ApiTeam[];
+      const allUsers = ((usersJson?.success ? usersJson.data : null) ?? (user ? [user] : [])) as ApiUser[];
+      const teamList = ((teamsJson?.success ? teamsJson.data : null) ?? []) as ApiTeam[];
       const selectedTeam = dashboardTeamId ? teamList.find((team) => team.id === dashboardTeamId) : null;
       const teamScopedUsers = selectedTeam
-        ? allUsers.filter((item) => selectedTeam.members?.some((member) => member.id === item.id))
+        ? allUsers.filter((item) => (selectedTeam.members ?? []).some((member) => member.id === item.id))
         : allUsers;
-      const scopedUsers = selectedIndividualId
-        ? teamScopedUsers.filter((item) => item.id === selectedIndividualId)
-        : teamScopedUsers;
+      const scopedUsers = selectedTeam
+        ? (selectedIndividualId ? teamScopedUsers.filter((item) => item.id === selectedIndividualId) : teamScopedUsers)
+        : (selectedIndividualId ? allUsers.filter((item) => item.id === selectedIndividualId) : allUsers);
       const scopedUserIds = new Set(scopedUsers.map((item) => item.id));
 
       const timelineRows = ((timelineJson.success ? timelineJson.data?.employees : []) ?? []) as TimelineEmployee[];
@@ -300,7 +300,7 @@ export default function DashboardOverview() {
     if (!dashboardTeamId) return allEmployees;
     const selectedTeam = teams.find((team) => team.id === dashboardTeamId);
     if (!selectedTeam) return allEmployees;
-    return allEmployees.filter((employee) => selectedTeam.members?.some((member) => member.id === employee.id));
+    return allEmployees.filter((employee) => (selectedTeam.members ?? []).some((member) => member.id === employee.id));
   }, [allEmployees, dashboardTeamId, teams]);
 
   const handleTeamChange = (teamId: string) => {

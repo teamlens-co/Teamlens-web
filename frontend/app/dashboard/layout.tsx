@@ -22,6 +22,10 @@ import {
   Video,
   Wallet,
   Globe,
+  ChevronDown,
+  Building2,
+  Plus,
+  Loader2,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "../../contexts/AuthContext";
 import TeamLensLogo from "../../components/TeamLensLogo";
@@ -78,11 +82,18 @@ function SidebarLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newOrgName, setNewOrgName] = useState("");
+  const [creatingOrg, setCreatingOrg] = useState(false);
 
   const {
     user,
     organization,
+    organizations,
     isLoading,
+    switchOrganization,
+    createOrganization,
     logout,
   } = useAuth();
 
@@ -174,9 +185,87 @@ function SidebarLayout({ children }: { children: React.ReactNode }) {
             </svg>
           </button>
 
-          <div className="hidden md:flex items-center gap-2">
-            <span className="text-sm font-semibold text-foreground">{organization?.name || "Acme Inc."}</span>
-            <span className="text-[11px] text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <button
+                id="company-switcher-btn"
+                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-semibold text-foreground hover:bg-accent/60 transition-colors"
+              >
+                <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="truncate max-w-[120px] sm:max-w-[200px]">{organization?.name || "Acme Inc."}</span>
+                <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {isDropdownOpen && (
+                <>
+                  {/* Backdrop to close dropdown */}
+                  <div className="fixed inset-0 z-20" onClick={() => setIsDropdownOpen(false)} />
+                  <div className="absolute left-0 mt-1 w-56 origin-top-left rounded-lg border border-border bg-surface-2 p-1 shadow-lg ring-1 ring-black/5 focus:outline-none z-30 animate-in fade-in duration-100">
+                    <div className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground border-b border-border/60 mb-1">
+                      Switch Company
+                    </div>
+                    <div className="max-h-60 overflow-y-auto custom-scrollbar">
+                      {organizations.length > 1 && (
+                        <>
+                          <button
+                            disabled={organization?.id === "combined"}
+                            onClick={() => {
+                              setIsDropdownOpen(false);
+                              void switchOrganization("combined");
+                            }}
+                            className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-[13px] text-left transition-colors mb-1 ${
+                              organization?.id === "combined"
+                                ? "bg-accent/30 text-primary font-medium cursor-default"
+                                : "text-foreground/80 hover:bg-accent/60 hover:text-foreground cursor-pointer"
+                            }`}
+                          >
+                            <span className="truncate font-semibold text-primary">All Companies (Combined)</span>
+                            {organization?.id === "combined" && <span className="h-1.5 w-1.5 rounded-full bg-brand" />}
+                          </button>
+                          <div className="h-px bg-border/60 my-1 mx-1" />
+                        </>
+                      )}
+                      {organizations.map((org) => {
+                        const isCurrent = org.id === organization?.id;
+                        return (
+                          <button
+                            key={org.id}
+                            disabled={isCurrent}
+                            onClick={() => {
+                              setIsDropdownOpen(false);
+                              void switchOrganization(org.id);
+                            }}
+                            className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-[13px] text-left transition-colors ${
+                              isCurrent
+                                ? "bg-accent/30 text-primary font-medium cursor-default"
+                                : "text-foreground/80 hover:bg-accent/60 hover:text-foreground cursor-pointer"
+                            }`}
+                          >
+                            <span className="truncate">{org.name}</span>
+                            {isCurrent && <span className="h-1.5 w-1.5 rounded-full bg-brand" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="border-t border-border/60 mt-1 pt-1">
+                      <button
+                        onClick={() => {
+                          setIsDropdownOpen(false);
+                          setIsModalOpen(true);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] text-foreground/80 hover:bg-accent/60 hover:text-primary transition-colors text-left font-medium cursor-pointer"
+                      >
+                        <Plus className="h-4 w-4" />
+                        <span>Create New Company</span>
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <span className="hidden sm:inline-flex items-center text-[11px] text-muted-foreground ml-1">
               <Globe className="mr-1 inline h-3.5 w-3.5 align-[-2px]" strokeWidth={2} />
               IST
             </span>
@@ -264,6 +353,84 @@ function SidebarLayout({ children }: { children: React.ReactNode }) {
               </button>
             </div>
           </aside>
+        </div>
+      )}
+      {/* ── Create New Company Modal ────────────────────── */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => {
+              if (!creatingOrg) setIsModalOpen(false);
+            }}
+          />
+          {/* Modal Container */}
+          <div className="relative w-full max-w-md rounded-xl border border-border bg-surface-2 p-6 shadow-xl animate-in zoom-in-95 duration-200">
+            <h2 className="text-lg font-semibold text-foreground mb-1">Create New Company</h2>
+            <p className="text-xs text-muted-foreground mb-4">
+              Spin up a new organization to manage its employees, activities, and settings.
+            </p>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!newOrgName.trim() || creatingOrg) return;
+                setCreatingOrg(true);
+                try {
+                  await createOrganization(newOrgName.trim());
+                  setIsModalOpen(false);
+                  setNewOrgName("");
+                } catch (err) {
+                  console.error(err);
+                } finally {
+                  setCreatingOrg(false);
+                }
+              }}
+            >
+              <div className="mb-4">
+                <label htmlFor="new-org-name" className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
+                  Company Name
+                </label>
+                <input
+                  id="new-org-name"
+                  type="text"
+                  required
+                  placeholder="e.g. Styling Minds"
+                  value={newOrgName}
+                  onChange={(e) => setNewOrgName(e.target.value)}
+                  disabled={creatingOrg}
+                  className="w-full tl-input px-3 py-2 text-sm"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  disabled={creatingOrg}
+                  className="tl-secondary-button px-4 py-2 text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingOrg || !newOrgName.trim()}
+                  className="tl-primary-button px-4 py-2 text-xs flex items-center gap-1.5"
+                >
+                  {creatingOrg ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    "Create Company"
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

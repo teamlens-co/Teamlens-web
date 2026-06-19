@@ -41,47 +41,65 @@ model WorkSession {
 }
 
 model Organization {
-  id                           String        @id @default(cuid())
+  id                           String                   @id @default(cuid())
   name                         String
-  slug                         String        @unique
-  createdAt                    DateTime      @default(now()) @map("created_at")
-  updatedAt                    DateTime      @updatedAt @map("updated_at")
-  productivityThresholdMinutes Int           @default(180) @map("productivity_threshold_minutes")
-  isActive                     Boolean       @default(true) @map("is_active")
-  subscriptionPlan             String        @default("BASIC") @map("subscription_plan")
-  subscriptionPrice            Float         @default(0.0) @map("subscription_price")
-  employeeLimit                Int           @default(10) @map("employee_limit")
-  billingCycle                 String        @default("MONTHLY") @map("billing_cycle")
-  renewalDate                  DateTime?     @map("renewal_date")
+  slug                         String                   @unique
+  createdAt                    DateTime                 @default(now()) @map("created_at")
+  updatedAt                    DateTime                 @updatedAt @map("updated_at")
+  productivityThresholdMinutes Int                      @default(180) @map("productivity_threshold_minutes")
+  isActive                     Boolean                  @default(true) @map("is_active")
+  subscriptionPlan             String                   @default("BASIC") @map("subscription_plan")
+  subscriptionPrice            Float                    @default(0.0) @map("subscription_price")
+  employeeLimit                Int                      @default(10) @map("employee_limit")
+  billingCycle                 String                   @default("MONTHLY") @map("billing_cycle")
+  renewalDate                  DateTime?                @map("renewal_date")
   agentTokens                  AgentToken[]
   invites                      InviteToken[]
   users                        User[]
+  memberships                  OrganizationMembership[]
+  teams                        Team[]
 
   @@map("organizations")
 }
 
 model User {
-  id                 String              @id @default(cuid())
-  organizationId     String              @map("organization_id")
-  fullName           String              @map("full_name")
-  email              String              @unique
-  passwordHash       String              @map("password_hash")
+  id                 String                   @id @default(cuid())
+  organizationId     String                   @map("organization_id")
+  fullName           String                   @map("full_name")
+  email              String                   @unique
+  passwordHash       String                   @map("password_hash")
   role               UserRole
-  status             UserStatus          @default(ACTIVE)
-  invitedById        String?             @map("invited_by_id")
-  createdAt          DateTime            @default(now()) @map("created_at")
-  updatedAt          DateTime            @updatedAt @map("updated_at")
+  status             UserStatus               @default(ACTIVE)
+  invitedById        String?                  @map("invited_by_id")
+  createdAt          DateTime                 @default(now()) @map("created_at")
+  updatedAt          DateTime                 @updatedAt @map("updated_at")
   agentTokens        AgentToken[]
-  invitesCreated     InviteToken[]       @relation("InvitedBy")
-  manualTimeReviews  ManualTimeRequest[] @relation("ManualTimeRequestReviewer")
-  manualTimeRequests ManualTimeRequest[] @relation("ManualTimeRequestUser")
+  invitesCreated     InviteToken[]            @relation("InvitedBy")
+  manualTimeReviews  ManualTimeRequest[]      @relation("ManualTimeRequestReviewer")
+  manualTimeRequests ManualTimeRequest[]      @relation("ManualTimeRequestUser")
   teamMemberships    TeamMembership[]
-  ownedTeams         Team[]              @relation("ManagerTeams")
-  invitedBy          User?               @relation("UserInvites", fields: [invitedById], references: [id])
-  invitedUsers       User[]              @relation("UserInvites")
-  organization       Organization        @relation(fields: [organizationId], references: [id])
+  ownedTeams         Team[]                   @relation("ManagerTeams")
+  invitedBy          User?                    @relation("UserInvites", fields: [invitedById], references: [id])
+  invitedUsers       User[]                   @relation("UserInvites")
+  organization       Organization             @relation(fields: [organizationId], references: [id])
+  memberships        OrganizationMembership[]
 
   @@map("users")
+}
+
+model OrganizationMembership {
+  id             String       @id @default(cuid())
+  userId         String       @map("user_id")
+  organizationId String       @map("organization_id")
+  role           UserRole     @default(EMPLOYEE)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@map("organization_memberships")
 }
 
 model ManualTimeRequest {
@@ -108,14 +126,17 @@ model ManualTimeRequest {
 }
 
 model Team {
-  id          String           @id @default(cuid())
-  name        String
-  managerId   String           @map("manager_id")
-  createdAt   DateTime         @default(now()) @map("created_at")
-  memberships TeamMembership[]
-  manager     User             @relation("ManagerTeams", fields: [managerId], references: [id])
+  id             String           @id @default(cuid())
+  organizationId String           @map("organization_id")
+  name           String
+  managerId      String           @map("manager_id")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  memberships    TeamMembership[]
+  manager        User             @relation("ManagerTeams", fields: [managerId], references: [id])
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([managerId])
+  @@index([organizationId])
   @@map("teams")
 }
 

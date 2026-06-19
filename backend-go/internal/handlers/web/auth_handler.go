@@ -120,7 +120,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.authSvc.Me(r.Context(), auth.UserID)
+	user, err := h.authSvc.Me(r.Context(), auth.UserID, auth.OrganizationID)
 	if err != nil {
 		middleware.Error(w, http.StatusNotFound, err.Error())
 		return
@@ -182,7 +182,7 @@ func (h *AuthHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	users, err := h.authSvc.GetTeamUsers(r.Context(), auth.OrganizationID)
+	users, err := h.authSvc.GetTeamUsers(r.Context(), auth.OrganizationID, auth.UserID)
 	if err != nil {
 		middleware.Error(w, http.StatusInternalServerError, err.Error())
 		return
@@ -209,6 +209,11 @@ func (h *AuthHandler) DeleteEmployee(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if auth.OrganizationID == "combined" {
+		middleware.Error(w, http.StatusBadRequest, "Cannot delete employee in combined view")
+		return
+	}
+
 	user, err := h.authSvc.DeleteEmployee(r.Context(), auth.OrganizationID, employeeID)
 	if err != nil {
 		middleware.Error(w, http.StatusInternalServerError, err.Error())
@@ -220,4 +225,64 @@ func (h *AuthHandler) DeleteEmployee(w http.ResponseWriter, r *http.Request) {
 	}
 
 	middleware.Success(w, http.StatusOK, user)
+}
+
+func (h *AuthHandler) SwitchOrganization(w http.ResponseWriter, r *http.Request) {
+	auth := middleware.GetAuthContext(r.Context())
+	if auth == nil {
+		middleware.Error(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	var input struct {
+		OrganizationID string `json:"organizationId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		middleware.Error(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if input.OrganizationID == "" {
+		middleware.Error(w, http.StatusBadRequest, "Organization ID is required")
+		return
+	}
+
+	result, err := h.authSvc.SwitchOrganization(r.Context(), auth.UserID, input.OrganizationID)
+	if err != nil {
+		middleware.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	setAccessTokenCookie(w, result.AccessToken)
+	middleware.Success(w, http.StatusOK, result)
+}
+
+func (h *AuthHandler) CreateOrganization(w http.ResponseWriter, r *http.Request) {
+	auth := middleware.GetAuthContext(r.Context())
+	if auth == nil {
+		middleware.Error(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	var input struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		middleware.Error(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if input.Name == "" {
+		middleware.Error(w, http.StatusBadRequest, "Organization name is required")
+		return
+	}
+
+	result, err := h.authSvc.CreateOrganization(r.Context(), auth.UserID, input.Name)
+	if err != nil {
+		middleware.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	setAccessTokenCookie(w, result.AccessToken)
+	middleware.Success(w, http.StatusCreated, result)
 }

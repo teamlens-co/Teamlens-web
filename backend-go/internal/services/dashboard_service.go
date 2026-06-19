@@ -95,31 +95,43 @@ func NewDashboardService(pool *pgxpool.Pool, locationSvc *LocationService) *Dash
 
 func (s *DashboardService) GetAttendance(ctx context.Context, organizationID, viewerUserID string, role models.AuthRole, requestedUserID *string, start, end time.Time) (*AttendanceOverview, error) {
 	threshold := 180
-	_ = s.pool.QueryRow(ctx,
-		`SELECT COALESCE(productivity_threshold_minutes, 180)
-		 FROM organizations
-		 WHERE id = $1`,
-		organizationID,
-	).Scan(&threshold)
+	if organizationID != "combined" {
+		_ = s.pool.QueryRow(ctx,
+			`SELECT COALESCE(productivity_threshold_minutes, 180)
+			 FROM organizations
+			 WHERE id = $1`,
+			organizationID,
+		).Scan(&threshold)
+	}
 
 	rangeStart := time.Date(start.UTC().Year(), start.UTC().Month(), start.UTC().Day(), 0, 0, 0, 0, time.UTC)
 	rangeEnd := time.Date(end.UTC().Year(), end.UTC().Month(), end.UTC().Day(), 23, 59, 59, int(time.Second-time.Nanosecond), time.UTC)
 	days := enumerateDays(rangeStart, rangeEnd)
 
 	userFilter := ""
-	args := []interface{}{organizationID}
+	var args []interface{}
+	var orgCondition string
+
+	if organizationID == "combined" {
+		orgCondition = "organization_id IN (SELECT organization_id FROM organization_memberships WHERE user_id = $1)"
+		args = append(args, viewerUserID)
+	} else {
+		orgCondition = "organization_id = $1"
+		args = append(args, organizationID)
+	}
+
 	if role == models.RoleEmployee {
-		userFilter = " AND id = $2"
+		userFilter = fmt.Sprintf(" AND id = $%d", len(args)+1)
 		args = append(args, viewerUserID)
 	} else if requestedUserID != nil && *requestedUserID != "" {
-		userFilter = " AND id = $2"
+		userFilter = fmt.Sprintf(" AND id = $%d", len(args)+1)
 		args = append(args, *requestedUserID)
 	}
 
 	rows, err := s.pool.Query(ctx,
 		`SELECT id, full_name, email
 		 FROM users
-		 WHERE organization_id = $1 AND role = 'EMPLOYEE'`+userFilter+`
+		 WHERE `+orgCondition+` AND role = 'EMPLOYEE'`+userFilter+`
 		 ORDER BY full_name ASC, email ASC`,
 		args...,
 	)
