@@ -280,7 +280,7 @@ export default function SuperAdminDashboard() {
       {/* Top Title Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
             Workspace Stats
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -291,40 +291,40 @@ export default function SuperAdminDashboard() {
         <button
           onClick={fetchData}
           disabled={loading}
-          className="inline-flex items-center gap-2 bg-card hover:bg-accent/40 text-foreground border border-border rounded-xl px-4 py-2 text-xs font-semibold uppercase tracking-wider transition active:scale-[0.98] disabled:opacity-50"
+          className="inline-flex items-center justify-center gap-2 bg-primary hover:bg-primary-dark text-white rounded-xl px-5 py-2.5 text-xs font-semibold uppercase tracking-wider transition shadow-sm shadow-brand/20 active:scale-[0.98] disabled:opacity-50 shrink-0"
         >
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-          Refresh Stats
+          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          Refresh
         </button>
       </div>
 
       {/* Stats Cards Grid */}
       {stats && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Card 1: Companies */}
-          <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-sm transition hover:shadow-md group">
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm transition hover:shadow-md">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 Tenant Companies
               </span>
               <div className="rounded-xl bg-[var(--brand-tint)] p-2 text-primary">
-                <Building2 className="h-4.5 w-4.5" />
+                <Building2 className="h-5 w-5" />
               </div>
             </div>
             <div className="mt-4 flex items-baseline gap-2">
               <span className="text-3xl font-bold text-foreground tracking-tight">
                 {stats.totalCompanies}
               </span>
-              <span className="text-xs text-muted-foreground">companies</span>
+              <span className="text-sm text-muted-foreground">companies</span>
             </div>
-            <div className="mt-2.5 flex items-center gap-4 text-xs">
-              <span className="flex items-center gap-1 text-emerald-600 font-medium">
-                <ShieldCheck className="h-3.5 w-3.5" />
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+              <span className="flex items-center gap-1.5 text-emerald-600 font-medium">
+                <ShieldCheck className="h-4 w-4" />
                 {stats.activeCompanies} Active
               </span>
               {stats.suspendedCompanies > 0 && (
-                <span className="flex items-center gap-1 text-rose-600 font-medium">
-                  <ShieldAlert className="h-3.5 w-3.5" />
+                <span className="flex items-center gap-1.5 text-rose-600 font-medium">
+                  <ShieldAlert className="h-4 w-4" />
                   {stats.suspendedCompanies} Suspended
                 </span>
               )}
@@ -332,64 +332,63 @@ export default function SuperAdminDashboard() {
           </div>
 
           {/* Card 2: Employees */}
-          <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-sm transition hover:shadow-md group">
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm transition hover:shadow-md">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                Total Active Employees
+              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Total Employees
               </span>
-              <div className="rounded-xl bg-slate-100 p-2 text-slate-600">
-                <Users className="h-4.5 w-4.5" />
+              <div className="rounded-xl bg-[var(--brand-tint)] p-2 text-primary">
+                <Users className="h-5 w-5" />
               </div>
             </div>
             <div className="mt-4 flex items-baseline gap-2">
               <span className="text-3xl font-bold text-foreground tracking-tight">
                 {stats.totalEmployees}
               </span>
-              <span className="text-xs text-muted-foreground">registered employees</span>
+              <span className="text-sm text-muted-foreground">registered</span>
             </div>
-            <div className="mt-2.5 text-xs text-muted-foreground">
+            <div className="mt-3 text-xs text-muted-foreground">
               Across all tenant organizations.
             </div>
           </div>
 
           {/* Card 3: Active Sessions */}
-          <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-sm transition hover:shadow-md group">
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm transition hover:shadow-md">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 Active Sessions
               </span>
-              <div className="rounded-xl bg-amber-50 p-2 text-amber-600">
-                <Zap className="h-4.5 w-4.5 text-amber-500 fill-amber-500" />
+              <div className="rounded-xl bg-[var(--brand-tint)] p-2 text-primary">
+                <Zap className="h-5 w-5" />
               </div>
             </div>
             <div className="mt-4 flex items-baseline gap-2">
               <span className="text-3xl font-bold text-foreground tracking-tight">
                 {stats.activeSessions}
               </span>
-              <span className="text-xs text-amber-600 font-semibold">Active Now</span>
+              <span className="text-sm text-primary font-semibold">Active Now</span>
             </div>
-            <div className="mt-2.5 text-xs text-muted-foreground">
+            <div className="mt-3 text-xs text-muted-foreground">
               Workers currently clocked in.
             </div>
           </div>
 
           {/* Card 4: Database Storage */}
-          <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-sm transition hover:shadow-md group">
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm transition hover:shadow-md">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 Storage Allocation
               </span>
-              <div className="rounded-xl bg-blue-50 p-2 text-blue-600">
-                <Server className="h-4.5 w-4.5" />
+              <div className="rounded-xl bg-[var(--brand-tint)] p-2 text-primary">
+                <Server className="h-5 w-5" />
               </div>
             </div>
             <div className="mt-4 flex items-baseline gap-2">
               <span className="text-3xl font-bold text-foreground tracking-tight">
                 {stats.databaseSizePretty}
               </span>
-              <span className="text-xs text-muted-foreground">disk space</span>
             </div>
-            <div className="mt-2.5 text-xs text-muted-foreground">
+            <div className="mt-3 text-xs text-muted-foreground">
               Postgres database payload size.
             </div>
           </div>
@@ -435,18 +434,18 @@ export default function SuperAdminDashboard() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[700px]">
             <thead>
-              <tr className="border-b border-border bg-muted/20 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              <tr className="border-b border-border bg-muted/30 text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 <th className="py-4 px-6 w-12 text-center"></th>
                 <th className="py-4 px-6">Company Profile</th>
                 <th className="py-4 px-6">Created On</th>
                 <th className="py-4 px-6 text-center">Managers</th>
                 <th className="py-4 px-6 text-center">Employees</th>
-                <th className="py-4 px-6">Plan & Subscription</th>
+                <th className="py-4 px-6 min-w-[180px]">Plan & Subscription</th>
                 <th className="py-4 px-6">System Access</th>
-                <th className="py-4 px-6 text-right">Actions</th>
+                <th className="py-4 px-6 text-right min-w-[220px]">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border text-[13px]">
+            <tbody className="divide-y divide-border text-sm">
               {filteredOrgs.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-muted-foreground font-medium">
@@ -530,16 +529,16 @@ export default function SuperAdminDashboard() {
                           </span>
                         )}
                       </td>
-                      <td className="py-4.5 px-6 text-right space-x-2">
+                      <td className="py-4.5 px-6 text-right">
                         {org.id === "system-admin" ? (
-                          <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider px-3.5">
+                          <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider px-3.5">
                             Protected System Org
                           </span>
                         ) : (
-                          <>
+                          <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-end gap-2">
                             <button
                               onClick={() => openSubModal(org)}
-                              className="inline-flex items-center justify-center rounded-xl bg-card hover:bg-accent/40 text-foreground border border-border px-3.5 py-2 text-xs font-semibold tracking-wide transition active:scale-[0.97]"
+                              className="inline-flex items-center justify-center rounded-xl bg-card hover:bg-accent/40 text-foreground border border-border px-3.5 py-2 text-xs font-semibold tracking-wide transition active:scale-[0.97] whitespace-nowrap"
                               title="Configure negotiated subscription settings"
                             >
                               Configure Plan
@@ -547,7 +546,7 @@ export default function SuperAdminDashboard() {
                             <button
                               onClick={() => toggleOrgStatus(org.id, org.isActive)}
                               disabled={togglingId !== null}
-                              className={`inline-flex items-center justify-center rounded-xl px-4 py-2 text-xs font-semibold tracking-wide transition-all duration-200 active:scale-[0.97] min-w-[110px] ${
+                              className={`inline-flex items-center justify-center rounded-xl px-4 py-2 text-xs font-semibold tracking-wide transition-all duration-200 active:scale-[0.97] min-w-[130px] whitespace-nowrap ${
                                 org.isActive
                                   ? "bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200"
                                   : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200"
@@ -561,7 +560,7 @@ export default function SuperAdminDashboard() {
                                 "Authorize Access"
                               )}
                             </button>
-                          </>
+                          </div>
                         )}
                       </td>
                     </tr>
