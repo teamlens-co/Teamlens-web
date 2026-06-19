@@ -7,6 +7,7 @@ import {
   Activity,
   LogOut,
   Layers,
+  Users,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "../../contexts/AuthContext";
 import TeamLensLogo from "../../components/TeamLensLogo";
@@ -45,6 +46,7 @@ function SuperAdminSidebarLayout({ children }: { children: React.ReactNode }) {
 
   const sidebarLinks = [
     { name: "Workspace Stats", href: "/superadmin/dashboard", icon: Activity },
+    { name: "Users Monitor", href: "/superadmin/users", icon: Users },
     { name: "Leads Pipeline", href: "/superadmin/leads", icon: Layers },
   ];
 

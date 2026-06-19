@@ -48,17 +48,6 @@ type Stats = {
   databaseSizePretty: string;
 };
 
-type SuperAdminUserItem = {
-  id: string;
-  fullName: string;
-  email: string;
-  role: string;
-  status: string;
-  organizationId: string;
-  organization: string;
-  createdAt: string;
-};
-
 type Organization = {
   id: string;
   name: string;
@@ -83,12 +72,6 @@ export default function SuperAdminDashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
-
-  // Global users monitor
-  const [users, setUsers] = useState<SuperAdminUserItem[]>([]);
-  const [loadingUsers, setLoadingUsers] = useState(false);
-  const [userSearch, setUserSearch] = useState("");
-  const [userRoleFilter, setUserRoleFilter] = useState<"" | "MANAGER" | "EMPLOYEE">("");
 
   const [expandedOrgs, setExpandedOrgs] = useState<Set<string>>(new Set());
   const [orgDetails, setOrgDetails] = useState<Record<string, OrgDetails>>({});
@@ -234,43 +217,11 @@ export default function SuperAdminDashboard() {
     }
   };
 
-  const fetchUsers = async () => {
-    if (!authHeaders) return;
-    setLoadingUsers(true);
-    try {
-      const params = new URLSearchParams();
-      if (userRoleFilter) params.set("role", userRoleFilter);
-      if (userSearch.trim()) params.set("search", userSearch.trim());
-      const res = await fetch(`${apiBase}/api/web/superadmin/users?${params.toString()}`, {
-        headers: authHeaders as any,
-      });
-      const json = await res.json();
-      if (res.ok && json.success) {
-        setUsers(json.data || []);
-      } else {
-        setErrorMsg(json.message || "Failed to load users");
-      }
-    } catch (err) {
-      console.error(err);
-      setErrorMsg("Network error loading users.");
-    } finally {
-      setLoadingUsers(false);
-    }
-  };
-
   useEffect(() => {
     if (authHeaders) {
       fetchData();
-      fetchUsers();
     }
   }, [apiBase, authHeaders]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (authHeaders) fetchUsers();
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [userSearch, userRoleFilter, apiBase, authHeaders]);
 
   const toggleOrgStatus = async (orgId: string, currentStatus: boolean) => {
     if (!authHeaders) return;
@@ -763,113 +714,6 @@ export default function SuperAdminDashboard() {
                       </tr>
                     )}
                   </Fragment>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Global Users Monitor */}
-      <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm">
-        <div className="p-6 border-b border-border flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-bold text-foreground">Global Users Monitor</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Search and filter every manager and employee across all companies.
-            </p>
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-            <div className="flex items-center gap-1.5 bg-background border border-border rounded-xl p-1">
-              {(["", "MANAGER", "EMPLOYEE"] as const).map((role) => (
-                <button
-                  key={role || "all"}
-                  onClick={() => setUserRoleFilter(role)}
-                  className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition ${
-                    userRoleFilter === role
-                      ? "bg-brand text-white shadow-sm"
-                      : "text-muted-foreground hover:text-foreground hover:bg-accent/40"
-                  }`}
-                >
-                  {role === "" ? "All" : role === "MANAGER" ? "Managers" : "Employees"}
-                </button>
-              ))}
-            </div>
-
-            <div className="relative max-w-xs w-full">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Search by name or email..."
-                value={userSearch}
-                onChange={(e) => setUserSearch(e.target.value)}
-                className="w-full bg-background border border-border rounded-xl py-2 px-10 text-xs font-medium text-foreground placeholder:text-muted-foreground/50 focus:border-brand outline-none transition"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[700px]">
-            <thead>
-              <tr className="border-b border-border bg-muted/20 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                <th className="py-4 px-6">User</th>
-                <th className="py-4 px-6">Role</th>
-                <th className="py-4 px-6">Status</th>
-                <th className="py-4 px-6">Organization</th>
-                <th className="py-4 px-6">Created</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loadingUsers ? (
-                <tr>
-                  <td colSpan={5} className="py-8 text-center">
-                    <Loader2 className="h-6 w-6 text-brand animate-spin mx-auto" />
-                    <span className="text-xs text-muted-foreground mt-2 block">Loading users...</span>
-                  </td>
-                </tr>
-              ) : users.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="py-8 text-center text-xs text-muted-foreground">
-                    No users found matching your filters.
-                  </td>
-                </tr>
-              ) : (
-                users.map((u) => (
-                  <tr
-                    key={u.id}
-                    className="border-b border-border last:border-b-0 hover:bg-muted/20 transition"
-                  >
-                    <td className="py-4 px-6">
-                      <div className="font-semibold text-foreground text-xs">{u.fullName}</div>
-                      <div className="text-[10px] text-muted-foreground">{u.email}</div>
-                    </td>
-                    <td className="py-4 px-6">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                          u.role === "MANAGER"
-                            ? "bg-blue-50 text-blue-700 border border-blue-100"
-                            : "bg-slate-100 text-slate-700 border border-slate-200"
-                        }`}
-                      >
-                        {u.role}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                          u.status === "ACTIVE"
-                            ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
-                            : "bg-rose-50 text-rose-700 border border-rose-100"
-                        }`}
-                      >
-                        {u.status}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6 text-xs text-foreground">{u.organization}</td>
-                    <td className="py-4 px-6 text-[10px] text-muted-foreground">{u.createdAt}</td>
-                  </tr>
                 ))
               )}
             </tbody>
