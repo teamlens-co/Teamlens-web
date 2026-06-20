@@ -136,7 +136,7 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
     if (!apiBase || !authHeaders || !employeeId) return;
     try {
       const params = new URLSearchParams({ userIds: employeeId, limit: "1" });
-      const res = await fetch(`${apiBase}/api/web/screenshots?${params.toString()}`, {
+      const res = await fetch(`${apiBase}/api/agent/screenshots?${params.toString()}`, {
         headers: authHeaders as any,
       });
       if (!res.ok) return;
