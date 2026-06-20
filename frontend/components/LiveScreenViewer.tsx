@@ -537,7 +537,7 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
           }
           if (["failed", "closed", "disconnected"].includes(peer.connectionState)) {
             if (!fallbackModeRef.current) {
-              setMessage(`WebRTC connection ${peer.connectionState}. Switching to screenshot fallback...`);
+              setMessage(`WebRTC peer connection ${peer.connectionState}. Connecting via live screenshot stream...`);
               startFallback();
             }
           }
@@ -546,7 +546,7 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
         peer.oniceconnectionstatechange = () => {
           console.info("Live WebRTC ICE state", peer.iceConnectionState);
           if (peer.iceConnectionState === "failed" && !fallbackModeRef.current) {
-            setMessage("WebRTC ICE failed. Switching to screenshot fallback...");
+            setMessage("WebRTC ICE failed. Connecting via live screenshot stream...");
             startFallback();
           }
         };
@@ -617,7 +617,7 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
       setMessage("Waiting for the employee agent to start streaming...");
       liveConnectTimerRef.current = setTimeout(() => {
         if (sessionIdRef.current !== response.sessionId || viewStateRef.current === "live") return;
-        setMessage("Live stream did not start. Switching to screenshot fallback...");
+        setMessage("Live stream did not start. Connecting via live screenshot stream...");
         startFallback();
       }, 15000);
     });
@@ -709,25 +709,34 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
         </div>
       )}
 
-      {/* Screenshot Fallback */}
+      {/* Live screenshot stream (used when WebRTC peer connection is unavailable) */}
       {fallbackMode && (
-        <div className="mt-4 relative overflow-hidden rounded-md bg-slate-950 border-2 border-dashed border-amber-400">
-          <div className="absolute left-3 top-3 z-10 inline-flex items-center gap-2 rounded-full bg-amber-50 border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700 shadow-sm">
-            <WifiOff className="h-3.5 w-3.5" />
-            Screenshot Fallback {fallbackImageTime ? `· ${fallbackImageTime}` : ""}
+        <div ref={videoContainerRef} className="mt-4 relative group overflow-hidden rounded-md bg-slate-950 border border-slate-800">
+          <div className="absolute left-3 top-3 z-10 inline-flex items-center gap-2 rounded-full bg-slate-900/80 border border-slate-700 px-3 py-1 text-xs font-medium text-slate-200 shadow-sm backdrop-blur">
+            <MonitorUp className="h-3.5 w-3.5 text-brand" />
+            Live Screen · updated {fallbackImageTime || "--"}
           </div>
           {fallbackImageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={fallbackImageUrl}
-              alt="Latest employee screenshot"
+              alt="Live employee screen"
               className="aspect-video w-full object-contain bg-slate-950"
             />
           ) : (
             <div className="aspect-video w-full flex items-center justify-center bg-slate-900 text-slate-400 text-sm">
-              No recent screenshot available
+              Waiting for screen update...
             </div>
           )}
+
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            className="absolute top-3 right-3 p-2 bg-black/50 backdrop-blur-sm rounded-lg text-white/80 hover:text-white hover:bg-black/70 opacity-0 group-hover:opacity-100 transition-all"
+            id="fullscreen-toggle-btn"
+          >
+            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          </button>
         </div>
       )}
 
