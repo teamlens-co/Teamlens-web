@@ -251,6 +251,7 @@ const SCREENSHOT_INTERVAL_MAX_MS = 60_000;
 const AUTO_RECORDING_FPS = 3;
 const AUTO_RECORDING_CHUNK_MS = 30_000;
 const AUTO_RECORDING_MIN_CHUNK_BYTES = 25 * 1024; // Reject tiny/broken chunks
+let lastZeroInputTimestamp = 0; // watchdog: restarts tracker after 30s of no input
 const AUTO_RECORDING_WIDTH = 1280;
 const AUTO_RECORDING_HEIGHT = 720;
 const AUTO_RECORDING_MIME_CANDIDATES = [
@@ -891,6 +892,22 @@ function App() {
         keyPresses = jsKeyPresses;
         inputSource = "fallback";
       }
+    }
+
+    // ── Watchdog: If both native and JS counters return 0 repeatedly,
+    // the native tracker thread may have panicked. Restart it.
+    if (mouseMoves === 0 && keyPresses === 0) {
+      const now = Date.now();
+      if (!lastZeroInputTimestamp) { lastZeroInputTimestamp = now; }
+      else if (now - lastZeroInputTimestamp > 30_000) {
+        // 30 seconds of consecutive zeros → restart the tracker
+        console.warn("[InputTracker] 30s of zero input — restarting tracker");
+        invoke("stop_global_input_tracker").catch(() => {});
+        invoke("start_global_input_tracker").catch(() => {});
+        lastZeroInputTimestamp = 0;
+      }
+    } else {
+      lastZeroInputTimestamp = 0;
     }
 
     setLastInputSource(inputSource);
