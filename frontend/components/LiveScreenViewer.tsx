@@ -110,6 +110,7 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
   const statsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const previousVideoStatsRef = useRef<{ timestamp: number; bytesReceived: number; framesDecoded: number } | null>(null);
   const fallbackTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fallbackModeRef = useRef(false);
   const autoStartRequestedRef = useRef(false);
 
   useEffect(() => {
@@ -126,6 +127,7 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
       fallbackTimerRef.current = null;
     }
     setFallbackMode(false);
+    fallbackModeRef.current = false;
     setFallbackImageUrl(null);
     setFallbackImageTime(null);
   }, []);
@@ -153,7 +155,8 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
   const startFallback = useCallback(() => {
     if (fallbackTimerRef.current) return;
     setFallbackMode(true);
-    setViewState("ended");
+    fallbackModeRef.current = true;
+    setViewState((current) => (current === "live" ? "ended" : current));
     fetchLatestScreenshot();
     fallbackTimerRef.current = setInterval(() => {
       fetchLatestScreenshot();
@@ -533,7 +536,7 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
             stopFallback();
           }
           if (["failed", "closed", "disconnected"].includes(peer.connectionState)) {
-            if (!fallbackMode) {
+            if (!fallbackModeRef.current) {
               setMessage(`WebRTC connection ${peer.connectionState}. Switching to screenshot fallback...`);
               startFallback();
             }
@@ -542,9 +545,9 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
 
         peer.oniceconnectionstatechange = () => {
           console.info("Live WebRTC ICE state", peer.iceConnectionState);
-          if (peer.iceConnectionState === "failed") {
-            setMessage("WebRTC ICE failed. Retrying connection...");
-            peer.restartIce?.();
+          if (peer.iceConnectionState === "failed" && !fallbackModeRef.current) {
+            setMessage("WebRTC ICE failed. Switching to screenshot fallback...");
+            startFallback();
           }
         };
 
@@ -616,7 +619,7 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
         if (sessionIdRef.current !== response.sessionId || viewStateRef.current === "live") return;
         setMessage("Live stream did not start. Switching to screenshot fallback...");
         startFallback();
-      }, 35000);
+      }, 15000);
     });
   }, [canView, cleanupPeer, employeeId, iceServers, socketState, stopViewing]);
 
