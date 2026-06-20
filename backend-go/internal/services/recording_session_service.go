@@ -141,7 +141,7 @@ func (s *RecordingSessionService) FinishSession(ctx context.Context, sessionID, 
 	return s.GetSession(ctx, sessionID, orgID, "")
 }
 
-func (s *RecordingSessionService) ListSessions(ctx context.Context, organizationID string, employeeID *string, limit int) ([]models.RecordingSession, error) {
+func (s *RecordingSessionService) ListSessions(ctx context.Context, organizationID string, employeeID *string, limit int, startDate, endDate *string) ([]models.RecordingSession, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
@@ -153,11 +153,23 @@ func (s *RecordingSessionService) ListSessions(ctx context.Context, organization
 	          LEFT JOIN recording_chunks rc ON rc.recording_session_id = rs.id
 	          WHERE rs.organization_id = $1 AND rs.deleted_at IS NULL`
 	args := []interface{}{organizationID}
+	argIdx := 2
 	if employeeID != nil && *employeeID != "" {
-		query += ` AND rs.employee_id = $2`
+		query += ` AND rs.employee_id = $` + fmt.Sprint(argIdx)
 		args = append(args, *employeeID)
+		argIdx++
 	}
-	query += ` GROUP BY rs.id, u.full_name, u.email ORDER BY rs.started_at DESC LIMIT $` + fmt.Sprint(len(args)+1)
+	if startDate != nil && *startDate != "" {
+		query += ` AND rs.started_at >= $` + fmt.Sprint(argIdx) + `::timestamptz`
+		args = append(args, *startDate)
+		argIdx++
+	}
+	if endDate != nil && *endDate != "" {
+		query += ` AND rs.started_at < $` + fmt.Sprint(argIdx) + `::timestamptz`
+		args = append(args, *endDate)
+		argIdx++
+	}
+	query += ` GROUP BY rs.id, u.full_name, u.email ORDER BY rs.started_at DESC LIMIT $` + fmt.Sprint(argIdx)
 	args = append(args, limit)
 
 	rows, err := s.pool.Query(ctx, query, args...)

@@ -85,6 +85,9 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
   const [recordings, setRecordings] = useState<RecordingEntry[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [streamStats, setStreamStats] = useState<StreamStats | null>(null);
+  const [fallbackMode, setFallbackMode] = useState(false);
+  const [fallbackImageUrl, setFallbackImageUrl] = useState<string | null>(null);
+  const [fallbackImageTime, setFallbackImageTime] = useState<string | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
@@ -106,6 +109,7 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
   const videoContainerRef = useRef<HTMLDivElement | null>(null);
   const statsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const previousVideoStatsRef = useRef<{ timestamp: number; bytesReceived: number; framesDecoded: number } | null>(null);
+  const fallbackTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoStartRequestedRef = useRef(false);
 
   useEffect(() => {
@@ -115,6 +119,46 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
   useEffect(() => {
     autoStartRequestedRef.current = false;
   }, [employeeId]);
+
+  const stopFallback = useCallback(() => {
+    if (fallbackTimerRef.current) {
+      clearInterval(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
+    setFallbackMode(false);
+    setFallbackImageUrl(null);
+    setFallbackImageTime(null);
+  }, []);
+
+  const fetchLatestScreenshot = useCallback(async () => {
+    if (!apiBase || !authHeaders || !employeeId) return;
+    try {
+      const params = new URLSearchParams({ userIds: employeeId, limit: "1" });
+      const res = await fetch(`${apiBase}/api/web/screenshots?${params.toString()}`, {
+        headers: authHeaders as any,
+      });
+      if (!res.ok) return;
+      const json = await res.json();
+      const list = json.data || [];
+      if (list.length > 0 && list[0]?.id) {
+        const item = list[0];
+        setFallbackImageUrl(`${apiBase}/api/agent/screenshots/${item.id}`);
+        setFallbackImageTime(item.capturedAt ? new Date(item.capturedAt).toLocaleTimeString() : null);
+      }
+    } catch (err) {
+      console.warn("Fallback screenshot fetch failed", err);
+    }
+  }, [apiBase, authHeaders, employeeId]);
+
+  const startFallback = useCallback(() => {
+    if (fallbackTimerRef.current) return;
+    setFallbackMode(true);
+    setViewState("ended");
+    fetchLatestScreenshot();
+    fallbackTimerRef.current = setInterval(() => {
+      fetchLatestScreenshot();
+    }, 1500);
+  }, [fetchLatestScreenshot]);
 
   const cleanupPeer = useCallback(() => {
     if (liveConnectTimerRef.current) {
@@ -136,7 +180,8 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
-  }, []);
+    stopFallback();
+  }, [stopFallback]);
 
   const startStatsMonitor = useCallback((peer: RTCPeerConnection) => {
     if (statsTimerRef.current) {
@@ -363,6 +408,7 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
       if (activeSessionId) {
         socketRef.current?.emit("live:view-ended", { sessionId: activeSessionId, reason });
       }
+      stopFallback();
       cleanupPeer();
       sessionIdRef.current = null;
       sessionIceServersRef.current = iceServers;
@@ -484,9 +530,13 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
           console.info("Live WebRTC connection state", peer.connectionState);
           if (peer.connectionState === "connected") {
             setMessage("");
+            stopFallback();
           }
           if (["failed", "closed", "disconnected"].includes(peer.connectionState)) {
-            setMessage(`WebRTC connection ${peer.connectionState}.`);
+            if (!fallbackMode) {
+              setMessage(`WebRTC connection ${peer.connectionState}. Switching to screenshot fallback...`);
+              startFallback();
+            }
           }
         };
 
@@ -564,7 +614,8 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
       setMessage("Waiting for the employee agent to start streaming...");
       liveConnectTimerRef.current = setTimeout(() => {
         if (sessionIdRef.current !== response.sessionId || viewStateRef.current === "live") return;
-        stopViewing("timeout");
+        setMessage("Live stream did not start. Switching to screenshot fallback...");
+        startFallback();
       }, 35000);
     });
   }, [canView, cleanupPeer, employeeId, iceServers, socketState, stopViewing]);
@@ -631,7 +682,7 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
       ) : null}
 
       {/* Video player with fullscreen support */}
-      {(viewState === "live" || viewState === "waiting") && (
+      {(viewState === "live" || viewState === "waiting") && !fallbackMode && (
         <div ref={videoContainerRef} className="mt-4 relative group overflow-hidden rounded-md bg-slate-950">
           <video
             ref={attachVideoRef}
@@ -652,6 +703,28 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
           >
             {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
           </button>
+        </div>
+      )}
+
+      {/* Screenshot Fallback */}
+      {fallbackMode && (
+        <div className="mt-4 relative overflow-hidden rounded-md bg-slate-950 border-2 border-dashed border-amber-400">
+          <div className="absolute left-3 top-3 z-10 inline-flex items-center gap-2 rounded-full bg-amber-50 border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700 shadow-sm">
+            <WifiOff className="h-3.5 w-3.5" />
+            Screenshot Fallback {fallbackImageTime ? `· ${fallbackImageTime}` : ""}
+          </div>
+          {fallbackImageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={fallbackImageUrl}
+              alt="Latest employee screenshot"
+              className="aspect-video w-full object-contain bg-slate-950"
+            />
+          ) : (
+            <div className="aspect-video w-full flex items-center justify-center bg-slate-900 text-slate-400 text-sm">
+              No recent screenshot available
+            </div>
+          )}
         </div>
       )}
 

@@ -30,6 +30,8 @@ func (h *RecordingSessionHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	employeeID := r.URL.Query().Get("employeeId")
+	startDate := r.URL.Query().Get("startDate")
+	endDate := r.URL.Query().Get("endDate")
 	if auth.Role == models.RoleEmployee {
 		employeeID = auth.UserID
 	}
@@ -37,7 +39,14 @@ func (h *RecordingSessionHandler) List(w http.ResponseWriter, r *http.Request) {
 	if employeeID != "" {
 		emp = &employeeID
 	}
-	sessions, err := h.recordingSvc.ListSessions(r.Context(), auth.OrganizationID, emp, limit)
+	var sDate, eDate *string
+	if startDate != "" {
+		sDate = &startDate
+	}
+	if endDate != "" {
+		eDate = &endDate
+	}
+	sessions, err := h.recordingSvc.ListSessions(r.Context(), auth.OrganizationID, emp, limit, sDate, eDate)
 	if err != nil {
 		slog.Error("List recording sessions failed", "error", err)
 		middleware.Error(w, http.StatusInternalServerError, "Unable to fetch recording sessions")

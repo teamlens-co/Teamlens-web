@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Activity, Clock, Keyboard, MousePointer2, Pause, Play, RefreshCw, Users } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Activity, Clock, Keyboard, MousePointer2, Pause, Play, RefreshCw, Users, Video } from "lucide-react";
 import { useAuth } from "../../../contexts/AuthContext";
 import DashboardDateFilter from "../../../components/DashboardDateFilter";
 import TimeRangeSlider from "../../../components/TimeRangeSlider";
@@ -68,6 +69,7 @@ type HoverState = {
   segment: TimelineSegment;
   x: number;
   y: number;
+  sticky?: boolean;
 };
 
 const formatDuration = (seconds: number): string => {
@@ -264,6 +266,7 @@ const buildProjectorSeedEmployees = (rangeStart: Date): ActivityEmployee[] => {
 
 function ActivityHoverCard({ hover }: { hover: HoverState }) {
   const { employee, segment, x, y } = hover;
+  const cardRef = useRef<HTMLDivElement>(null);
   const cardWidth = 320;
   const shouldOpenAbove = y > 380;
   const durationSeconds = Math.round((new Date(segment.end).getTime() - new Date(segment.start).getTime()) / 1000);
@@ -280,7 +283,7 @@ function ActivityHoverCard({ hover }: { hover: HoverState }) {
 
   return (
     <div
-      className="pointer-events-none fixed z-[100] w-[320px] border border-[#E7E0DA] bg-white p-4 text-[#312D29] shadow-[0_12px_38px_rgba(39,34,30,0.18)]"
+      className="fixed z-[100] w-[320px] border border-[#E7E0DA] bg-white p-4 text-[#312D29] shadow-[0_12px_38px_rgba(39,34,30,0.18)]"
       style={{
         left: Math.max(12, Math.min(x - cardWidth / 2, window.innerWidth - cardWidth - 12)),
         top: shouldOpenAbove ? y - 14 : y + 18,
@@ -356,6 +359,17 @@ function ActivityHoverCard({ hover }: { hover: HoverState }) {
           )}
         </div>
       </div>
+      <button
+        type="button"
+        onClick={() => {
+          const d = segment.start.slice(0, 10);
+          window.location.href = `/dashboard/recordings?employeeId=${employee.userId}&date=${d}&startTime=${segment.start}&endTime=${segment.end}`;
+        }}
+        className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-brand px-4 py-2 text-[12px] font-semibold text-white transition-colors hover:bg-brand-dark"
+      >
+        <Video className="h-3.5 w-3.5" />
+        Watch This Segment
+      </button>
     </div>
   );
 }
@@ -371,6 +385,7 @@ export default function ActivitiesPage() {
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [hover, setHover] = useState<HoverState | null>(null);
+  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   
@@ -871,8 +886,15 @@ export default function ActivitiesPage() {
                                   : "border border-[#E1D7CE] bg-white [background-image:repeating-linear-gradient(135deg,transparent,transparent_2px,#E1D7CE_2px,#E1D7CE_4px)]"
                               }`}
                               style={segmentStyle(segment, startMs, endMs)}
-                              onMouseEnter={(e) => setHover({ employee, segment, x: e.clientX, y: e.clientY })}
-                              onMouseLeave={() => setHover(null)}
+                              onMouseEnter={(e) => {
+                                if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                                setHover({ employee, segment, x: e.clientX, y: e.clientY });
+                              }}
+                              onMouseLeave={() => {
+                                hoverTimeoutRef.current = setTimeout(() => {
+                                  setHover((prev) => prev?.sticky ? prev : null);
+                                }, 300);
+                              }}
                             />
                           ))}
                         </div>
@@ -895,7 +917,19 @@ export default function ActivitiesPage() {
           </div>
         </div>
       </section>
-      {hover ? <ActivityHoverCard hover={hover} /> : null}
+      {hover ? (
+        <div
+          onMouseEnter={() => {
+            if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+            setHover((prev) => prev ? { ...prev, sticky: true } : prev);
+          }}
+          onMouseLeave={() => {
+            hoverTimeoutRef.current = setTimeout(() => setHover(null), 300);
+          }}
+        >
+          <ActivityHoverCard hover={hover} />
+        </div>
+      ) : null}
     </div>
   );
 }
