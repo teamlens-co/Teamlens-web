@@ -160,7 +160,7 @@ export default function LiveScreenViewer({ employeeId, disabled, disabledReason,
     fetchLatestScreenshot();
     fallbackTimerRef.current = setInterval(() => {
       fetchLatestScreenshot();
-    }, 1500);
+    }, 500);
   }, [fetchLatestScreenshot]);
 
   const cleanupPeer = useCallback(() => {
