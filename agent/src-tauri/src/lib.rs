@@ -13,6 +13,9 @@ use std::path::Path;
 use std::ptr::null_mut;
 use tauri::Manager;
 use tauri::menu::{Menu, MenuItem};
+
+#[cfg(target_os = "linux")]
+use std::process::Command;
 use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton};
 
 #[cfg(target_os = "windows")]
@@ -170,6 +173,60 @@ fn capture_frame_png(compression: CompressionType, filter: PngFilterType) -> Res
     Ok(png_data)
 }
 
+/// Try to get mouse position via xdotool (X11 shell command).
+/// Works on X11 without any special permissions.
+#[cfg(target_os = "linux")]
+fn get_mouse_pos_shell_xdotool() -> Option<(i32, i32)> {
+    let out = Command::new("xdotool")
+        .args(["getmouselocation", "--shell"])
+        .output()
+        .ok()?;
+    if !out.status.success() { return None; }
+    let stdout = std::str::from_utf8(&out.stdout).ok()?;
+    let mut x = 0i32;
+    let mut y = 0i32;
+    for line in stdout.lines() {
+        if let Some(val) = line.strip_prefix("X=").and_then(|v| v.trim().parse().ok()) {
+            x = val;
+        }
+        if let Some(val) = line.strip_prefix("Y=").and_then(|v| v.trim().parse().ok()) {
+            y = val;
+        }
+    }
+    Some((x, y))
+}
+
+/// Try to get mouse position via the X11 crate (libX11).
+/// This is the most reliable method on X11 systems.
+#[cfg(target_os = "linux")]
+fn get_mouse_pos_x11_lib() -> Option<(i32, i32)> {
+    use x11::xlib;
+    unsafe {
+        let display = xlib::XOpenDisplay(std::ptr::null());
+        if display.is_null() { return None; }
+        let mut root: xlib::Window = std::mem::zeroed();
+        let mut child: xlib::Window = std::mem::zeroed();
+        let mut root_x: i32 = 0;
+        let mut root_y: i32 = 0;
+        let mut win_x: i32 = 0;
+        let mut win_y: i32 = 0;
+        let mut mask: u32 = 0;
+        let ret = xlib::XQueryPointer(
+            display, xlib::XDefaultRootWindow(display),
+            &mut root, &mut child,
+            &mut root_x, &mut root_y,
+            &mut win_x, &mut win_y,
+            &mut mask,
+        );
+        xlib::XCloseDisplay(display);
+        if ret != 0 {
+            Some((root_x, root_y))
+        } else {
+            None
+        }
+    }
+}
+
 fn start_global_input_tracker() {
     let already_started = INPUT_TRACKER_STARTED
         .get_or_init(|| std::sync::atomic::AtomicBool::new(false));
@@ -193,6 +250,21 @@ fn start_global_input_tracker() {
         let mut last_mouse = device_state.get_mouse().coords;
         let mut last_keys: HashSet<Keycode> = device_state.get_keys().into_iter().collect();
 
+        // X11 fallback state (Linux only) — use a persistent display connection.
+        #[cfg(target_os = "linux")]
+        let x11_display = unsafe {
+            let dpy = x11::xlib::XOpenDisplay(std::ptr::null());
+            if dpy.is_null() { None } else { Some(dpy) }
+        };
+        #[cfg(target_os = "linux")]
+        let mut last_x11_pos: Option<(i32, i32)> = {
+            if let Some(dpy) = x11_display {
+                get_mouse_pos_x11_with_display(dpy)
+            } else {
+                get_mouse_pos_shell_xdotool()
+            }
+        };
+
         loop {
             if !running.load(std::sync::atomic::Ordering::SeqCst) {
                 // Paused — sleep longer and don't poll input devices.
@@ -200,6 +272,8 @@ fn start_global_input_tracker() {
                 // Reset baseline so we don't get phantom deltas on resume.
                 last_mouse = device_state.get_mouse().coords;
                 last_keys = device_state.get_keys().into_iter().collect();
+                #[cfg(target_os = "linux")]
+                { last_x11_pos = None; }
                 continue;
             }
 
@@ -208,7 +282,22 @@ fn start_global_input_tracker() {
             let keys_now: HashSet<Keycode> = keys_now_vec.into_iter().collect();
 
             if let Ok(mut locked) = counter.lock() {
-                if mouse != last_mouse {
+                let mut mouse_moved = mouse != last_mouse;
+
+                // If device_query says no-move but X11 says moved, trust X11.
+                #[cfg(target_os = "linux")]
+                if !mouse_moved {
+                    let current = x11_display.and_then(|dpy| get_mouse_pos_x11_with_display(dpy))
+                        .or_else(get_mouse_pos_shell_xdotool);
+                    if let Some(xy) = current {
+                        if last_x11_pos.map_or(true, |last| xy != last) {
+                            mouse_moved = true;
+                        }
+                        last_x11_pos = Some(xy);
+                    }
+                }
+
+                if mouse_moved {
                     locked.mouse_moves += 1;
                 }
 
@@ -225,6 +314,28 @@ fn start_global_input_tracker() {
             thread::sleep(Duration::from_millis(100));
         }
     });
+
+    // Re-open X11 display for subsequent connections
+    #[cfg(target_os = "linux")]
+    fn get_mouse_pos_x11_with_display(display: *mut x11::xlib::Display) -> Option<(i32, i32)> {
+        unsafe {
+            let mut root: x11::xlib::Window = std::mem::zeroed();
+            let mut child: x11::xlib::Window = std::mem::zeroed();
+            let mut root_x: i32 = 0;
+            let mut root_y: i32 = 0;
+            let mut win_x: i32 = 0;
+            let mut win_y: i32 = 0;
+            let mut mask: u32 = 0;
+            let ret = x11::xlib::XQueryPointer(
+                display, x11::xlib::XDefaultRootWindow(display),
+                &mut root, &mut child,
+                &mut root_x, &mut root_y,
+                &mut win_x, &mut win_y,
+                &mut mask,
+            );
+            if ret != 0 { Some((root_x, root_y)) } else { None }
+        }
+    }
 }
 
 fn stop_global_input_tracker() {
