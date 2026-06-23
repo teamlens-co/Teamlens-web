@@ -26,11 +26,21 @@ use windows_sys::Win32::System::Threading::{
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetLastInputInfo, GetWindowTextLengthW, GetWindowTextW,
-    GetWindowThreadProcessId, LASTINPUTINFO,
+    GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
 };
+
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::System::SystemInformation::GetTickCount;
+#[repr(C)]
+struct LastInputInfo {
+    cbSize: u32,
+    dwTime: u32,
+}
+
+#[cfg(target_os = "windows")]
+extern "system" {
+    fn GetLastInputInfo(plii: *mut LastInputInfo) -> i32;
+    fn GetTickCount() -> u32;
+}
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -291,6 +301,7 @@ fn start_global_input_tracker() {
             match poll_result {
                 Ok((mouse, keys_now)) => {
                     if let Ok(mut locked) = counter.lock() {
+                        #[allow(unused_mut)]
                         let mut mouse_moved = mouse != last_mouse;
 
                         // If device_query says no-move but X11 says moved, trust X11.
@@ -386,8 +397,8 @@ fn get_last_input_idle_ms() -> Result<u64, String> {
     #[cfg(target_os = "windows")]
     {
         unsafe {
-            let mut info: LASTINPUTINFO = std::mem::zeroed();
-            info.cbSize = std::mem::size_of::<LASTINPUTINFO>() as u32;
+            let mut info: LastInputInfo = std::mem::zeroed();
+            info.cbSize = std::mem::size_of::<LastInputInfo>() as u32;
             if GetLastInputInfo(&mut info) == 0 {
                 return Err(format!(
                     "GetLastInputInfo failed: {}",
