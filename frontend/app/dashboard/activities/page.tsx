@@ -2,12 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Activity, Clock, Keyboard, MousePointer2, Pause, Play, RefreshCw, Users, Video } from "lucide-react";
+import { Activity, Clock, Keyboard, MousePointer2, Pause, Play, RefreshCw, Users, Video, ZoomIn, ZoomOut } from "lucide-react";
 import { useAuth } from "../../../contexts/AuthContext";
 import DashboardDateFilter from "../../../components/DashboardDateFilter";
-import TimeRangeSlider from "../../../components/TimeRangeSlider";
 
-type RangePreset = "24h" | "12h" | "10h" | "custom";
+type RangePreset = "24h" | "12h" | "10h";
 
 const PROJECTOR_REFRESH_MS = 30_000;
 
@@ -378,8 +377,7 @@ export default function ActivitiesPage() {
   const { authHeaders, apiBase, dateRange } = useAuth();
   const [employees, setEmployees] = useState<ActivityEmployee[]>([]);
   const [rangePreset, setRangePreset] = useState<RangePreset>("24h");
-  const [customStartHour, setCustomStartHour] = useState(0);
-  const [customEndHour, setCustomEndHour] = useState(24);
+  const [zoomLevel, setZoomLevel] = useState(1);
   const [projectorMode, setProjectorMode] = useState(() => getInitialProjectorMode());
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
@@ -396,15 +394,11 @@ export default function ActivitiesPage() {
 
   // Dynamic width calculation based on zoom level
   const containerWidth = useMemo(() => {
-    let zoomFactor = 1; // 24h
-    if (rangePreset === "12h") zoomFactor = 2;
-    if (rangePreset === "10h") zoomFactor = 3;
-    if (rangePreset === "custom") {
-      const diff = Math.max(1, customEndHour - customStartHour);
-      zoomFactor = 24 / diff;
-    }
-    return `${zoomFactor * 100}%`;
-  }, [rangePreset, customStartHour, customEndHour]);
+    let baseFactor = 1; // 24h
+    if (rangePreset === "12h") baseFactor = 2;
+    if (rangePreset === "10h") baseFactor = 3;
+    return `${baseFactor * zoomLevel * 100}%`;
+  }, [rangePreset, zoomLevel]);
 
   // Use a fixed 24h range for the API fetch
   const effectiveRange = useMemo(() => {
@@ -474,10 +468,10 @@ export default function ActivitiesPage() {
     const container = scrollContainerRef.current;
     const totalWidth = container.scrollWidth;
     const hourWidth = totalWidth / 24;
-    const targetHour = rangePreset === "custom" ? customStartHour : presetWindows[rangePreset]?.startHour ?? 0;
+    const targetHour = presetWindows[rangePreset]?.startHour ?? 0;
 
     container.scrollLeft = targetHour * hourWidth;
-  }, [loading, customStartHour, rangePreset, containerWidth]);
+  }, [loading, rangePreset, containerWidth]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (!scrollContainerRef.current) return;
@@ -790,7 +784,6 @@ export default function ActivitiesPage() {
                 ["24h", "24h"],
                 ["12h", "12h"],
                 ["10h", "10h"],
-                ["custom", "Custom"],
               ].map(([preset, label]) => (
                 <button
                   key={preset}
@@ -804,18 +797,29 @@ export default function ActivitiesPage() {
               ))}
             </div>
 
-            {rangePreset === "custom" && (
-              <div className="w-64 ml-4">
-                <TimeRangeSlider 
-                  startHour={customStartHour}
-                  endHour={customEndHour}
-                  onChange={(start, end) => {
-                    setCustomStartHour(start);
-                    setCustomEndHour(end);
-                  }}
-                />
-              </div>
-            )}
+            <div className="flex items-center gap-1 rounded-md border border-[#DDD2C9] bg-white p-0.5 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setZoomLevel((z) => Math.min(z + 0.5, 4))}
+                className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[12px] font-medium text-[#5C5350] transition hover:bg-[#F3EFEB] disabled:opacity-40"
+                aria-label="Zoom in"
+              >
+                <ZoomIn className="h-3.5 w-3.5" />
+                In
+              </button>
+              <span className="min-w-[3ch] text-center text-[11px] font-semibold tabular-nums text-[#7E6F65]">
+                {zoomLevel.toFixed(1)}x
+              </span>
+              <button
+                type="button"
+                onClick={() => setZoomLevel((z) => Math.max(z - 0.5, 1))}
+                className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[12px] font-medium text-[#5C5350] transition hover:bg-[#F3EFEB] disabled:opacity-40"
+                aria-label="Zoom out"
+              >
+                <ZoomOut className="h-3.5 w-3.5" />
+                Out
+              </button>
+            </div>
           </div>
         </div>
 
@@ -909,9 +913,7 @@ export default function ActivitiesPage() {
             <span>Drag to scroll through the full day</span>
             {rangePreset !== "24h" && (
               <span className="uppercase tracking-wider">
-                {rangePreset === "custom"
-                  ? "Custom View"
-                  : `${formatHourLabel(presetWindows[rangePreset]?.startHour ?? 0)} - ${formatHourLabel(presetWindows[rangePreset]?.endHour ?? 24)}`}
+                {`${formatHourLabel(presetWindows[rangePreset]?.startHour ?? 0)} - ${formatHourLabel(presetWindows[rangePreset]?.endHour ?? 24)}`}
               </span>
             )}
           </div>
