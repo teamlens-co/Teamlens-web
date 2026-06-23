@@ -957,6 +957,7 @@ dependencies = [
  "tauri-plugin-updater",
  "uiautomation",
  "windows-sys 0.59.0",
+ "x11",
 ]
 
 [[package]]
