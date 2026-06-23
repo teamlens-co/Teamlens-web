@@ -1183,6 +1183,37 @@ function App() {
     };
   }, [isAuthenticated]);
 
+  const resolveClockInLocation = async (): Promise<{ lat?: number; lng?: number; source?: "gps" | "ip" }> => {
+    try {
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
+      });
+      return { lat: pos.coords.latitude, lng: pos.coords.longitude, source: "gps" };
+    } catch (err) {
+      console.warn("Could not get native location, falling back to Rust IP lookup:", err);
+      try {
+        const ipLoc = await invoke<{ lat: number; lon: number; source: string }>("get_ip_location");
+        return { lat: ipLoc.lat, lng: ipLoc.lon, source: "ip" };
+      } catch (ipErr) {
+        console.error("Rust IP location fallback failed:", ipErr);
+        try {
+          const ipData = await fetchJsonWithTimeout<{ latitude?: unknown; longitude?: unknown }>(
+            "https://ipapi.co/json/",
+            3000,
+          );
+          const parsedLat = normalizeCoordinate(ipData?.latitude);
+          const parsedLng = normalizeCoordinate(ipData?.longitude);
+          if (parsedLat !== undefined && parsedLng !== undefined) {
+            return { lat: parsedLat, lng: parsedLng, source: "ip" };
+          }
+        } catch (e) {
+          console.error("Frontend IP fallback also failed:", e);
+        }
+        return {};
+      }
+    }
+  };
+
   const autoClockIn = async () => {
     if (!authHeaders || isClockedIn || isClockActionLoading) {
       return;
@@ -1195,12 +1226,18 @@ function App() {
       setIsClockedIn(true);
       setSyncMessage(null);
 
+      const location = await resolveClockInLocation();
+      setDebugLocation({ lat: location.lat, lng: location.lng, source: location.source });
+
       const res = await fetch(`${apiBase}/api/agent/clock-in`, {
         method: "POST",
         headers: authHeaders,
         body: JSON.stringify({
           timestamp: now.toISOString(),
           activeAfter: getLocalDayRange().start.toISOString(),
+          latitude: location.lat,
+          longitude: location.lng,
+          locationSource: location.source,
         }),
       });
       if (!res.ok) {
@@ -1331,38 +1368,9 @@ function App() {
         setIsClockedIn(true);
         setSyncMessage(null);
 
-        let lat: number | undefined;
-        let lng: number | undefined;
-        let locationSource: "gps" | "ip" | undefined;
+        const location = await resolveClockInLocation();
 
-        try {
-          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
-          });
-          lat = pos.coords.latitude;
-          lng = pos.coords.longitude;
-          locationSource = "gps";
-        } catch (err) {
-          console.warn("Could not get native location, falling back to IP:", err);
-          try {
-            const ipData = await fetchJsonWithTimeout<{ latitude?: unknown; longitude?: unknown }>(
-              "https://ipapi.co/json/",
-              3000,
-            );
-            const parsedLat = normalizeCoordinate(ipData?.latitude);
-            const parsedLng = normalizeCoordinate(ipData?.longitude);
-
-            if (parsedLat !== undefined && parsedLng !== undefined) {
-              lat = parsedLat;
-              lng = parsedLng;
-              locationSource = "ip";
-            }
-          } catch (ipErr) {
-            console.error("IP fallback also failed:", ipErr);
-          }
-        }
-
-        setDebugLocation({ lat, lng, source: locationSource });
+        setDebugLocation({ lat: location.lat, lng: location.lng, source: location.source });
 
         try {
           const res = await fetch(`${apiBase}/api/agent/clock-in`, {
@@ -1371,9 +1379,9 @@ function App() {
             body: JSON.stringify({
               timestamp: now.toISOString(),
               activeAfter: getLocalDayRange().start.toISOString(),
-              latitude: lat,
-              longitude: lng,
-              locationSource,
+              latitude: location.lat,
+              longitude: location.lng,
+              locationSource: location.source,
             }),
           });
 

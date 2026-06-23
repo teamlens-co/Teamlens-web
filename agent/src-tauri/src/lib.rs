@@ -416,6 +416,53 @@ fn get_last_input_idle_ms() -> Result<u64, String> {
     }
 }
 
+#[derive(serde::Deserialize, serde::Serialize, Debug)]
+pub struct IpLocation {
+    pub lat: f64,
+    pub lon: f64,
+    pub source: String,
+}
+
+#[tauri::command]
+async fn get_ip_location() -> Result<IpLocation, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("build http client: {e}"))?;
+
+    // ipapi.co returns latitude/longitude fields.
+    if let Ok(resp) = client.get("https://ipapi.co/json/").send().await {
+        if resp.status().is_success() {
+            if let Ok(body) = resp.json::<serde_json::Value>().await {
+                if let (Some(lat), Some(lon)) = (body["latitude"].as_f64(), body["longitude"].as_f64()) {
+                    return Ok(IpLocation {
+                        lat,
+                        lon,
+                        source: "ip".to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    // Fallback to ip-api.com.
+    if let Ok(resp) = client.get("http://ip-api.com/json/").send().await {
+        if resp.status().is_success() {
+            if let Ok(body) = resp.json::<serde_json::Value>().await {
+                if let (Some(lat), Some(lon)) = (body["lat"].as_f64(), body["lon"].as_f64()) {
+                    return Ok(IpLocation {
+                        lat,
+                        lon,
+                        source: "ip".to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    Err("Unable to determine IP-based location".to_string())
+}
+
 #[tauri::command]
 fn set_auth_token(token: String) -> Result<(), String> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT).map_err(|err| err.to_string())?;
@@ -799,6 +846,7 @@ pub fn run() {
             clear_auth_token,
             get_and_reset_input_counts,
             get_last_input_idle_ms,
+            get_ip_location,
             get_active_window_info,
             capture_screenshot,
             capture_live_frame,

@@ -23,6 +23,7 @@ serde_json = "1"
 keyring = "2"
 device_query = "2"
 scrap = "0.5"
+reqwest = { version = "0.12", features = ["json"] }
 image = "0.24"
 chrono = "0.4"
 
