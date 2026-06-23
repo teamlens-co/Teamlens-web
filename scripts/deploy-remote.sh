@@ -31,21 +31,22 @@ docker run -d --name backend-go --restart unless-stopped \
 
 echo "=== Rebuilding WebSocket ==="
 cd ../backend-ws
-docker build -t teamlens-ws:latest .
+docker build -t teamlens-web-server-v2-backend-ws:latest .
 docker rm -f teamlens-ws-test 2>/dev/null || true
 docker run -d --name teamlens-ws-test --restart unless-stopped \
   --network teamlens-web-server_default \
   -p 4001:4001 \
   -e NODE_ENV="production" \
   -e PORT="4001" \
-  -e DATABASE_URL="postgresql://teamlens:root@teamlens-web-server-postgres-1:5432/teamlens?schema=public" \
+  -e DATABASE_URL="postgresql://teamlens:root@teamlens-postgres-v2:5432/teamlens?schema=public" \
   -e JWT_SECRET="${JWT_SECRET:-teamlens_jwt_secret_key_2025}" \
   -e JWT_ACCESS_TTL="12h" \
   -e JWT_AGENT_TTL="30d" \
   -e INVITE_TTL_HOURS="72" \
   -e WEB_APP_URL="https://test.teamlens.co" \
-  -e WEBRTC_ICE_SERVERS='[{"urls":["stun:stun.l.google.com:19302"]},{"urls":["turn:91.108.105.211:3478?transport=udp","turn:91.108.105.211:3478?transport=tcp"],"username":"teamlens","credential":"cL6dbZdarVNTPT3uSdmoSkWP","credentialType":"password"}]' \
-  teamlens-ws:latest
+  -e CORS_ORIGINS="https://test.teamlens.co" \
+  -e WEBRTC_ICE_SERVERS='[{"urls":["stun:stun.l.google.com:19302"]},{"urls":["turn:91.108.105.211:3478?transport=udp","turn:91.108.105.211:3478?transport=tcp","turns:turn.teamlens.co:443?transport=tcp"],"username":"teamlens","credential":"cL6dbZdarVNTPT3uSdmoSkWP","credentialType":"password"}]' \
+  teamlens-web-server-v2-backend-ws:latest
 
 echo "=== Rebuilding Frontend ==="
 cd ../frontend
