@@ -26,13 +26,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - os: windows-latest
-            target: windows
-    runs-on: ${{ matrix.os }}
+  # ─── Windows Build (unchanged) ─────────────────────────────────────────────
+  build-windows:
+    name: Windows Build
+    runs-on: windows-latest
     timeout-minutes: 60
 
     defaults:
@@ -95,8 +92,96 @@ jobs:
           path: agent/src-tauri/target/release/bundle/
           retention-days: 7
 
+  # ─── Linux Build (new, separate job) ────────────────────────────────────────
+  build-linux:
+    name: Linux Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    defaults:
+      run:
+        working-directory: agent
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies (Tauri + X11 + screenshot)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libx11-dev \
+            libxext-dev \
+            libxfixes-dev \
+            libxtst-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            xdotool
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: agent/package-lock.json
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: agent/src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set dynamic version
+        shell: bash
+        run: |
+          VER="0.1.${{ github.run_number }}"
+          echo "Setting version to: $VER"
+          node -e "
+            const fs = require('fs');
+            const ver = '${{ github.run_number }}';
+            const bv = '0.1.' + ver;
+            ['package.json', 'src-tauri/tauri.conf.json'].forEach(p => {
+              const cfg = JSON.parse(fs.readFileSync(p, 'utf8'));
+              cfg.version = bv;
+              fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + '\n');
+              console.log('Updated ' + p + ' -> ' + bv);
+            });
+            const cargoPath = 'src-tauri/Cargo.toml';
+            const cargo = fs.readFileSync(cargoPath, 'utf8')
+              .replace(/^version\s*=\s*\"[^\"]+\"/m, 'version = \"' + bv + '\"');
+            fs.writeFileSync(cargoPath, cargo);
+            console.log('Updated ' + cargoPath + ' -> ' + bv);
+          "
+
+      - name: Build Tauri app (release)
+        shell: bash
+        run: |
+          npm run tauri:release
+          python3 scripts/generate-updater-json.py ${{ github.run_number }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: agent/src-tauri/target/release/bundle/
+          retention-days: 7
+
+  # ─── Publish Release (waits for both Windows + Linux) ──────────────────────
   publish-release:
-    needs: build
+    needs: [build-windows, build-linux]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
