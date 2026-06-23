@@ -225,6 +225,46 @@ func (s *DashboardService) buildAttendanceEmployee(ctx context.Context, userID, 
 		return AttendanceEmployee{}, nil, fmt.Errorf("iterate attendance sessions: %w", err)
 	}
 
+	// Preload activity logs for all sessions so we can compute real active time.
+	logsBySession := make(map[string][]ActivitySample)
+	if len(sessions) > 0 {
+		sessionIDs := make([]string, len(sessions))
+		for i, s := range sessions {
+			sessionIDs[i] = s.id
+		}
+		logRows, err := s.pool.Query(ctx,
+			`SELECT session_id, COALESCE(captured_at, created_at) AS ts, mouse_moves, key_presses
+			 FROM activity_logs
+			 WHERE session_id = ANY($1)
+			   AND COALESCE(captured_at, created_at) >= $2
+			   AND COALESCE(captured_at, created_at) <= $3
+			 ORDER BY session_id, ts ASC`,
+			sessionIDs, start, end,
+		)
+		if err != nil {
+			return AttendanceEmployee{}, nil, fmt.Errorf("query attendance activity logs: %w", err)
+		}
+		for logRows.Next() {
+			var sessionID string
+			var ts time.Time
+			var mouseMoves int32
+			var keyPresses int32
+			if err := logRows.Scan(&sessionID, &ts, &mouseMoves, &keyPresses); err != nil {
+				logRows.Close()
+				return AttendanceEmployee{}, nil, fmt.Errorf("scan attendance activity log: %w", err)
+			}
+			logsBySession[sessionID] = append(logsBySession[sessionID], ActivitySample{
+				Timestamp:  ts.UnixMilli(),
+				MouseMoves: mouseMoves,
+				KeyPresses: keyPresses,
+			})
+		}
+		logRows.Close()
+		if err := logRows.Err(); err != nil {
+			return AttendanceEmployee{}, nil, fmt.Errorf("iterate attendance activity logs: %w", err)
+		}
+	}
+
 	now := time.Now().UTC()
 	thresholdSeconds := int64(thresholdMinutes * 60)
 	employee := AttendanceEmployee{
@@ -347,6 +387,27 @@ func (s *DashboardService) buildAttendanceEmployee(ctx context.Context, userID, 
 		if session.teamName != "" {
 			teamName = &session.teamName
 		}
+		activeSeconds := int64(0)
+		if session.locationType != nil && *session.locationType == "manual" {
+			// Manual entries have no activity samples; treat the entire duration as active.
+			activeSeconds = int64(workEnd.Sub(workStart).Seconds())
+		} else {
+			calc := CalculateActivitySegments(ActivityCalculationInput{
+				SessionStart:         workStart.UnixMilli(),
+				SessionEnd:           workEnd.UnixMilli(),
+				Samples:              logsBySession[session.id],
+				IdleThresholdSeconds: defaultIdleThresholdSeconds,
+				SampleWindowSeconds:  defaultSampleWindowSeconds,
+			})
+			activeSeconds = calc.ActiveSeconds
+		}
+		if activeSeconds < 0 {
+			activeSeconds = 0
+		}
+		if activeSeconds > int64(workEnd.Sub(workStart).Seconds()) {
+			activeSeconds = int64(workEnd.Sub(workStart).Seconds())
+		}
+
 		timesheets = append(timesheets, TimesheetEntry{
 			ID:                 session.id,
 			UserID:             userID,
@@ -358,7 +419,7 @@ func (s *DashboardService) buildAttendanceEmployee(ctx context.Context, userID, 
 			ClockInAt:          clockIn,
 			ClockOutAt:         clockOut,
 			WorkSeconds:        int64(workEnd.Sub(workStart).Seconds()),
-			ActiveSeconds:      0,
+			ActiveSeconds:      activeSeconds,
 			IsCurrentlyWorking: session.clockOutAt == nil,
 		})
 	}
