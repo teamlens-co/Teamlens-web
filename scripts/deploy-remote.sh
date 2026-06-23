@@ -20,8 +20,8 @@ docker run -d --name backend-go --restart unless-stopped \
   --network teamlens-web-server_default \
   -p 8081:5000 \
   -v teamlens_uploads:/app/uploads \
-  -e DATABASE_URL="postgresql://teamlens:root@teamlens-web-server-postgres-1:5432/teamlens?sslmode=disable" \
-  -e JWT_SECRET="${JWT_SECRET:-teamlens_jwt_secret_key_2025}" \
+  -e DATABASE_URL="postgresql://teamlens:root@teamlens-postgres-v2:5432/teamlens?sslmode=disable" \
+  -e JWT_SECRET="teamlens_jwt_secret_key_2025" \
   -e JWT_ACCESS_TTL="30d" \
   -e JWT_AGENT_TTL="30d" \
   -e UPLOAD_DIR="/app/uploads" \
@@ -39,7 +39,7 @@ docker run -d --name teamlens-ws-test --restart unless-stopped \
   -e NODE_ENV="production" \
   -e PORT="4001" \
   -e DATABASE_URL="postgresql://teamlens:root@teamlens-postgres-v2:5432/teamlens?schema=public" \
-  -e JWT_SECRET="${JWT_SECRET:-teamlens_jwt_secret_key_2025}" \
+  -e JWT_SECRET="teamlens_jwt_secret_key_2025" \
   -e JWT_ACCESS_TTL="12h" \
   -e JWT_AGENT_TTL="30d" \
   -e INVITE_TTL_HOURS="72" \
