@@ -428,7 +428,7 @@ func (s *DashboardService) buildAttendanceEmployee(ctx context.Context, userID, 
 }
 
 const implicitEndSeconds = 90
-const idleThresholdSeconds = 15
+const idleThresholdSeconds = 300
 
 // GetAnalytics computes dashboard analytics for a user in a date range
 func (s *DashboardService) GetAnalytics(ctx context.Context, userID string, start, end time.Time) (*models.DashboardAnalytics, error) {
