@@ -370,7 +370,7 @@ function App() {
   const [totalKeyPresses, setTotalKeyPresses] = useState(0);
   const [lastSentMouseMoves, setLastSentMouseMoves] = useState(0);
   const [lastSentKeyPresses, setLastSentKeyPresses] = useState(0);
-  const [lastInputSource, setLastInputSource] = useState<"global" | "fallback">("global");
+  const [lastInputSource, setLastInputSource] = useState<"global" | "fallback" | "synthetic">("global");
   const [debugLocation, setDebugLocation] = useState<{ lat?: number; lng?: number; source?: string } | null>(null);
   const [activeWindow, setActiveWindow] = useState<ActiveWindowInfo | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -870,7 +870,7 @@ function App() {
 
     let mouseMoves = 0;
     let keyPresses = 0;
-    let inputSource: "global" | "fallback" = "global";
+    let inputSource: "global" | "fallback" | "synthetic" = "global";
 
     try {
       const globalCounts = await invoke<GlobalInputCounts>("get_and_reset_input_counts");
@@ -894,7 +894,26 @@ function App() {
       }
     }
 
-    // ── Watchdog: If both native and JS counters return 0 repeatedly,
+    // Last-resort fallback: use Windows GetLastInputInfo to detect system-wide activity.
+    // This catches cases where the native global hook silently returns zero even though
+    // the user is actively using the machine in another window.
+    if (mouseMoves === 0 && keyPresses === 0) {
+      try {
+        const idleMs = await invoke<number>("get_last_input_idle_ms");
+        // If the user moved the mouse or pressed a key in the last 60 seconds,
+        // report a synthetic interaction so the backend counts this sample as active.
+        if (typeof idleMs === "number" && idleMs < 60_000) {
+          mouseMoves = 1;
+          keyPresses = 0;
+          inputSource = "synthetic";
+          console.log("[InputTracker] Native counters zero but system idle", idleMs, "ms — using synthetic active sample");
+        }
+      } catch (err) {
+        console.warn("Unable to read last input idle time", err);
+      }
+    }
+
+    // ── Watchdog: If all counters return 0 repeatedly,
     // the native tracker thread may have panicked. Restart it.
     if (mouseMoves === 0 && keyPresses === 0) {
       const now = Date.now();

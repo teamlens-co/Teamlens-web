@@ -26,8 +26,11 @@ use windows_sys::Win32::System::Threading::{
 };
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
+    GetForegroundWindow, GetLastInputInfo, GetWindowTextLengthW, GetWindowTextW,
+    GetWindowThreadProcessId, LASTINPUTINFO,
 };
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::System::SystemInformation::GetTickCount;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -277,39 +280,50 @@ fn start_global_input_tracker() {
                 continue;
             }
 
-            let mouse = device_state.get_mouse().coords;
-            let keys_now_vec = device_state.get_keys();
-            let keys_now: HashSet<Keycode> = keys_now_vec.into_iter().collect();
+            // Catch panics so a single broken device_query call doesn't kill the thread forever.
+            let poll_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let mouse = device_state.get_mouse().coords;
+                let keys_now_vec = device_state.get_keys();
+                let keys_now: HashSet<Keycode> = keys_now_vec.into_iter().collect();
+                (mouse, keys_now)
+            }));
 
-            if let Ok(mut locked) = counter.lock() {
-                let mut mouse_moved = mouse != last_mouse;
+            match poll_result {
+                Ok((mouse, keys_now)) => {
+                    if let Ok(mut locked) = counter.lock() {
+                        let mut mouse_moved = mouse != last_mouse;
 
-                // If device_query says no-move but X11 says moved, trust X11.
-                #[cfg(target_os = "linux")]
-                if !mouse_moved {
-                    let current = x11_display.and_then(|dpy| get_mouse_pos_x11_with_display(dpy))
-                        .or_else(get_mouse_pos_shell_xdotool);
-                    if let Some(xy) = current {
-                        if last_x11_pos.map_or(true, |last| xy != last) {
-                            mouse_moved = true;
+                        // If device_query says no-move but X11 says moved, trust X11.
+                        #[cfg(target_os = "linux")]
+                        if !mouse_moved {
+                            let current = x11_display.and_then(|dpy| get_mouse_pos_x11_with_display(dpy))
+                                .or_else(get_mouse_pos_shell_xdotool);
+                            if let Some(xy) = current {
+                                if last_x11_pos.map_or(true, |last| xy != last) {
+                                    mouse_moved = true;
+                                }
+                                last_x11_pos = Some(xy);
+                            }
                         }
-                        last_x11_pos = Some(xy);
-                    }
-                }
 
-                if mouse_moved {
-                    locked.mouse_moves += 1;
-                }
+                        if mouse_moved {
+                            locked.mouse_moves += 1;
+                        }
 
-                for key in &keys_now {
-                    if !last_keys.contains(key) {
-                        locked.key_presses += 1;
+                        for key in &keys_now {
+                            if !last_keys.contains(key) {
+                                locked.key_presses += 1;
+                            }
+                        }
                     }
+
+                    last_mouse = mouse;
+                    last_keys = keys_now;
+                }
+                Err(_) => {
+                    eprintln!("[InputTracker] Panic while polling input devices; retrying next cycle");
                 }
             }
-
-            last_mouse = mouse;
-            last_keys = keys_now;
 
             thread::sleep(Duration::from_millis(100));
         }
@@ -365,6 +379,30 @@ fn get_and_reset_input_counts() -> Result<InputCounts, String> {
     locked.key_presses = 0;
 
     Ok(out)
+}
+
+#[tauri::command]
+fn get_last_input_idle_ms() -> Result<u64, String> {
+    #[cfg(target_os = "windows")]
+    {
+        unsafe {
+            let mut info: LASTINPUTINFO = std::mem::zeroed();
+            info.cbSize = std::mem::size_of::<LASTINPUTINFO>() as u32;
+            if GetLastInputInfo(&mut info) == 0 {
+                return Err(format!(
+                    "GetLastInputInfo failed: {}",
+                    std::io::Error::last_os_error()
+                ));
+            }
+            let now = GetTickCount();
+            let idle_ms = (now as u64).saturating_sub(info.dwTime as u64);
+            Ok(idle_ms)
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("get_last_input_idle_ms is only available on Windows".to_string())
+    }
 }
 
 #[tauri::command]
@@ -749,6 +787,7 @@ pub fn run() {
             get_auth_token,
             clear_auth_token,
             get_and_reset_input_counts,
+            get_last_input_idle_ms,
             get_active_window_info,
             capture_screenshot,
             capture_live_frame,
