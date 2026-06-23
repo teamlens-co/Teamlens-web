@@ -376,7 +376,7 @@ function ActivityHoverCard({ hover }: { hover: HoverState }) {
 export default function ActivitiesPage() {
   const { authHeaders, apiBase, dateRange } = useAuth();
   const [employees, setEmployees] = useState<ActivityEmployee[]>([]);
-  const [rangePreset, setRangePreset] = useState<RangePreset>("24h");
+  const [rangePreset, setRangePreset] = useState<RangePreset>("10h");
   const [zoomLevel, setZoomLevel] = useState(1);
   const [projectorMode, setProjectorMode] = useState(() => getInitialProjectorMode());
   const [autoRefresh, setAutoRefresh] = useState(true);
