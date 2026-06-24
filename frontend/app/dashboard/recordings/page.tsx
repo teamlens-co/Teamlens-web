@@ -403,6 +403,9 @@ function FullDayPlayer({
             src={chunkUrl}
             controls
             autoPlay
+            muted
+            playsInline
+            preload="auto"
             className="h-full w-full object-contain"
             onLoadedMetadata={() => {
               setLoadState("ready");
@@ -1592,10 +1595,10 @@ function RecordingSessionModal({
                 <p className="rounded-xl border border-[#E7E0DA] bg-[#FAF8F6] p-3 text-[12px] font-medium text-[#8C837B]">No app data available.</p>
               ) : (
                 topApps.map((app, i) => (
-                  <div key={app.name} className="flex items-center justify-between gap-3 rounded-xl border border-[#E7E0DA] bg-white p-3 shadow-sm">
-                    <div className="flex items-center gap-3 min-w-0">
+                  <div key={app.name} className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-[#E7E0DA] bg-white p-3 shadow-sm">
+                    <div className="flex min-w-0 items-center gap-3">
                       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#FDEBE5] text-[10px] font-bold text-brand">{i + 1}</span>
-                      <span className="truncate text-[13px] font-semibold text-[#302C28]">{app.name}</span>
+                      <span className="min-w-0 truncate text-[13px] font-semibold text-[#302C28]" title={app.name}>{app.name}</span>
                     </div>
                     <span className="shrink-0 text-[11px] font-medium text-[#8C837B]">{formatDuration(app.seconds * 1000)}</span>
                   </div>
