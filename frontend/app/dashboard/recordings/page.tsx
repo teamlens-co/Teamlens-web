@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
-  Calendar, Clock, Download, HardDrive, Pause, Play, Search, SkipBack, SkipForward,
+  Calendar, Clock, Download, HardDrive, Pause, Play, Search,
   Trash2, User, Video, PlayIcon, ChevronDown, X,
 } from "lucide-react";
 import { useAuth } from "../../../contexts/AuthContext";
@@ -56,6 +56,7 @@ type FullDayPlaylist = {
   chunks: (RecordingChunk & { sessionId: string; employeeName?: string; startedAt: string })[];
   employeeName: string;
   dateLabel: string;
+  startFromMs?: number;
 };
 
 type Employee = {
@@ -145,12 +146,18 @@ function FullDayPlayer({
 
   // Reset on playlist change
   useEffect(() => {
-    setChunkIndex(0);
+    let idx = 0;
+    const startFromMs = playlist.startFromMs ?? 0;
+    for (let i = 0; i < chunks.length; i++) {
+      idx = i;
+      if (cumulMs[i] + (chunks[i].durationMs || 0) > startFromMs) break;
+    }
+    setChunkIndex(idx);
     setChunkUrl("");
     setLoadState("idle");
     setPlayerMessage("");
-    setGlobalMs(0);
-  }, [playlist]);
+    setGlobalMs(startFromMs);
+  }, [playlist, chunks, cumulMs]);
 
   // Load current chunk blob
   useEffect(() => {
@@ -395,7 +402,6 @@ function FullDayPlayer({
           <video
             ref={videoRef}
             src={chunkUrl}
-            controls
             autoPlay
             muted
             playsInline
@@ -429,19 +435,8 @@ function FullDayPlayer({
 
       {/* Controls */}
       <div className="space-y-3 border-t border-[#EFE8E2] px-5 py-3">
-        {/* Continuous scrubber */}
-        <div className="flex items-center gap-3">
-          <input
-            type="range"
-            min={0}
-            max={100}
-            step={0.05}
-            value={progress}
-            onChange={(e) => seekToPercent(parseFloat(e.target.value))}
-            className="h-2 flex-1 cursor-pointer accent-brand"
-          />
-          <span className="min-w-[110px] text-right text-[11px] font-semibold text-[#302C28]">{timeRangeText}</span>
-        </div>
+        {/* Continuous scrubber with hover preview */}
+        <Scrubber progress={progress} totalMs={totalMs} onSeek={seekToPercent} timeRangeText={timeRangeText} />
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -485,6 +480,95 @@ function FullDayPlayer({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function Scrubber({
+  progress,
+  totalMs,
+  onSeek,
+  timeRangeText,
+}: {
+  progress: number;
+  totalMs: number;
+  onSeek: (percent: number) => void;
+  timeRangeText: string;
+}) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [hover, setHover] = useState<{ percent: number; x: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  const percentFromEvent = useCallback((e: React.MouseEvent | MouseEvent) => {
+    if (!trackRef.current) return 0;
+    const rect = trackRef.current.getBoundingClientRect();
+    return Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+  }, []);
+
+  const handleMove = useCallback((e: React.MouseEvent) => {
+    setHover({ percent: percentFromEvent(e), x: e.clientX });
+    if (dragging) onSeek(percentFromEvent(e));
+  }, [dragging, onSeek, percentFromEvent]);
+
+  const startDrag = useCallback((e: React.MouseEvent) => {
+    setDragging(true);
+    onSeek(percentFromEvent(e));
+  }, [onSeek, percentFromEvent]);
+
+  const stopDrag = useCallback(() => setDragging(false), []);
+
+  useEffect(() => {
+    if (!dragging) return;
+    const move = (e: MouseEvent) => onSeek(percentFromEvent(e));
+    const up = () => setDragging(false);
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    return () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+  }, [dragging, onSeek, percentFromEvent]);
+
+  const hoverTime = hover && totalMs ? formatDuration((hover.percent / 100) * totalMs) : "";
+
+  return (
+    <div className="flex items-center gap-3">
+      <div
+        ref={trackRef}
+        className="group relative h-3 flex-1 cursor-pointer rounded-full bg-[#E7E0DA]"
+        onMouseMove={handleMove}
+        onMouseLeave={() => { setHover(null); if (dragging) setDragging(false); }}
+        onMouseDown={startDrag}
+        onMouseUp={stopDrag}
+      >
+        {/* Progress fill */}
+        <div
+          className="pointer-events-none absolute left-0 top-0 h-full rounded-full bg-brand"
+          style={{ width: `${progress}%` }}
+        />
+        {/* Hover line */}
+        {hover && !dragging ? (
+          <div
+            className="pointer-events-none absolute top-0 h-full w-0.5 bg-[#302C28]"
+            style={{ left: `${hover.percent}%` }}
+          />
+        ) : null}
+        {/* Hover time tooltip */}
+        {hover ? (
+          <div
+            className="pointer-events-none absolute -top-8 z-10 -translate-x-1/2 rounded-md bg-[#302C28] px-2 py-1 text-[11px] font-semibold text-white shadow-sm"
+            style={{ left: `${hover.percent}%` }}
+          >
+            {hoverTime}
+          </div>
+        ) : null}
+        {/* Thumb */}
+        <div
+          className="pointer-events-none absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full border-2 border-white bg-brand shadow-md"
+          style={{ left: `${progress}%`, transform: "translate(-50%, -50%)" }}
+        />
+      </div>
+      <span className="min-w-[110px] text-right text-[11px] font-semibold text-[#302C28]">{timeRangeText}</span>
     </div>
   );
 }
@@ -716,7 +800,7 @@ export default function RecordingsPage() {
   }, [authHeaders, apiBase, filteredSessions, selectedEmployeeId, getEmployeeName]);
 
   // Play single session (keep existing behavior but convert to FullDayPlaylist for same player)
-  const playSession = async (session: RecordingSession) => {
+  const playSession = async (session: RecordingSession, startPercent?: number) => {
     if (!authHeaders) return;
     try {
       const res = await fetch(`${apiBase}/api/web/recording-sessions/${session.id}/playlist`, {
@@ -732,10 +816,12 @@ export default function RecordingsPage() {
           startedAt: c.uploadedAt || session.startedAt,
         }));
         chunks.sort((a: any, b: any) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
+        const startFromMs = startPercent && session.durationMs ? Math.max(0, Math.min(session.durationMs, startPercent * session.durationMs)) : undefined;
         setPlaylist({
           chunks,
           employeeName: session.employeeName || getEmployeeName(session.employeeId),
           dateLabel: formatDate(session.startedAt),
+          startFromMs,
         });
         setTab("auto");
       }
@@ -1332,10 +1418,11 @@ function SessionBlock({
   widthHours: number;
   isFirst: boolean;
   isLast: boolean;
-  onPlay: (session: RecordingSession) => void;
+  onPlay: (session: RecordingSession, startPercent?: number) => void;
 }) {
   const [hovered, setHovered] = useState(false);
   const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null);
+  const [hoverPercent, setHoverPercent] = useState(0);
   const [preview, setPreview] = useState<{ url: string } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const objectUrlRef = useRef<string | null>(null);
@@ -1413,15 +1500,22 @@ function SessionBlock({
         style={{ left: `${left}%`, width: `${Math.max(0.4, width)}%` }}
         onMouseEnter={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
-          setPointer({ x: rect.left + rect.width / 2, y: rect.top });
+          const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+          setPointer({ x: e.clientX, y: rect.top });
+          setHoverPercent(pct);
           setHovered(true);
         }}
-        onMouseMove={(e) => setPointer({ x: e.clientX, y: e.clientY })}
+        onMouseMove={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+          setPointer({ x: e.clientX, y: rect.top });
+          setHoverPercent(pct);
+        }}
         onMouseLeave={() => {
           setHovered(false);
           setPointer(null);
         }}
-        onClick={() => onPlay(session)}
+        onClick={() => onPlay(session, hoverPercent)}
       >
         <div className={`h-full w-full ${isFirst ? "rounded-l-md" : ""} ${isLast ? "rounded-r-md" : ""} ${meta.className} ${!isFirst && !isLast ? "" : ""}`} />
       </div>
