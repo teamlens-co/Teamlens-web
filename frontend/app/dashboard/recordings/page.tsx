@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Calendar, Clock, Download, HardDrive, Pause, Play, Search, SkipBack, SkipForward,
-  Trash2, User, Video, PlayIcon, ChevronDown,
+  Trash2, User, Video, PlayIcon, ChevronDown, X,
 } from "lucide-react";
 import { useAuth } from "../../../contexts/AuthContext";
 import DashboardDateFilter from "../../../components/DashboardDateFilter";
@@ -733,11 +733,12 @@ export default function RecordingsPage() {
   }
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <h1 className="text-[18px] font-semibold leading-tight text-[#302C28]">Screen Recordings</h1>
+    <>
+      <div className="space-y-5">
+        {/* Header */}
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <h1 className="text-[18px] font-semibold leading-tight text-[#302C28]">Screen Recordings</h1>
           <DashboardDateFilter />
         </div>
         <div className="flex items-center gap-3">
@@ -819,11 +820,6 @@ export default function RecordingsPage() {
             <Stat icon={Clock} label="Total Duration" value={formatDuration(totalAutoDuration)} />
             <Stat icon={HardDrive} label="Total Size" value={formatFileSize(totalAutoSize)} />
           </div>
-
-          {/* Full Day Player */}
-          {playlist ? (
-            <FullDayPlayer playlist={playlist} apiBase={apiBase} authHeaders={authHeaders} employeeId={selectedEmployeeId} onClose={() => setPlaylist(null)} />
-          ) : null}
 
           {/* Employee Cards for selected employee */}
           {selectedEmployeeId && !playlist && employeeCards.length > 0 && (
@@ -933,6 +929,13 @@ export default function RecordingsPage() {
           ) : (
             <RecordingTimeline
               sessions={filteredSessions}
+              employees={
+                teamUsers.length > 0
+                  ? teamUsers
+                  : user
+                    ? [{ id: user.id, fullName: user.fullName || user.email, email: user.email }]
+                    : []
+              }
               apiBase={apiBase}
               authHeaders={authHeaders}
               getEmployeeName={getEmployeeName}
@@ -952,6 +955,17 @@ export default function RecordingsPage() {
         />
       )}
     </div>
+
+    {playlist ? (
+      <RecordingSessionModal
+        playlist={playlist}
+        sessions={filteredSessions}
+        apiBase={apiBase}
+        authHeaders={authHeaders}
+        onClose={() => setPlaylist(null)}
+      />
+    ) : null}
+    </>
   );
 }
 
@@ -1117,92 +1131,183 @@ function ManualRecordings({
 
 // ── Timeline Recording Feed ────────────────────────────────────────────────
 
+// ── Timeline Recording Feed ────────────────────────────────────────────────
+
+function sessionStatusMeta(session: RecordingSession) {
+  const health = getSessionHealth(session);
+  if (health.label === "Healthy") return { className: "bg-[#16A34A]", label: "Healthy", score: 100 };
+  if (health.label === "Low chunks") return { className: "bg-[#F59E0B]", label: "Low chunks", score: 60 };
+  if (health.label === "No data") return { className: "bg-[#CBD5E1]", label: "No data", score: 0 };
+  if (session.status === "recording") return { className: "bg-[#3B82F6]", label: "Recording", score: 90 };
+  if (session.status === "uploading") return { className: "bg-[#60A5FA]", label: "Uploading", score: 80 };
+  return { className: "bg-[#A8A29E]", label: health.label, score: 50 };
+}
+
 function RecordingTimeline({
   sessions,
+  employees,
   apiBase,
   authHeaders,
   getEmployeeName,
   onPlay,
 }: {
   sessions: RecordingSession[];
+  employees: Employee[];
   apiBase: string;
   authHeaders: Record<string, string> | null;
   getEmployeeName: (id: string) => string;
   onPlay: (session: RecordingSession) => void;
 }) {
-  const grouped = useMemo(() => {
-    const sorted = [...sessions].sort(
-      (a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime(),
-    );
-    return sorted.reduce<Record<string, RecordingSession[]>>((acc, session) => {
-      const dateKey = formatDate(session.startedAt);
-      acc[dateKey] = acc[dateKey] ? [...acc[dateKey], session] : [session];
-      return acc;
-    }, {});
-  }, [sessions]);
+  const rows = useMemo(() => {
+    const map = new Map<string, { employee: Employee; sessions: RecordingSession[] }>();
+    employees.forEach((e) => map.set(e.id, { employee: e, sessions: [] }));
+    sessions.forEach((s) => {
+      let row = map.get(s.employeeId);
+      if (!row) {
+        const emp: Employee = {
+          id: s.employeeId,
+          fullName: s.employeeName || s.employeeEmail || getEmployeeName(s.employeeId),
+          email: s.employeeEmail || "",
+        };
+        row = { employee: emp, sessions: [] };
+        map.set(s.employeeId, row);
+      }
+      row.sessions.push(s);
+    });
+    return Array.from(map.values())
+      .filter((r) => r.sessions.length > 0)
+      .sort((a, b) => (a.employee.fullName || "").localeCompare(b.employee.fullName || ""));
+  }, [sessions, employees, getEmployeeName]);
 
   return (
-    <div className="relative pl-9 sm:pl-10">
-      <div className="absolute left-3 sm:left-4 top-2 bottom-2 w-px bg-[#E1D7CE]" />
-      <div className="space-y-8">
-        {Object.entries(grouped).map(([date, items]) => (
-          <div key={date}>
-            <div className="relative mb-5 flex items-center">
-              <span className="absolute left-3 sm:left-4 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#B4AAA2] bg-white ring-4 ring-[#FAF8F5] z-10" />
-              <span className="ml-8 sm:ml-10 rounded-full bg-[#F1ECE7] px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-[#7E6F65]">
-                {date}
-              </span>
-            </div>
-            <div className="space-y-4">
-              {items.map((session) => (
-                <TimelineNode
-                  key={session.id}
-                  session={session}
-                  apiBase={apiBase}
-                  authHeaders={authHeaders}
-                  getEmployeeName={getEmployeeName}
-                  onPlay={onPlay}
-                />
-              ))}
-            </div>
-          </div>
-        ))}
+    <div className="space-y-6">
+      {rows.map((row) => (
+        <RecordingTimelineRow
+          key={row.employee.id}
+          employee={row.employee}
+          sessions={row.sessions}
+          apiBase={apiBase}
+          authHeaders={authHeaders}
+          onPlay={onPlay}
+        />
+      ))}
+    </div>
+  );
+}
+
+function RecordingTimelineRow({
+  employee,
+  sessions,
+  apiBase,
+  authHeaders,
+  onPlay,
+}: {
+  employee: Employee;
+  sessions: RecordingSession[];
+  apiBase: string;
+  authHeaders: Record<string, string> | null;
+  onPlay: (session: RecordingSession) => void;
+}) {
+  const initials = employee.fullName
+    .split(" ")
+    .filter(Boolean)
+    .map((n) => n[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-[#E7E0DA] bg-white shadow-[0_1px_2px_rgba(45,42,38,0.03)]">
+      <div className="flex items-center gap-3 border-b border-[#EFE8E2] bg-[#FAF8F6] px-5 py-3">
+        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#FDEBE5] text-sm font-bold text-brand">
+          {initials}
+        </span>
+        <div>
+          <p className="text-[14px] font-semibold text-[#302C28]">{employee.fullName}</p>
+          <p className="text-[11px] font-medium text-[#8C837B]">
+            {sessions.length} session{sessions.length === 1 ? "" : "s"} ·{" "}
+            {formatDuration(sessions.reduce((sum, s) => sum + s.durationMs, 0))}
+          </p>
+        </div>
+      </div>
+      <div className="px-5 pb-7 pt-5">
+        <div className="relative h-12">
+          <div className="absolute inset-0 rounded-xl bg-[#F6F2EF]" />
+          {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24].map((h) => (
+            <div
+              key={h}
+              className="absolute top-0 h-full border-l border-[#E7DED6] last:border-r"
+              style={{ left: `${(h / 24) * 100}%` }}
+            />
+          ))}
+          {sessions.map((session) => {
+            const start = new Date(session.startedAt);
+            const startHour = start.getHours() + start.getMinutes() / 60;
+            const widthHours = (session.durationMs || 0) / 3600000;
+            const meta = sessionStatusMeta(session);
+            return (
+              <SessionBlock
+                key={session.id}
+                session={session}
+                apiBase={apiBase}
+                authHeaders={authHeaders}
+                meta={meta}
+                startHour={startHour}
+                widthHours={Math.max(0.25, widthHours)}
+                onPlay={onPlay}
+              />
+            );
+          })}
+          {/* Hour labels */}
+          {[0, 3, 6, 9, 12, 15, 18, 21].map((h) => (
+            <span
+              key={`label-${h}`}
+              className="absolute -bottom-6 text-[9px] font-medium text-[#BDB6AE]"
+              style={{ left: `${(h / 24) * 100}%`, transform: "translateX(-50%)" }}
+            >
+              {h === 0 ? "12A" : h === 12 ? "12P" : h > 12 ? `${h - 12}P` : `${h}A`}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
-function TimelineNode({
+function SessionBlock({
   session,
   apiBase,
   authHeaders,
-  getEmployeeName,
+  meta,
+  startHour,
+  widthHours,
   onPlay,
 }: {
   session: RecordingSession;
   apiBase: string;
   authHeaders: Record<string, string> | null;
-  getEmployeeName: (id: string) => string;
+  meta: { className: string; label: string; score: number };
+  startHour: number;
+  widthHours: number;
   onPlay: (session: RecordingSession) => void;
 }) {
   const [hovered, setHovered] = useState(false);
   const [preview, setPreview] = useState<{ url: string } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
-  const nodeRef = useRef<HTMLDivElement>(null);
   const objectUrlRef = useRef<string | null>(null);
-  const health = getSessionHealth(session);
+  const metaCss = meta.className.replace("bg-[", "text-[").replace("bg-[", "") + ""; // not used, kept for typing
 
   useEffect(() => {
     if (!hovered || preview || !authHeaders) return;
     let cancelled = false;
     setPreviewLoading(true);
 
-    const loadPreview = async () => {
+    const load = async () => {
       try {
-        const playlistRes = await fetch(
-          `${apiBase}/api/web/recording-sessions/${session.id}/playlist`,
-          { headers: authHeaders, credentials: "include" },
-        );
+        const playlistRes = await fetch(`${apiBase}/api/web/recording-sessions/${session.id}/playlist`, {
+          headers: authHeaders,
+          credentials: "include",
+        });
         const playlist = await playlistRes.json();
         if (!playlist.success || !playlist.data?.chunks?.length) return;
         const firstChunk: RecordingChunk = playlist.data.chunks[0];
@@ -1218,13 +1323,13 @@ function TimelineNode({
         objectUrlRef.current = url;
         setPreview({ url });
       } catch {
-        // preview is best-effort
+        // best-effort preview
       } finally {
         if (!cancelled) setPreviewLoading(false);
       }
     };
 
-    void loadPreview();
+    void load();
     return () => {
       cancelled = true;
       setPreviewLoading(false);
@@ -1240,74 +1345,24 @@ function TimelineNode({
     };
   }, []);
 
-  const employeeName = session.employeeName || session.employeeEmail || getEmployeeName(session.employeeId);
-  const started = new Date(session.startedAt);
+  const left = (startHour / 24) * 100;
+  const width = (widthHours / 24) * 100;
+  const employeeName = session.employeeName || session.employeeEmail || "";
 
   return (
     <div
-      ref={nodeRef}
-      className="relative"
+      className="absolute top-1.5 h-9 cursor-pointer rounded-lg shadow-sm transition-all hover:scale-[1.02] hover:shadow-md"
+      style={{ left: `${left}%`, width: `${Math.max(0.4, width)}%` }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onClick={() => onPlay(session)}
     >
-      {/* Timeline dot */}
-      <span className="absolute left-3 sm:left-4 top-5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border-2 border-brand bg-white transition-colors group-hover:bg-brand z-10" />
-
-      <button
-        type="button"
-        onClick={() => onPlay(session)}
-        className="group ml-8 sm:ml-10 flex w-full items-start gap-4 rounded-2xl border border-[#E7DED6] bg-white p-4 text-left shadow-[0_1px_2px_rgba(45,42,38,0.02)] transition-all hover:border-brand/40 hover:bg-[#FCFAF8] hover:shadow-md"
-      >
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#FDEBE5] transition-colors group-hover:bg-brand">
-          <PlayIcon className="h-5 w-5 text-brand transition-colors group-hover:text-white" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="truncate text-[14px] font-semibold text-[#302C28]">{employeeName}</span>
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${health.className}`}>
-              {health.label}
-            </span>
-          </div>
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] font-medium text-[#8C837B]">
-            <span className="inline-flex items-center gap-1.5">
-              <Clock className="h-3.5 w-3.5" />
-              {formatTime(session.startedAt)}
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <Video className="h-3.5 w-3.5" />
-              {formatDuration(session.durationMs)}
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <HardDrive className="h-3.5 w-3.5" />
-              {formatFileSize(session.totalSize)}
-            </span>
-            <span>{session.chunkCount || 0} clips</span>
-          </div>
-        </div>
-        <div className="hidden shrink-0 text-right sm:block">
-          <span className="block text-[12px] font-semibold text-[#302C28]">
-            {started.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-          </span>
-          <span className="text-[11px] font-medium text-[#B4AAA2]">
-            {session.width}×{session.height}
-          </span>
-        </div>
-      </button>
-
-      {/* Hover preview popover */}
+      <div className={`h-full w-full rounded-lg ${meta.className}`} />
       {hovered ? (
-        <div className="absolute left-0 top-full z-50 mt-3 w-full max-w-sm rounded-2xl border border-[#DDD2C9] bg-white p-3 shadow-2xl ring-1 ring-black/5 sm:left-full sm:top-0 sm:ml-4 sm:mt-0">
+        <div className="absolute left-1/2 top-full z-50 mt-3 w-64 -translate-x-1/2 rounded-2xl border border-[#E7E0DA] bg-white p-3 shadow-2xl ring-1 ring-black/5">
           <div className="aspect-video overflow-hidden rounded-xl bg-[#171717]">
             {preview?.url ? (
-              <video
-                src={preview.url}
-                muted
-                autoPlay
-                loop
-                playsInline
-                preload="auto"
-                className="h-full w-full object-cover"
-              />
+              <video src={preview.url} muted autoPlay loop playsInline preload="auto" className="h-full w-full object-cover" />
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-white/70">
                 {previewLoading ? (
@@ -1325,18 +1380,142 @@ function TimelineNode({
             )}
           </div>
           <div className="mt-3 px-1">
-            <p className="truncate text-[13px] font-semibold text-[#302C28]">{employeeName}</p>
+            <div className="flex items-center gap-2">
+              <span className={`h-2 w-2 rounded-full ${meta.className}`} />
+              <p className="truncate text-[13px] font-semibold text-[#302C28]">{employeeName}</p>
+            </div>
             <p className="mt-0.5 text-[11px] font-medium text-[#8C837B]">
               {formatDate(session.startedAt)} · {formatTime(session.startedAt)}
             </p>
-            <div className="mt-2 flex items-center gap-3 text-[11px] font-medium text-[#8C837B]">
+            <div className="mt-2 flex items-center justify-between text-[11px] font-medium text-[#8C837B]">
+              <span>{meta.label}</span>
               <span>{formatDuration(session.durationMs)}</span>
-              <span>{formatFileSize(session.totalSize)}</span>
-              <span>{session.chunkCount || 0} clips</span>
+            </div>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#E7E0DA]">
+              <div className={`h-full rounded-full ${meta.className}`} style={{ width: `${meta.score}%` }} />
             </div>
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+// ── Detail Modal ───────────────────────────────────────────────────────────
+
+function RecordingSessionModal({
+  playlist,
+  sessions,
+  apiBase,
+  authHeaders,
+  onClose,
+}: {
+  playlist: FullDayPlaylist;
+  sessions: RecordingSession[];
+  apiBase: string;
+  authHeaders: Record<string, string> | null;
+  onClose: () => void;
+}) {
+  const sessionIds = Array.from(new Set(playlist.chunks.map((c) => ("sessionId" in c ? (c as any).sessionId : undefined)).filter(Boolean)));
+  const involvedSessions = sessions.filter((s) => sessionIds.includes(s.id));
+  const mainSession = involvedSessions[0];
+  const employeeName = playlist.employeeName || mainSession?.employeeName || "Employee";
+  const initials = employeeName
+    .split(" ")
+    .filter(Boolean)
+    .map((n) => n[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+  const totalDurationMs = involvedSessions.reduce((sum, s) => sum + (s.durationMs || 0), 0);
+  const totalSize = involvedSessions.reduce((sum, s) => sum + (s.totalSize || 0), 0);
+  const markers = playlist.chunks.slice(0, 12).map((chunk, i) => ({
+    label: `Clip ${(chunk as any).chunkIndex ?? i + 1}`,
+    time: new Date((chunk as any).startedAt || chunk.uploadedAt),
+    duration: chunk.durationMs || 0,
+  }));
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[#0F0D0B]/60 p-3 backdrop-blur-sm">
+      <div className="relative flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl bg-white shadow-[0_32px_80px_rgba(0,0,0,0.28)]">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-[#E7E0DA] bg-[#FAF8F6] px-6 py-4">
+          <div className="flex items-center gap-4">
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#FDEBE5] text-sm font-bold text-brand">{initials}</span>
+            <div>
+              <h2 className="text-[16px] font-semibold text-[#302C28]">{employeeName}</h2>
+              <p className="text-[12px] font-medium text-[#70675F]">
+                {playlist.dateLabel} · {formatDuration(totalDurationMs)} · {involvedSessions.length} session
+                {involvedSessions.length === 1 ? "" : "s"}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#F2EEEA] text-[#70675F] transition hover:bg-[#E7E0DA] hover:text-[#302C28]"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="grid flex-1 gap-0 overflow-hidden lg:grid-cols-[1fr_340px]">
+          {/* Left: existing full-day player */}
+          <div className="flex flex-col bg-black">
+            <FullDayPlayer
+              playlist={playlist}
+              apiBase={apiBase}
+              authHeaders={authHeaders}
+              employeeId={mainSession?.employeeId || ""}
+              onClose={() => {}}
+            />
+          </div>
+
+          {/* Right: insights + markers */}
+          <div className="overflow-y-auto border-l border-[#E7E0DA] bg-white p-6">
+            <h3 className="text-[13px] font-semibold uppercase tracking-wider text-[#8C837B]">Session Insights</h3>
+            <div className="mt-4 grid gap-3">
+              <div className="rounded-2xl border border-[#E7E0DA] bg-[#FAF8F6] p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-[#8C837B]">Total Duration</p>
+                <p className="mt-1 text-[22px] font-semibold text-[#302C28]">{formatDuration(totalDurationMs)}</p>
+              </div>
+              <div className="rounded-2xl border border-[#E7E0DA] bg-[#FAF8F6] p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-[#8C837B]">Storage</p>
+                <p className="mt-1 text-[22px] font-semibold text-[#302C28]">{formatFileSize(totalSize)}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-2xl border border-[#E7E0DA] bg-[#FAF8F6] p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#8C837B]">Clips</p>
+                  <p className="mt-2 text-[22px] font-semibold text-[#302C28]">{playlist.chunks.length}</p>
+                </div>
+                <div className="rounded-2xl border border-[#E7E0DA] bg-[#FAF8F6] p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#8C837B]">Resolution</p>
+                  <p className="mt-2 truncate text-[16px] font-semibold text-[#302C28]">
+                    {mainSession ? `${mainSession.width}×${mainSession.height}` : "—"}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <h3 className="mb-3 mt-8 text-[13px] font-semibold uppercase tracking-wider text-[#8C837B]">Event Markers</h3>
+            <div className="space-y-3">
+              {markers.map((m, i) => (
+                <div key={i} className="flex gap-3 rounded-xl border border-[#E7E0DA] bg-white p-3 shadow-sm">
+                  <span className="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-brand" />
+                  <div className="min-w-0">
+                    <p className="text-[12px] font-semibold text-[#302C28]">{m.label}</p>
+                    <p className="text-[11px] font-medium text-[#9A9088]">
+                      {m.time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · {formatDuration(m.duration)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
