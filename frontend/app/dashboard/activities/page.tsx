@@ -267,7 +267,17 @@ function ActivityHoverCard({ hover }: { hover: HoverState }) {
   const { employee, segment, x, y } = hover;
   const cardRef = useRef<HTMLDivElement>(null);
   const cardWidth = 320;
-  const shouldOpenAbove = y > 380;
+  const viewportW = typeof window !== "undefined" ? window.innerWidth : 1200;
+  const viewportH = typeof window !== "undefined" ? window.innerHeight : 800;
+  const shouldOpenAbove = y > viewportH / 2;
+  const estimatedHeight = Math.min(420, viewportH - 24);
+  let top = shouldOpenAbove
+    ? Math.max(12, Math.min(y - 14, viewportH - 12))
+    : Math.max(12, y + 18);
+  // Prevent card extending below viewport when opened downward
+  if (!shouldOpenAbove && top + estimatedHeight > viewportH - 12) {
+    top = Math.max(12, viewportH - estimatedHeight - 12);
+  }
   const durationSeconds = Math.round((new Date(segment.end).getTime() - new Date(segment.start).getTime()) / 1000);
   const segmentEngagement = segment.mouseMoves + segment.keyPresses;
   const segmentEngagementPercent = segment.kind === "active" ? 100 : 0;
@@ -282,10 +292,11 @@ function ActivityHoverCard({ hover }: { hover: HoverState }) {
 
   return (
     <div
-      className="fixed z-[100] w-[320px] border border-[#E7E0DA] bg-white p-4 text-[#312D29] shadow-[0_12px_38px_rgba(39,34,30,0.18)]"
+      ref={cardRef}
+      className="fixed z-[100] max-h-[75vh] w-[320px] min-w-0 overflow-y-auto overscroll-contain border border-[#E1D7CE] bg-white p-4 text-[#312D29] shadow-[0_12px_38px_rgba(39,34,30,0.18)]"
       style={{
-        left: Math.max(12, Math.min(x - cardWidth / 2, window.innerWidth - cardWidth - 12)),
-        top: shouldOpenAbove ? y - 14 : y + 18,
+        left: Math.max(12, Math.min(x - cardWidth / 2, viewportW - cardWidth - 12)),
+        top,
         transform: shouldOpenAbove ? "translateY(-100%)" : "none",
       }}
     >
@@ -351,7 +362,7 @@ function ActivityHoverCard({ hover }: { hover: HoverState }) {
           ) : (
             employee.topApps.slice(0, 3).map((app) => (
               <div key={app.name} className="flex items-center justify-between gap-3 bg-[#F8F5F1] px-3 py-2">
-                <span className="truncate text-xs font-medium text-[#4A423C]">{app.name}</span>
+                <span className="min-w-0 truncate text-xs font-medium text-[#4A423C]">{app.name}</span>
                 <span className="text-xs font-medium text-[#9A9088]">{formatCompactDuration(app.seconds)}</span>
               </div>
             ))
