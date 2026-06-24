@@ -258,6 +258,9 @@ fn start_global_input_tracker() {
         .get_or_init(|| Arc::new(std::sync::atomic::AtomicBool::new(true)))
         .clone();
 
+    let poll_counter = Arc::clone(&counter);
+    let poll_running = Arc::clone(&running);
+
     thread::spawn(move || {
         let device_state = DeviceState::new();
         let mut last_mouse = device_state.get_mouse().coords;
@@ -279,7 +282,7 @@ fn start_global_input_tracker() {
         };
 
         loop {
-            if !running.load(std::sync::atomic::Ordering::SeqCst) {
+            if !poll_running.load(std::sync::atomic::Ordering::SeqCst) {
                 // Paused — sleep longer and don't poll input devices.
                 thread::sleep(Duration::from_millis(500));
                 // Reset baseline so we don't get phantom deltas on resume.
@@ -300,7 +303,7 @@ fn start_global_input_tracker() {
 
             match poll_result {
                 Ok((mouse, keys_now)) => {
-                    if let Ok(mut locked) = counter.lock() {
+                    if let Ok(mut locked) = poll_counter.lock() {
                         #[allow(unused_mut)]
                         let mut mouse_moved = mouse != last_mouse;
 
