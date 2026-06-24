@@ -905,8 +905,8 @@ function App() {
         if (typeof idleMs === "number" && idleMs < 60_000) {
           mouseMoves = 1;
           keyPresses = 0;
-          inputSource = "synthetic-mouse";
-          console.log("[InputTracker] Native counters zero but system idle", idleMs, "ms — using synthetic mouse active sample");
+          inputSource = "synthetic";
+          console.log("[InputTracker] Native counters zero but system idle", idleMs, "ms — using synthetic mouse active sample only");
         }
       } catch (err) {
         console.warn("Unable to read last input idle time", err);
