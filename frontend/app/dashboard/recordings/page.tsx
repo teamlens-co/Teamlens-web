@@ -1331,6 +1331,7 @@ function SessionBlock({
   onPlay: (session: RecordingSession) => void;
 }) {
   const [hovered, setHovered] = useState(false);
+  const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null);
   const [preview, setPreview] = useState<{ url: string } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const objectUrlRef = useRef<string | null>(null);
@@ -1387,17 +1388,44 @@ function SessionBlock({
   const width = (widthHours / 24) * 100;
   const employeeName = session.employeeName || session.employeeEmail || "";
 
+  const cardW = 288;
+  const cardH = 340;
+  const viewportW = typeof window !== "undefined" ? window.innerWidth : 1200;
+  const viewportH = typeof window !== "undefined" ? window.innerHeight : 800;
+  let cardLeft = (pointer?.x ?? 0) - cardW / 2;
+  cardLeft = Math.max(12, Math.min(cardLeft, viewportW - cardW - 12));
+  const openBelow = (pointer?.y ?? 0) < viewportH / 2;
+  let cardTop = openBelow
+    ? (pointer?.y ?? 0) + 14
+    : Math.max(12, (pointer?.y ?? 0) - cardH - 14);
+  if (openBelow && cardTop + cardH > viewportH - 12) {
+    cardTop = Math.max(12, viewportH - cardH - 12);
+  }
+
   return (
-    <div
-      className="absolute top-1.5 h-9 cursor-pointer rounded-lg shadow-sm transition-all hover:scale-[1.02] hover:shadow-md"
-      style={{ left: `${left}%`, width: `${Math.max(0.4, width)}%` }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onClick={() => onPlay(session)}
-    >
-      <div className={`h-full w-full rounded-lg ${meta.className}`} />
-      {hovered ? (
-        <div className="absolute left-1/2 bottom-full z-50 mb-3 w-64 -translate-x-1/2 rounded-2xl border border-[#E1D7CE] bg-white p-3 shadow-2xl ring-1 ring-black/5">
+    <>
+      <div
+        className="absolute top-1.5 h-9 cursor-pointer rounded-lg shadow-sm transition-all hover:scale-[1.02] hover:shadow-md"
+        style={{ left: `${left}%`, width: `${Math.max(0.4, width)}%` }}
+        onMouseEnter={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          setPointer({ x: rect.left + rect.width / 2, y: rect.top });
+          setHovered(true);
+        }}
+        onMouseMove={(e) => setPointer({ x: e.clientX, y: e.clientY })}
+        onMouseLeave={() => {
+          setHovered(false);
+          setPointer(null);
+        }}
+        onClick={() => onPlay(session)}
+      >
+        <div className={`h-full w-full rounded-lg ${meta.className}`} />
+      </div>
+      {hovered && pointer ? (
+        <div
+          className="fixed z-[100] max-h-[70vh] w-72 min-w-0 overflow-y-auto overscroll-contain rounded-2xl border border-[#E1D7CE] bg-white p-3 shadow-2xl ring-1 ring-black/5"
+          style={{ left: cardLeft, top: cardTop }}
+        >
           <div className="aspect-video overflow-hidden rounded-xl bg-[#171717]">
             {preview?.url ? (
               <video src={preview.url} muted autoPlay loop playsInline preload="auto" className="h-full w-full object-cover" />
@@ -1435,7 +1463,7 @@ function SessionBlock({
           </div>
         </div>
       ) : null}
-    </div>
+    </>
   );
 }
 

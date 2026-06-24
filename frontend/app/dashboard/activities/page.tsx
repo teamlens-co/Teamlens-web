@@ -293,7 +293,7 @@ function ActivityHoverCard({ hover }: { hover: HoverState }) {
   return (
     <div
       ref={cardRef}
-      className="fixed z-[100] max-h-[75vh] w-[320px] min-w-0 overflow-y-auto overscroll-contain border border-[#E1D7CE] bg-white p-4 text-[#312D29] shadow-[0_12px_38px_rgba(39,34,30,0.18)]"
+      className="fixed z-[100] max-h-[75vh] w-[320px] min-w-0 max-w-[320px] overflow-y-auto overscroll-contain border border-[#E1D7CE] bg-white p-4 text-[#312D29] shadow-[0_12px_38px_rgba(39,34,30,0.18)]"
       style={{
         left: Math.max(12, Math.min(x - cardWidth / 2, viewportW - cardWidth - 12)),
         top,
