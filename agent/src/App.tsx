@@ -904,9 +904,9 @@ function App() {
         // report a synthetic interaction so the backend counts this sample as active.
         if (typeof idleMs === "number" && idleMs < 60_000) {
           mouseMoves = 1;
-          keyPresses = 1;
-          inputSource = "synthetic";
-          console.log("[InputTracker] Native counters zero but system idle", idleMs, "ms — using synthetic active sample");
+          keyPresses = 0;
+          inputSource = "synthetic-mouse";
+          console.log("[InputTracker] Native counters zero but system idle", idleMs, "ms — using synthetic mouse active sample");
         }
       } catch (err) {
         console.warn("Unable to read last input idle time", err);
