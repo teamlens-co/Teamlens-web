@@ -118,11 +118,7 @@ export default function EmployeeReportPage() {
   const [allReports, setAllReports] = useState<DailyReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const now = new Date();
-    now.setDate(now.getDate() - 1);
-    return now.toISOString().split("T")[0];
-  });
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
 
   // Fetch all reports for navigation
   const fetchReports = useCallback(async (date: string) => {

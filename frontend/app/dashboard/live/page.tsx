@@ -243,7 +243,7 @@ export default function LiveStreamPage() {
       <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <h1 className="text-[18px] font-semibold leading-tight text-[#302C28]">Live View</h1>
-          <p className="mt-1 text-[13px] font-medium text-[#8C837B]">{onlineCount} agents online · refreshes every 30s</p>
+          <p className="mt-1 text-[13px] font-medium text-[#8C837B]">{onlineCount} agents online</p>
         </div>
 
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">

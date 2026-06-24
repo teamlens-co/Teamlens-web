@@ -578,7 +578,7 @@ export default function LiveActivityBoard() {
   } | null>(null);
   const [loading, setLoading] = useState(false);
 
-  /* ── Poll live summaries every 30s ──────────────────────────── */
+  /* ── Poll live summaries ──────────────────────────── */
   useEffect(() => {
     const poll = async () => {
       try {
@@ -734,9 +734,7 @@ export default function LiveActivityBoard() {
         <div className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
           <Activity className="h-4 w-4" />
           Current Window — Latest {intervalMinutes}-min summary per employee
-          <span className="ml-auto text-[10px] font-normal normal-case text-slate-400">
-            Auto-refreshes every 30s
-          </span>
+
         </div>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {liveSummaries.length === 0 ? (

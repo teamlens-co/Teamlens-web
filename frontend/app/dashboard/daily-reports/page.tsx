@@ -119,11 +119,7 @@ export default function DailyReportsPage() {
   const [reports, setReports] = useState<DailyReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const now = new Date();
-    now.setDate(now.getDate() - 1);
-    return now.toISOString().split("T")[0];
-  });
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [regenerating, setRegenerating] = useState(false);
 
