@@ -340,6 +340,27 @@ fn start_global_input_tracker() {
         }
     });
 
+    // Supplement device_query with an event-based keyboard hook (rdev).
+    // device_query polls the current key state every 100ms and frequently
+    // misses quick key presses, so the dashboard shows zero keyboard activity.
+    let kb_counter = Arc::clone(&counter);
+    let kb_running = Arc::clone(&running);
+    thread::spawn(move || {
+        let cb = move |event: rdev::Event| {
+            if !kb_running.load(std::sync::atomic::Ordering::SeqCst) {
+                return;
+            }
+            if let rdev::EventType::KeyPress(_) = event.event_type {
+                if let Ok(mut locked) = kb_counter.lock() {
+                    locked.key_presses += 1;
+                }
+            }
+        };
+        if let Err(e) = rdev::listen(cb) {
+            eprintln!("[InputTracker] rdev keyboard listener failed: {:?}", e);
+        }
+    });
+
     // Re-open X11 display for subsequent connections
     #[cfg(target_os = "linux")]
     fn get_mouse_pos_x11_with_display(display: *mut x11::xlib::Display) -> Option<(i32, i32)> {

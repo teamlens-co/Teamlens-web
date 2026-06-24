@@ -24,6 +24,7 @@ keyring = "2"
 device_query = "2"
 scrap = "0.5"
 reqwest = { version = "0.12", features = ["json"] }
+rdev = "0.5"
 image = "0.24"
 chrono = "0.4"
 
