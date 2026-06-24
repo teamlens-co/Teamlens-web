@@ -119,51 +119,40 @@ function FullDayPlayer({
   employeeId?: string;
   onClose: () => void;
 }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const chunks = playlist.chunks;
+
+  const { totalMs, cumulMs } = useMemo(() => {
+    let total = 0;
+    const acc: number[] = [];
+    chunks.forEach((c, i) => {
+      acc[i] = total;
+      total += c.durationMs || 0;
+    });
+    return { totalMs: total, cumulMs: acc };
+  }, [chunks]);
+
   const [chunkIndex, setChunkIndex] = useState(0);
   const [speed, setSpeed] = useState(1);
   const [chunkUrl, setChunkUrl] = useState("");
   const [loadState, setLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
-  const [activitySegments, setActivitySegments] = useState<{ start: Date; end: Date; kind: "active" | "idle" }[]>([]);
   const [playerMessage, setPlayerMessage] = useState("");
   const [reloadNonce, setReloadNonce] = useState(0);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const advanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const chunks = playlist.chunks;
+  const [globalMs, setGlobalMs] = useState(0);
+  const [activitySegments, setActivitySegments] = useState<{ start: Date; end: Date; kind: "active" | "idle" }[]>([]);
+
   const current = chunks[chunkIndex];
-  const totalMs = chunks.reduce((sum, c) => sum + (c.durationMs || 0), 0);
 
-  const clearAdvanceTimer = useCallback(() => {
-    if (advanceTimerRef.current) {
-      clearTimeout(advanceTimerRef.current);
-      advanceTimerRef.current = null;
-    }
-  }, []);
-
-  const goToChunk = useCallback(
-    (index: number) => {
-      clearAdvanceTimer();
-      const nextIndex = Math.max(0, Math.min(index, chunks.length - 1));
-      setChunkIndex(nextIndex);
-    },
-    [chunks.length, clearAdvanceTimer],
-  );
-
-  const goToNextChunk = useCallback(() => {
-    setChunkIndex((idx) => Math.min(idx + 1, chunks.length - 1));
-  }, [chunks.length]);
-
-  const goToPrevChunk = useCallback(() => {
-    setChunkIndex((idx) => Math.max(idx - 1, 0));
-  }, []);
-
+  // Reset on playlist change
   useEffect(() => {
     setChunkIndex(0);
     setChunkUrl("");
     setLoadState("idle");
     setPlayerMessage("");
-    clearAdvanceTimer();
-  }, [playlist, clearAdvanceTimer]);
+    setGlobalMs(0);
+  }, [playlist]);
 
+  // Load current chunk blob
   useEffect(() => {
     let cancelled = false;
     let objectUrl = "";
@@ -176,7 +165,6 @@ function FullDayPlayer({
       }
       setLoadState("loading");
       setPlayerMessage("");
-      clearAdvanceTimer();
 
       try {
         const response = await fetch(`${apiBase}${current.playbackUrl}`, {
@@ -202,39 +190,76 @@ function FullDayPlayer({
     void loadChunk();
     return () => {
       cancelled = true;
-      clearAdvanceTimer();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [apiBase, authHeaders, clearAdvanceTimer, current, chunkIndex, reloadNonce]);
+  }, [apiBase, authHeaders, current, chunkIndex, reloadNonce]);
 
+  // Apply playback speed and maintain offset after chunk loads
   useEffect(() => {
-    if (videoRef.current && chunkUrl) {
-      videoRef.current.playbackRate = speed;
-      void videoRef.current.play().catch(() => {});
+    const video = videoRef.current;
+    if (!video || !chunkUrl) return;
+    video.playbackRate = speed;
+    const offsetMs = Math.max(0, globalMs - cumulMs[chunkIndex]);
+    if (offsetMs > 0 && video.readyState >= 1) {
+      video.currentTime = offsetMs / 1000;
     }
-  }, [chunkUrl, speed]);
+    void video.play().catch(() => {});
+  }, [chunkUrl, speed, globalMs, cumulMs, chunkIndex]);
 
-  useEffect(() => {
-    clearAdvanceTimer();
-    if (!current || loadState !== "ready" || chunks.length <= 1 || chunkIndex >= chunks.length - 1) return;
+  const handleTimeUpdate = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || loadState !== "ready" || chunkIndex < 0 || chunkIndex >= chunks.length) return;
+    const ms = cumulMs[chunkIndex] + video.currentTime * 1000;
+    setGlobalMs(Math.min(ms, totalMs));
+  }, [chunkIndex, chunks.length, cumulMs, loadState, totalMs]);
 
-    const duration = Math.max(1000, current.durationMs || 0);
-    advanceTimerRef.current = setTimeout(() => goToNextChunk(), duration / Math.max(speed, 0.25));
-
-    return clearAdvanceTimer;
-  }, [chunkIndex, chunks.length, clearAdvanceTimer, current, goToNextChunk, loadState, speed]);
+  const handleEnded = useCallback(() => {
+    if (chunkIndex < chunks.length - 1) {
+      const nextIdx = chunkIndex + 1;
+      setChunkIndex(nextIdx);
+      setGlobalMs(cumulMs[nextIdx]);
+    }
+  }, [chunkIndex, chunks.length, cumulMs]);
 
   const handleVideoError = () => {
     setLoadState("error");
     setPlayerMessage(`Can't play chunk ${chunkIndex + 1}. Skipping...`);
-    clearAdvanceTimer();
-    if (chunkIndex < chunks.length - 1) setTimeout(() => goToNextChunk(), 700);
+    if (chunkIndex < chunks.length - 1) {
+      setTimeout(() => {
+        setChunkIndex((idx) => idx + 1);
+        setGlobalMs((ms) => ms + 1000);
+      }, 700);
+    }
   };
 
-  const handleEnded = () => {
-    clearAdvanceTimer();
-    if (chunkIndex < chunks.length - 1) goToNextChunk();
-  };
+  const seekToPercent = useCallback(
+    (percent: number) => {
+      if (!totalMs) return;
+      const targetMs = Math.max(0, Math.min(totalMs, (percent / 100) * totalMs));
+      let idx = 0;
+      for (let i = 0; i < chunks.length; i++) {
+        idx = i;
+        if (cumulMs[i] + (chunks[i].durationMs || 0) > targetMs) break;
+      }
+      setChunkIndex(idx);
+      setGlobalMs(targetMs);
+      const video = videoRef.current;
+      if (video && loadState === "ready" && idx === chunkIndex) {
+        video.currentTime = Math.max(0, targetMs - cumulMs[idx]) / 1000;
+        void video.play().catch(() => {});
+      }
+    },
+    [chunks, cumulMs, totalMs, loadState, chunkIndex],
+  );
+
+  const goToChunk = useCallback(
+    (index: number) => {
+      const idx = Math.max(0, Math.min(index, chunks.length - 1));
+      setChunkIndex(idx);
+      setGlobalMs(cumulMs[idx]);
+    },
+    [chunks.length, cumulMs],
+  );
 
   // Fetch activity segments for timeline overlay
   useEffect(() => {
@@ -264,34 +289,39 @@ function FullDayPlayer({
       .catch(() => {});
   }, [employeeId, authHeaders, apiBase, chunks]);
 
-  const progress = chunks.length ? ((chunkIndex + 1) / chunks.length) * 100 : 0;
+  const progress = totalMs ? (globalMs / totalMs) * 100 : 0;
   const startTime = chunks[0]?.startedAt;
   const endTime = chunks[chunks.length - 1]?.startedAt;
 
   const timelineCtx = useMemo(() => {
-    if (!chunks.length || !chunks[0]?.uploadedAt && !chunks[0]?.startedAt) return null;
+    if (!chunks.length || !chunks[0]?.startedAt) return null;
     const dayStart = new Date(chunks[0].startedAt);
     dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(dayStart);
-    dayEnd.setHours(23, 59, 59, 999);
-    const dayMs = dayEnd.getTime() - dayStart.getTime();
-
-    return chunks.map((chunk, idx) => {
+    const dayMs = 24 * 60 * 60 * 1000;
+    return chunks.map((chunk) => {
       const t = new Date(chunk.startedAt).getTime();
       const left = ((t - dayStart.getTime()) / dayMs) * 100;
-      const w = Math.max(0.5, ((chunk.durationMs || 0) / dayMs) * 100);
-      const isActive = idx === chunkIndex;
-      return { left, width: w, isActive };
+      const w = Math.max(0.3, ((chunk.durationMs || 0) / dayMs) * 100);
+      return { left, width: w };
     });
-  }, [chunks, chunkIndex]);
+  }, [chunks]);
+
+  const playheadLeft = useMemo(() => {
+    if (!chunks.length || !chunks[0]?.startedAt || !totalMs) return 0;
+    const dayStart = new Date(chunks[0].startedAt);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayMs = 24 * 60 * 60 * 1000;
+    const currentTime = new Date(chunks[chunkIndex].startedAt).getTime() + (globalMs - cumulMs[chunkIndex]);
+    return ((currentTime - dayStart.getTime()) / dayMs) * 100;
+  }, [chunks, chunkIndex, cumulMs, globalMs, totalMs]);
+
+  const timeRangeText = `${formatDuration(globalMs)} / ${formatDuration(totalMs)}`;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-[#DDD2C9] bg-white shadow-[0_1px_2px_rgba(45,42,38,0.03)]">
+    <div className="rounded-xl border border-[#DDD2C9] bg-white shadow-[0_1px_2px_rgba(45,42,38,0.03)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#EFE8E2] px-5 py-3">
         <div>
-          <h3 className="text-[13px] font-semibold text-[#302C28]">
-            {playlist.employeeName}
-          </h3>
+          <h3 className="text-[13px] font-semibold text-[#302C28]">{playlist.employeeName}</h3>
           <p className="mt-0.5 text-[11px] font-medium text-[#8C837B]">
             {playlist.dateLabel} · {startTime ? formatTime(startTime) : ""} → {endTime ? formatTime(endTime) : ""} · {formatDuration(totalMs)}
           </p>
@@ -318,7 +348,7 @@ function FullDayPlayer({
             </span>
           ))}
           <div className="absolute bottom-0 left-0 right-0 top-5">
-            {/* Activity layer (background) */}
+            {/* Activity layer */}
             {activitySegments.length > 0 && (() => {
               const dayMs = 24 * 60 * 60 * 1000;
               return activitySegments.map((act, i) => {
@@ -330,9 +360,7 @@ function FullDayPlayer({
                 return (
                   <div
                     key={i}
-                    className={`absolute bottom-0 top-0 rounded-sm ${
-                      act.kind === "active" ? "bg-brand/20" : "bg-[#F8B84E]/20"
-                    }`}
+                    className={`absolute bottom-0 top-0 rounded-sm ${act.kind === "active" ? "bg-brand/20" : "bg-[#F8B84E]/20"}`}
                     style={{ left: `${left}%`, width: `${width}%` }}
                     title={act.kind === "active" ? "Active" : "Idle"}
                   />
@@ -343,9 +371,7 @@ function FullDayPlayer({
             {timelineCtx.map((seg, i) => (
               <div
                 key={i}
-                className={`absolute bottom-0 top-0 cursor-pointer rounded-sm transition-colors ${
-                  seg.isActive ? "bg-brand" : "bg-brand/40 hover:bg-brand/60"
-                }`}
+                className={`absolute bottom-0 top-0 cursor-pointer rounded-sm transition-colors ${i === chunkIndex ? "bg-brand" : "bg-brand/40 hover:bg-brand/60"}`}
                 style={{ left: `${seg.left}%`, width: `${Math.max(seg.width, 0.3)}%` }}
                 onClick={() => goToChunk(i)}
                 title={`${formatHour(chunks[i]?.startedAt || "")}`}
@@ -353,8 +379,8 @@ function FullDayPlayer({
             ))}
             {/* Playhead */}
             <div
-              className="absolute top-0 h-full w-0.5 bg-white shadow-sm"
-              style={{ left: `${timelineCtx[chunkIndex]?.left || 0}%` }}
+              className="pointer-events-none absolute top-0 h-full w-0.5 bg-white shadow-[0_0_0_1px_#FD815C]"
+              style={{ left: `${playheadLeft}%` }}
             />
           </div>
           <div className="absolute -bottom-4 left-5 flex items-center gap-3 text-[9px] font-medium text-[#BDB6AE]">
@@ -366,7 +392,7 @@ function FullDayPlayer({
       )}
 
       {/* Video Area */}
-      <div className="relative aspect-video bg-[#171717]">
+      <div className="relative aspect-video w-full bg-[#171717]">
         {current && chunkUrl ? (
           <video
             ref={videoRef}
@@ -376,8 +402,15 @@ function FullDayPlayer({
             className="h-full w-full object-contain"
             onLoadedMetadata={() => {
               setLoadState("ready");
-              if (videoRef.current) videoRef.current.playbackRate = speed;
+              const video = videoRef.current;
+              if (video) {
+                video.playbackRate = speed;
+                const offsetMs = Math.max(0, globalMs - cumulMs[chunkIndex]);
+                if (offsetMs > 0) video.currentTime = offsetMs / 1000;
+                void video.play().catch(() => {});
+              }
             }}
+            onTimeUpdate={handleTimeUpdate}
             onEnded={handleEnded}
             onError={handleVideoError}
           />
@@ -395,14 +428,25 @@ function FullDayPlayer({
 
       {/* Controls */}
       <div className="space-y-3 border-t border-[#EFE8E2] px-5 py-3">
-        <div className="h-1.5 overflow-hidden rounded-full bg-[#EFE8E2]">
-          <div className="h-full rounded-full bg-brand transition-all" style={{ width: `${progress}%` }} />
+        {/* Continuous scrubber */}
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={0.05}
+            value={progress}
+            onChange={(e) => seekToPercent(parseFloat(e.target.value))}
+            className="h-2 flex-1 cursor-pointer accent-brand"
+          />
+          <span className="min-w-[110px] text-right text-[11px] font-semibold text-[#302C28]">{timeRangeText}</span>
         </div>
+
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={goToPrevChunk}
+              onClick={() => goToChunk(chunkIndex - 1)}
               disabled={chunkIndex <= 0}
               className="rounded-lg border border-[#E1D7CE] px-3 py-1.5 text-[12px] font-semibold text-[#302C28] disabled:opacity-40"
             >
@@ -410,7 +454,7 @@ function FullDayPlayer({
             </button>
             <button
               type="button"
-              onClick={goToNextChunk}
+              onClick={() => goToChunk(chunkIndex + 1)}
               disabled={chunkIndex >= chunks.length - 1}
               className="rounded-lg border border-[#E1D7CE] px-3 py-1.5 text-[12px] font-semibold text-[#302C28] disabled:opacity-40"
             >
@@ -424,18 +468,17 @@ function FullDayPlayer({
               Retry
             </button>
             <span className="text-[11px] font-medium text-[#8C837B]">
-              {chunks.length ? chunkIndex + 1 : 0} / {chunks.length}
-              {current?.durationMs ? ` · ${formatDuration(current.durationMs)}` : ""}
+              {chunks.length} clip{chunks.length === 1 ? "" : "s"} merged
             </span>
           </div>
-          <div className="flex items-center gap-1.5">
-            {[1, 2, 5].map((v) => (
+          <div className="flex items-center gap-1.5 rounded-lg border border-[#E1D7CE] bg-[#F9F6F3] p-1">
+            {[1, 2, 3, 5].map((v) => (
               <button
                 key={v}
                 type="button"
                 onClick={() => setSpeed(v)}
-                className={`rounded-md px-2.5 py-1 text-[11px] font-semibold ${
-                  speed === v ? "bg-brand text-white" : "bg-[#F1ECE7] text-[#7E6F65]"
+                className={`rounded-md px-3 py-1 text-[12px] font-bold ${
+                  speed === v ? "bg-brand text-white shadow-sm" : "bg-transparent text-[#5E564E] hover:bg-[#F1ECE7]"
                 }`}
               >
                 {v}x
@@ -447,8 +490,6 @@ function FullDayPlayer({
     </div>
   );
 }
-
-// ── Main Page ──────────────────────────────────────────────────────────────
 
 export default function RecordingsPage() {
   const { authHeaders, apiBase, user, dateRange, setDateRange } = useAuth();
@@ -1131,15 +1172,13 @@ function ManualRecordings({
 
 // ── Timeline Recording Feed ────────────────────────────────────────────────
 
-// ── Timeline Recording Feed ────────────────────────────────────────────────
-
 function sessionStatusMeta(session: RecordingSession) {
   const health = getSessionHealth(session);
-  if (health.label === "Healthy") return { className: "bg-[#16A34A]", label: "Healthy", score: 100 };
-  if (health.label === "Low chunks") return { className: "bg-[#F59E0B]", label: "Low chunks", score: 60 };
-  if (health.label === "No data") return { className: "bg-[#CBD5E1]", label: "No data", score: 0 };
-  if (session.status === "recording") return { className: "bg-[#3B82F6]", label: "Recording", score: 90 };
-  if (session.status === "uploading") return { className: "bg-[#60A5FA]", label: "Uploading", score: 80 };
+  if (health.label === "Healthy") return { className: "bg-brand", label: "Healthy", score: 100 };
+  if (health.label === "Low quality" || health.label === "Low chunks") return { className: "bg-[#F8B84E]", label: health.label, score: 60 };
+  if (health.label === "No data" || health.label === "Empty / black") return { className: "bg-[#DDD2C9]", label: health.label, score: 10 };
+  if (session.status === "recording") return { className: "bg-brand", label: "Recording", score: 90 };
+  if (session.status === "uploading") return { className: "bg-brand/70", label: "Uploading", score: 80 };
   return { className: "bg-[#A8A29E]", label: health.label, score: 50 };
 }
 
@@ -1217,8 +1256,8 @@ function RecordingTimelineRow({
     .toUpperCase();
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-[#E7E0DA] bg-white shadow-[0_1px_2px_rgba(45,42,38,0.03)]">
-      <div className="flex items-center gap-3 border-b border-[#EFE8E2] bg-[#FAF8F6] px-5 py-3">
+    <div className="rounded-2xl border border-[#E1D7CE] bg-white shadow-[0_1px_2px_rgba(45,42,38,0.03)]">
+      <div className="flex items-center gap-3 rounded-t-2xl border-b border-[#EFE8E2] bg-[#FAF8F6] px-5 py-3">
         <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#FDEBE5] text-sm font-bold text-brand">
           {initials}
         </span>
@@ -1232,7 +1271,7 @@ function RecordingTimelineRow({
       </div>
       <div className="px-5 pb-7 pt-5">
         <div className="relative h-12">
-          <div className="absolute inset-0 rounded-xl bg-[#F6F2EF]" />
+          <div className="absolute inset-0 rounded-xl bg-[#F9F6F3]" />
           {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24].map((h) => (
             <div
               key={h}
@@ -1295,7 +1334,6 @@ function SessionBlock({
   const [preview, setPreview] = useState<{ url: string } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const objectUrlRef = useRef<string | null>(null);
-  const metaCss = meta.className.replace("bg-[", "text-[").replace("bg-[", "") + ""; // not used, kept for typing
 
   useEffect(() => {
     if (!hovered || preview || !authHeaders) return;
@@ -1359,7 +1397,7 @@ function SessionBlock({
     >
       <div className={`h-full w-full rounded-lg ${meta.className}`} />
       {hovered ? (
-        <div className="absolute left-1/2 top-full z-50 mt-3 w-64 -translate-x-1/2 rounded-2xl border border-[#E7E0DA] bg-white p-3 shadow-2xl ring-1 ring-black/5">
+        <div className="absolute left-1/2 bottom-full z-50 mb-3 w-64 -translate-x-1/2 rounded-2xl border border-[#E1D7CE] bg-white p-3 shadow-2xl ring-1 ring-black/5">
           <div className="aspect-video overflow-hidden rounded-xl bg-[#171717]">
             {preview?.url ? (
               <video src={preview.url} muted autoPlay loop playsInline preload="auto" className="h-full w-full object-cover" />
