@@ -194,17 +194,11 @@ function FullDayPlayer({
     };
   }, [apiBase, authHeaders, current, chunkIndex, reloadNonce]);
 
-  // Apply playback speed and maintain offset after chunk loads
+  // Apply playback speed whenever it changes
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !chunkUrl) return;
-    video.playbackRate = speed;
-    const offsetMs = Math.max(0, globalMs - cumulMs[chunkIndex]);
-    if (offsetMs > 0 && video.readyState >= 1) {
-      video.currentTime = offsetMs / 1000;
-    }
-    void video.play().catch(() => {});
-  }, [chunkUrl, speed, globalMs, cumulMs, chunkIndex]);
+    if (video) video.playbackRate = speed;
+  }, [speed]);
 
   const handleTimeUpdate = useCallback(() => {
     const video = videoRef.current;
