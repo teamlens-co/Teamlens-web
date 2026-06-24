@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Activity, Clock, Keyboard, MousePointer2, Pause, Play, RefreshCw, Users, Video, ZoomIn, ZoomOut } from "lucide-react";
+import { Activity, Clock, Keyboard, MousePointer2, Pause, Play, RefreshCw, Users, Video, X, ZoomIn, ZoomOut } from "lucide-react";
 import { useAuth } from "../../../contexts/AuthContext";
 import DashboardDateFilter from "../../../components/DashboardDateFilter";
 
@@ -69,6 +69,29 @@ type HoverState = {
   x: number;
   y: number;
   sticky?: boolean;
+};
+
+type SegmentVariant = "productive" | "meeting" | "idle" | "manual";
+
+const segmentVariantFor = (employee: ActivityEmployee, segment: TimelineSegment): SegmentVariant => {
+  if (segment.kind === "idle") return "idle";
+  const topApp = employee.topApps?.[0]?.name?.toLowerCase() ?? "";
+  if (["meet", "zoom", "teams", "webex", "skype"].some((keyword) => topApp.includes(keyword))) return "meeting";
+  return "productive";
+};
+
+const segmentVariantClasses: Record<SegmentVariant, string> = {
+  productive: "bg-[#16A34A]",
+  meeting: "bg-[#F59E0B]",
+  idle: "bg-[#CBD5E1]",
+  manual: "bg-[#A8A29E]",
+};
+
+const segmentVariantLabels: Record<SegmentVariant, string> = {
+  productive: "Productive",
+  meeting: "Meeting",
+  idle: "Idle",
+  manual: "Manual",
 };
 
 const formatDuration = (seconds: number): string => {
@@ -265,16 +288,19 @@ const buildProjectorSeedEmployees = (rangeStart: Date): ActivityEmployee[] => {
 
 function ActivityHoverCard({ hover }: { hover: HoverState }) {
   const { employee, segment, x, y } = hover;
-  const cardRef = useRef<HTMLDivElement>(null);
   const cardWidth = 320;
   const shouldOpenAbove = y > 380;
   const durationSeconds = Math.round((new Date(segment.end).getTime() - new Date(segment.start).getTime()) / 1000);
-  const segmentEngagement = segment.mouseMoves + segment.keyPresses;
-  const segmentEngagementPercent = segment.kind === "active" ? 100 : 0;
-  const mousePercent = segmentEngagement > 0 ? Math.round((segment.mouseMoves / segmentEngagement) * 100) : 0;
-  const keyboardPercent = segmentEngagement > 0 ? Math.round((segment.keyPresses / segmentEngagement) * 100) : 0;
+  const segmentEngagement = Math.max(1, segment.mouseMoves + segment.keyPresses);
+  const mouseRatio = Math.round((segment.mouseMoves / segmentEngagement) * 100);
+  const keyRatio = Math.round((segment.keyPresses / segmentEngagement) * 100);
+  const productivityScore = segment.kind === "active" ? 100 - Math.round((keyRatio + mouseRatio) * 0.05) : 0;
+
+  const variant = segmentVariantFor(employee, segment);
+  const topApp = employee.topApps?.[0];
   const initials = employee.employeeName
     .split(" ")
+    .filter(Boolean)
     .map((part) => part[0])
     .join("")
     .slice(0, 2)
@@ -282,93 +308,440 @@ function ActivityHoverCard({ hover }: { hover: HoverState }) {
 
   return (
     <div
-      className="fixed z-[100] w-[320px] border border-[#E7E0DA] bg-white p-4 text-[#312D29] shadow-[0_12px_38px_rgba(39,34,30,0.18)]"
+      className="fixed z-[100] w-[320px] overflow-hidden rounded-2xl border border-[#E7E0DA] bg-white p-0 text-[#312D29] shadow-[0_20px_48px_rgba(39,34,30,0.20)]"
       style={{
         left: Math.max(12, Math.min(x - cardWidth / 2, window.innerWidth - cardWidth - 12)),
         top: shouldOpenAbove ? y - 14 : y + 18,
         transform: shouldOpenAbove ? "translateY(-100%)" : "none",
       }}
     >
-      <div className="mb-3 flex items-center gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-brand/15 text-sm font-medium text-brand">{initials}</span>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{employee.employeeName}</p>
-          <p className="truncate text-xs font-medium text-[#9A9088]">{employee.email}</p>
+      {/* Mini preview header */}
+      <div className="relative h-[88px] bg-gradient-to-br from-[#F3EFEB] to-[#E7E0DA] p-4">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-sm font-semibold text-[#302C28] shadow-sm">{initials}</span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-[#302C28]">{employee.employeeName}</p>
+            <p className="truncate text-xs font-medium text-[#70675F]">{employee.email}</p>
+          </div>
         </div>
+        {topApp ? (
+          <div className="absolute bottom-3 right-4 rounded-full border border-white/60 bg-white/70 px-2.5 py-1 text-[10px] font-semibold text-[#5C5350] backdrop-blur-sm">
+            {topApp.name}
+          </div>
+        ) : null}
       </div>
 
-      <div className="border border-[#EFE8E2] p-3">
+      <div className="p-4">
         <div className="flex items-center justify-between">
-          <span className="inline-flex items-center gap-2 text-sm font-medium text-[#70675F]">
-            <span
-              className={`h-3 w-3 ${
-                segment.kind === "active"
-                  ? "bg-brand"
-                  : "border border-[#D9CEC6] bg-white [background-image:linear-gradient(135deg,transparent_45%,#D9CEC6_45%,#D9CEC6_55%,transparent_55%)]"
-              }`}
-            />
-            {segment.kind === "active" ? "Active Time" : "Idle Time"}
+          <span className="inline-flex items-center gap-2 rounded-full border border-[#EFE8E2] bg-[#FAF8F6] px-2.5 py-1 text-[11px] font-semibold">
+            <span className={`h-2.5 w-2.5 rounded-full ${segmentVariantClasses[variant]}`} />
+            {segmentVariantLabels[variant]}
           </span>
-          <span className="text-xs font-medium text-[#9A9088]">{formatClock(segment.start)} → {formatClock(segment.end)}</span>
+          <span className="text-[11px] font-semibold text-[#9A9088]">{formatClock(segment.start)} – {formatClock(segment.end)}</span>
         </div>
-        <p className="mt-2 text-2xl font-medium leading-none text-[#302C28]">{formatDuration(durationSeconds)} <span className="text-sm">h</span></p>
-      </div>
 
-      <div className="mt-3 border border-[#EFE8E2]">
-        <div className="flex items-center justify-between border-b border-[#EFE8E2] px-3 py-2">
-          <span className="text-sm font-medium text-[#70675F]">Engagement Level</span>
-          <span className="text-xl font-medium text-[#171717]">{segmentEngagementPercent}%</span>
+        <div className="mt-4">
+          <p className="text-2xl font-semibold leading-none text-[#302C28]">{formatDuration(durationSeconds)}</p>
+          <p className="mt-1 text-[11px] font-medium text-[#9A9088]">Segment duration</p>
         </div>
-        <div className="space-y-3 px-3 py-3">
-          <div className="grid grid-cols-[78px_1fr_40px] items-center gap-3">
-            <span className="inline-flex items-center gap-2 text-sm font-medium text-[#8C837B]">
-              <MousePointer2 className="h-4 w-4" />
-              Mouse
-            </span>
-            <span className="h-1.5 rounded-full bg-brand/15">
-              <span className="block h-full rounded-full bg-brand" style={{ width: `${mousePercent}%` }} />
-            </span>
-            <span className="text-right text-xs font-medium text-[#9A9088]">{mousePercent}%</span>
+
+        <div className="mt-4 rounded-xl border border-[#EFE8E2] bg-[#FAF8F6] p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#8C837B]">ProductivityScore</span>
+            <span className="text-sm font-bold text-[#16A34A]">{segment.kind === "active" ? productivityScore : 0}%</span>
           </div>
-          <div className="grid grid-cols-[78px_1fr_40px] items-center gap-3">
-            <span className="inline-flex items-center gap-2 text-sm font-medium text-[#8C837B]">
-              <Keyboard className="h-4 w-4" />
-              Keys
+          <div className="h-2 overflow-hidden rounded-full bg-[#E7E0DA]">
+            <div
+              className="h-full rounded-full bg-[#16A34A] transition-all"
+              style={{ width: `${segment.kind === "active" ? productivityScore : 0}%` }}
+            />
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] font-semibold text-[#70675F]">
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-white px-2 py-1.5 shadow-sm">
+              <MousePointer2 className="h-3 w-3 text-[#8C837B]" />
+              {segment.mouseMoves} mouse
             </span>
-            <span className="h-1.5 rounded-full bg-brand/15">
-              <span className="block h-full rounded-full bg-brand" style={{ width: `${keyboardPercent}%` }} />
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-white px-2 py-1.5 shadow-sm">
+              <Keyboard className="h-3 w-3 text-[#8C837B]" />
+              {segment.keyPresses} keys
             </span>
-            <span className="text-right text-xs font-medium text-[#9A9088]">{keyboardPercent}%</span>
           </div>
         </div>
-      </div>
 
-      <div className="mt-3">
-        <p className="mb-2 text-sm font-medium">Top 3 most used apps</p>
-        <div className="space-y-2">
-          {employee.topApps.length === 0 ? (
-            <p className="bg-[#F8F5F1] px-3 py-2 text-xs font-medium text-[#9A9088]">No app usage in this range.</p>
-          ) : (
-            employee.topApps.slice(0, 3).map((app) => (
-              <div key={app.name} className="flex items-center justify-between gap-3 bg-[#F8F5F1] px-3 py-2">
-                <span className="truncate text-xs font-medium text-[#4A423C]">{app.name}</span>
-                <span className="text-xs font-medium text-[#9A9088]">{formatCompactDuration(app.seconds)}</span>
+        <button
+          type="button"
+          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#302C28] px-4 py-2.5 text-[12px] font-semibold text-white transition hover:bg-[#1f1c19]"
+          onClick={() => {
+            /* click is handled by the timeline segment; this keeps card usable for keyboard */
+          }}
+        >
+          <Video className="h-3.5 w-3.5" />
+          Click to open recording
+        </button>
+      </div>
+    </div>
+  );
+}
+
+type SessionChunk = {
+  id: string;
+  chunkIndex: number;
+  playbackUrl: string;
+  fileSize?: number;
+  durationMs?: number;
+};
+
+type RecSession = {
+  id: string;
+  employeeId: string;
+  startedAt: string;
+  stoppedAt: string;
+  durationMs: number;
+  width: number;
+  height: number;
+  status: string;
+};
+
+function SegmentDetailModal({
+  apiBase,
+  authHeaders,
+  employee,
+  segment,
+  onClose,
+}: {
+  apiBase: string;
+  authHeaders: Record<string, string> | null;
+  employee: ActivityEmployee;
+  segment: TimelineSegment;
+  onClose: () => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState<RecSession | null>(null);
+  const [chunks, setChunks] = useState<SessionChunk[]>([]);
+  const [currentChunkIndex, setCurrentChunkIndex] = useState(0);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    if (!authHeaders) return;
+    let cancelled = false;
+
+    const load = async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const windowStart = new Date(segment.start);
+        windowStart.setMinutes(windowStart.getMinutes() - 10);
+        const windowEnd = new Date(segment.end);
+        windowEnd.setMinutes(windowEnd.getMinutes() + 10);
+
+        const params = new URLSearchParams({
+          employeeId: employee.userId,
+          startDate: windowStart.toISOString(),
+          endDate: windowEnd.toISOString(),
+          limit: "20",
+        });
+        const listRes = await fetch(`${apiBase}/api/web/recording-sessions?${params.toString()}`, {
+          headers: authHeaders,
+          credentials: "include",
+          cache: "no-store",
+        });
+        const listJson = (await listRes.json()) as { success: boolean; data: RecSession[] };
+        const sessions = listJson.success ? listJson.data : [];
+
+        const segmentStart = new Date(segment.start).getTime();
+        const segmentEnd = new Date(segment.end).getTime();
+        const found = sessions.find((s) => {
+          const sStart = new Date(s.startedAt).getTime();
+          const sEnd = new Date(s.stoppedAt ?? s.startedAt).getTime() + s.durationMs;
+          return sStart <= segmentEnd && sEnd >= segmentStart;
+        });
+
+        if (!found) {
+          if (!cancelled) {
+            setLoading(false);
+            setError("No recording is available for this time block yet.");
+          }
+          return;
+        }
+
+        const playlistRes = await fetch(`${apiBase}/api/web/recording-sessions/${found.id}/playlist`, {
+          headers: authHeaders,
+          credentials: "include",
+          cache: "no-store",
+        });
+        const playlistJson = (await playlistRes.json()) as { success: boolean; data: { session: RecSession; chunks: SessionChunk[] } };
+        if (!playlistRes.ok || !playlistJson.success || !playlistJson.data?.chunks?.length) {
+          if (!cancelled) {
+            setLoading(false);
+            setError("Recording playlist is empty.");
+          }
+          return;
+        }
+
+        const playlistChunks = playlistJson.data.chunks;
+        // choose chunk closest to segment midpoint
+        const sessionStart = new Date(found.startedAt).getTime();
+        const sessionDurationMs = Math.max(found.durationMs, segmentEnd - segmentStart);
+        const segmentMid = segmentStart + (segmentEnd - segmentStart) / 2;
+        const targetChunk = sessionDurationMs > 0
+          ? playlistChunks[Math.min(
+              playlistChunks.length - 1,
+              Math.max(0, Math.floor(((segmentMid - sessionStart) / sessionDurationMs) * playlistChunks.length))
+            )]
+          : playlistChunks[0];
+
+        const chunkUrl = targetChunk.playbackUrl.startsWith("http")
+          ? targetChunk.playbackUrl
+          : `${apiBase}${targetChunk.playbackUrl}`;
+        const blobRes = await fetch(chunkUrl, { headers: authHeaders, credentials: "include", cache: "no-store" });
+        const blob = await blobRes.blob();
+        const objectUrl = URL.createObjectURL(blob);
+
+        if (!cancelled) {
+          setSession(found);
+          setChunks(playlistChunks);
+          setCurrentChunkIndex(playlistChunks.findIndex((c) => c.id === targetChunk.id));
+          setVideoUrl(objectUrl);
+          setLoading(false);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setLoading(false);
+          setError(err instanceof Error ? err.message : "Unable to load recording.");
+        }
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+      if (videoUrl) URL.revokeObjectURL(videoUrl);
+    };
+  }, [apiBase, authHeaders, employee.userId, segment.start, segment.end, segment.kind]);
+
+  // video listeners
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const onTime = () => setCurrentTime(v.currentTime);
+    const onMeta = () => {
+      const d = v.duration || (chunks[currentChunkIndex]?.durationMs ? chunks[currentChunkIndex].durationMs / 1000 : 0);
+      setDuration(d);
+    };
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
+    const onEnded = () => {
+      if (currentChunkIndex < chunks.length - 1) {
+        const next = chunks[currentChunkIndex + 1];
+        const nextUrl = next.playbackUrl.startsWith("http") ? next.playbackUrl : `${apiBase}${next.playbackUrl}`;
+        fetch(nextUrl, { headers: authHeaders!, credentials: "include", cache: "no-store" })
+          .then((r) => r.blob())
+          .then((b) => {
+            setCurrentChunkIndex((i) => i + 1);
+            setVideoUrl(URL.createObjectURL(b));
+          });
+      } else {
+        setIsPlaying(false);
+      }
+    };
+    v.addEventListener("timeupdate", onTime);
+    v.addEventListener("loadedmetadata", onMeta);
+    v.addEventListener("play", onPlay);
+    v.addEventListener("pause", onPause);
+    v.addEventListener("ended", onEnded);
+    return () => {
+      v.removeEventListener("timeupdate", onTime);
+      v.removeEventListener("loadedmetadata", onMeta);
+      v.removeEventListener("play", onPlay);
+      v.removeEventListener("pause", onPause);
+      v.removeEventListener("ended", onEnded);
+    };
+  }, [videoUrl, chunks, currentChunkIndex, apiBase, authHeaders]);
+
+  const initials = employee.employeeName
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+  const variant = segmentVariantFor(employee, segment);
+  const score = segment.kind === "active" ? Math.max(0, Math.min(100, Math.round(employee.utilizationPercent))) : 0;
+
+  const durationSeconds = Math.max(1, Math.round((new Date(segment.end).getTime() - new Date(segment.start).getTime()) / 1000));
+  const segmentMid = new Date(new Date(segment.start).getTime() + durationSeconds * 500);
+
+  const markers: { label: string; time: Date; color: string }[] = [
+    { label: "Segment started", time: new Date(segment.start), color: "#16A34A" },
+    { label: "Approximate midpoint", time: segmentMid, color: "#F59E0B" },
+    { label: "Segment ended", time: new Date(segment.end), color: "#CBD5E1" },
+  ];
+  employee.topApps.slice(0, 2).forEach((app, i) => {
+    markers.push({ label: `Top app: ${app.name}`, time: new Date(segment.start), color: ["#3B82F6", "#8B5CF6"][i % 2] });
+  });
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[#0F0D0B]/60 p-4 backdrop-blur-sm">
+      <div className="relative flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl bg-white shadow-[0_32px_80px_rgba(0,0,0,0.28)]">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-[#E7E0DA] bg-[#FAF8F6] px-6 py-4">
+          <div className="flex items-center gap-4">
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#F3EFEB] text-sm font-bold text-[#302C28]">{initials}</span>
+            <div>
+              <h2 className="text-[16px] font-semibold text-[#302C28]">{employee.employeeName}</h2>
+              <p className="text-[12px] font-medium text-[#70675F]">
+                {segmentVariantLabels[variant]} · {formatClock(segment.start)} – {formatClock(segment.end)}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#F2EEEA] text-[#70675F] transition hover:bg-[#E7E0DA] hover:text-[#302C28]"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="grid flex-1 gap-0 overflow-hidden lg:grid-cols-[1fr_360px]">
+          {/* Left: video + scrubber timeline */}
+          <div className="flex flex-col bg-[#111] p-5">
+            <div className="flex flex-1 items-center justify-center overflow-hidden rounded-2xl bg-black">
+              {loading ? (
+                <div className="flex flex-col items-center gap-3 text-white/70">
+                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+                  <span className="text-sm font-medium">Loading recording…</span>
+                </div>
+              ) : error || !videoUrl ? (
+                <div className="flex flex-col items-center gap-2 text-center text-white/60">
+                  <Video className="h-10 w-10" />
+                  <p className="max-w-xs text-sm">{error || "Preview unavailable"}</p>
+                </div>
+              ) : (
+                <video
+                  ref={videoRef}
+                  src={videoUrl}
+                  autoPlay={false}
+                  controls={false}
+                  className="max-h-full max-w-full rounded-lg"
+                  playsInline
+                />
+              )}
+            </div>
+
+            {/* mini timeline scrubber */}
+            <div className="mt-5 space-y-3">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const v = videoRef.current;
+                    if (!v) return;
+                    v.paused ? void v.play() : v.pause();
+                  }}
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-[#111] transition hover:bg-white/90 disabled:opacity-40"
+                  disabled={!videoUrl}
+                >
+                  {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                </button>
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(1, duration)}
+                  step={0.1}
+                  value={Math.min(currentTime, duration)}
+                  onChange={(e) => {
+                    const v = videoRef.current;
+                    if (!v) return;
+                    v.currentTime = Number(e.target.value);
+                  }}
+                  className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/20 accent-white"
+                  disabled={!videoUrl}
+                />
+                <span className="w-24 text-right text-xs font-mono text-white/70">
+                  {formatDuration(Math.floor(currentTime))} / {formatDuration(Math.floor(duration))}
+                </span>
               </div>
-            ))
-          )}
+
+              {/* colour-coded mini timeline */}
+              <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-white/10">
+                {employee.segments.map((s, i) => {
+                  const v = segmentVariantFor(employee, s);
+                  const left = ((new Date(s.start).getTime() - new Date(segment.start).getTime()) / (durationSeconds * 1000)) * 100;
+                  const width = ((new Date(s.end).getTime() - new Date(s.start).getTime()) / (durationSeconds * 1000)) * 100;
+                  if (width <= 0) return null;
+                  return (
+                    <div
+                      key={i}
+                      className={`absolute top-0 h-full ${segmentVariantClasses[v]}`}
+                      style={{ left: `${Math.max(0, left)}%`, width: `${Math.min(100, width)}%` }}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Right: insights + markers */}
+          <div className="overflow-y-auto border-l border-[#E7E0DA] bg-white p-6">
+            <h3 className="text-[13px] font-semibold uppercase tracking-wider text-[#8C837B]">AI Insights</h3>
+
+            <div className="mt-4 grid gap-3">
+              <div className="rounded-2xl border border-[#E7E0DA] bg-[#FAF8F6] p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-[#8C837B]">Primary App</p>
+                <p className="mt-1 text-[18px] font-semibold text-[#302C28]">
+                  {employee.topApps[0]?.name || "Unknown"}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-[#E7E0DA] bg-[#FAF8F6] p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#8C837B]">ProductivityScore</p>
+                  <span className="text-[18px] font-bold text-[#16A34A]">{score}%</span>
+                </div>
+                <div className="mt-3 h-2 rounded-full bg-[#E7E0DA]">
+                  <div className="h-full rounded-full bg-[#16A34A]" style={{ width: `${score}%` }} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-2xl border border-[#E7E0DA] bg-[#FAF8F6] p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#8C837B]">Mouse</p>
+                  <p className="mt-2 text-[20px] font-semibold text-[#302C28]">{segment.mouseMoves}</p>
+                  <p className="text-[10px] font-medium text-[#9A9088]">events</p>
+                </div>
+                <div className="rounded-2xl border border-[#E7E0DA] bg-[#FAF8F6] p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#8C837B]">Keyboard</p>
+                  <p className="mt-2 text-[20px] font-semibold text-[#302C28]">{segment.keyPresses}</p>
+                  <p className="text-[10px] font-medium text-[#9A9088]">events</p>
+                </div>
+              </div>
+            </div>
+
+            <h3 className="mb-3 mt-8 text-[13px] font-semibold uppercase tracking-wider text-[#8C837B]">Event Markers</h3>
+            <div className="space-y-3">
+              {markers.map((m, i) => (
+                <div key={i} className="flex gap-3 rounded-xl border border-[#E7E0DA] bg-white p-3 shadow-sm">
+                  <span className="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: m.color }} />
+                  <div>
+                    <p className="text-[12px] font-semibold text-[#302C28]">{m.label}</p>
+                    <p className="text-[11px] font-medium text-[#9A9088]">
+                      {m.time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
-      <button
-        type="button"
-        onClick={() => {
-          const d = segment.start.slice(0, 10);
-          window.location.href = `/dashboard/recordings?employeeId=${employee.userId}&date=${d}&startTime=${segment.start}&endTime=${segment.end}`;
-        }}
-        className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-brand px-4 py-2 text-[12px] font-semibold text-white transition-colors hover:bg-brand-dark"
-      >
-        <Video className="h-3.5 w-3.5" />
-        Watch This Segment
-      </button>
     </div>
   );
 }
@@ -384,6 +757,7 @@ export default function ActivitiesPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [hover, setHover] = useState<HoverState | null>(null);
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [selectedSegment, setSelectedSegment] = useState<{ employee: ActivityEmployee; segment: TimelineSegment } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   
@@ -765,16 +1139,16 @@ export default function ActivitiesPage() {
         <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[12px] text-[#70675F]">
             <span className="inline-flex items-center gap-2">
-              <span className="h-3 w-3 bg-brand" /> Active Time
+              <span className="h-3 w-3 rounded-[2px] bg-[#16A34A]" /> Productive
             </span>
             <span className="inline-flex items-center gap-2">
-              <span className="h-3 w-3 border border-[#E1D7CE] bg-white [background-image:repeating-linear-gradient(135deg,transparent,transparent_2px,#E1D7CE_2px,#E1D7CE_4px)]" /> Idle Time
+              <span className="h-3 w-3 rounded-[2px] bg-[#F59E0B]" /> Meeting
             </span>
             <span className="inline-flex items-center gap-2">
-              <span className="h-3 w-3 bg-[#EEEAE6]" /> Break
+              <span className="h-3 w-3 rounded-[2px] bg-[#CBD5E1]" /> Idle
             </span>
             <span className="inline-flex items-center gap-2">
-              <span className="h-3 w-3 bg-[#D3CBC5]" /> Manual
+              <span className="h-3 w-3 rounded-[2px] bg-[#A8A29E]" /> Manual
             </span>
           </div>
 
@@ -881,26 +1255,31 @@ export default function ActivitiesPage() {
                         </div>
                         {/* Segments */}
                         <div className="absolute inset-y-3 left-0 right-0">
-                          {employee.segments.map((segment, idx) => (
-                            <div
-                              key={idx}
-                              className={`absolute h-full transition-opacity hover:ring-2 hover:ring-brand/40 ${
-                                segment.kind === "active"
-                                  ? "bg-brand"
-                                  : "border border-[#E1D7CE] bg-white [background-image:repeating-linear-gradient(135deg,transparent,transparent_2px,#E1D7CE_2px,#E1D7CE_4px)]"
-                              }`}
-                              style={segmentStyle(segment, startMs, endMs)}
-                              onMouseEnter={(e) => {
-                                if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
-                                setHover({ employee, segment, x: e.clientX, y: e.clientY });
-                              }}
-                              onMouseLeave={() => {
-                                hoverTimeoutRef.current = setTimeout(() => {
-                                  setHover((prev) => prev?.sticky ? prev : null);
-                                }, 300);
-                              }}
-                            />
-                          ))}
+                          {employee.segments.map((segment, idx) => {
+                            const variant = segmentVariantFor(employee, segment);
+                            return (
+                              <div
+                                key={idx}
+                                role="button"
+                                tabIndex={0}
+                                onMouseEnter={(e) => {
+                                  if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                                  setHover({ employee, segment, x: e.clientX, y: e.clientY });
+                                }}
+                                onMouseLeave={() => {
+                                  hoverTimeoutRef.current = setTimeout(() => {
+                                    setHover((prev) => prev?.sticky ? prev : null);
+                                  }, 300);
+                                }}
+                                onClick={() => setSelectedSegment({ employee, segment })}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" || e.key === " ") setSelectedSegment({ employee, segment });
+                                }}
+                                className={`absolute h-full cursor-pointer rounded-sm transition-all hover:brightness-95 hover:ring-2 hover:ring-offset-1 hover:ring-brand/30 ${segmentVariantClasses[variant]}`}
+                                style={segmentStyle(segment, startMs, endMs)}
+                              />
+                            );
+                          })}
                         </div>
                       </div>
                     </div>
@@ -931,6 +1310,16 @@ export default function ActivitiesPage() {
         >
           <ActivityHoverCard hover={hover} />
         </div>
+      ) : null}
+
+      {selectedSegment && authHeaders ? (
+        <SegmentDetailModal
+          apiBase={apiBase}
+          authHeaders={authHeaders}
+          employee={selectedSegment.employee}
+          segment={selectedSegment.segment}
+          onClose={() => setSelectedSegment(null)}
+        />
       ) : null}
     </div>
   );
