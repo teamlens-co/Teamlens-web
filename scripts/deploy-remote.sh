@@ -56,11 +56,45 @@ docker build -t teamlens-frontend-v2:test \
   --build-arg NEXT_PUBLIC_WEBRTC_ICE_SERVERS="$ICE_ARG" \
   --build-arg NEXT_PUBLIC_AGENT_DOWNLOAD_URL="$AGENT_DOWNLOAD_ARG" \
   .
+echo "=== Rebuilding Screenshot AI sidecar ==="
+cd ../screenshot-ai
+docker build -t teamlens-screenshot-ai:latest .
+docker rm -f screenshot-ai 2>/dev/null || true
+docker run -d --name screenshot-ai --restart unless-stopped \
+  --network teamlens-web-server_default \
+  -p 5055:5055 \
+  -e DATABASE_URL="postgresql://teamlens:root@teamlens-postgres-v2:5432/teamlens" \
+  -e UPLOAD_DIR="/app/uploads" \
+  -e SQLITE_PATH="/app/data/screenshot_ai.sqlite3" \
+  -e REPORT_OUTPUT_DIR="/app/reports" \
+  -e SUMMARY_HTTP_HOST="0.0.0.0" \
+  -e SUMMARY_HTTP_PORT="5055" \
+  -v teamlens_uploads:/app/uploads:ro \
+  -v /root/teamlens/teamlens-web-server-v2/screenshot-ai/data:/app/data \
+  -v /root/teamlens/teamlens-web-server-v2/screenshot-ai/reports:/app/reports \
+  teamlens-screenshot-ai:latest
+
+echo "=== Rebuilding Alert service ==="
+cd ../alert-service
+docker build -t teamlens-alert-service:latest .
+docker rm -f teamlens-alert-service 2>/dev/null || true
+docker run -d --name teamlens-alert-service --restart unless-stopped \
+  --network teamlens-web-server_default \
+  -p 5057:5057 \
+  -e PORT="5057" \
+  -e DATABASE_URL="postgresql://teamlens:root@teamlens-postgres-v2:5432/teamlens?sslmode=disable" \
+  -e SQLITE_PATH="/app/data/screenshot_ai.sqlite3" \
+  -e CHECK_INTERVAL="60s" \
+  -v teamlens_uploads:/app/uploads:ro \
+  -v /root/teamlens/teamlens-web-server-v2/screenshot-ai/data:/app/data \
+  teamlens-alert-service:latest
+
 docker rm -f teamlens-frontend-v2-test 2>/dev/null || true
 docker run -d --name teamlens-frontend-v2-test --restart unless-stopped \
   --network teamlens-web-server_default \
   -p 3002:3000 \
   -e SCREENSHOT_AI_URL='http://screenshot-ai:5055' \
+  -e ALERT_SERVICE_URL='http://teamlens-alert-service:5057' \
   teamlens-frontend-v2:test
 
 echo "=== Nginx reload ==="

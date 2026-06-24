@@ -140,6 +140,7 @@ function FullDayPlayer({
   const [playerMessage, setPlayerMessage] = useState("");
   const [reloadNonce, setReloadNonce] = useState(0);
   const [globalMs, setGlobalMs] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
   const [activitySegments, setActivitySegments] = useState<{ start: Date; end: Date; kind: "active" | "idle" }[]>([]);
 
   const current = chunks[chunkIndex];
@@ -420,6 +421,9 @@ function FullDayPlayer({
             onTimeUpdate={handleTimeUpdate}
             onEnded={handleEnded}
             onError={handleVideoError}
+            onPlay={() => setIsPaused(false)}
+            onPause={() => setIsPaused(true)}
+            onWaiting={() => setIsPaused(false)}
           />
         ) : (
           <div className="flex h-full items-center justify-center text-[13px] font-medium text-white/70">
@@ -449,7 +453,7 @@ function FullDayPlayer({
               }}
               className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand text-white shadow-sm"
             >
-              <PlayIcon className="h-4 w-4" />
+              {isPaused ? <PlayIcon className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
             </button>
             {loadState === "error" ? (
               <button
@@ -1641,7 +1645,7 @@ function RecordingSessionModal({
         {/* Body */}
         <div className="grid flex-1 gap-0 overflow-hidden lg:grid-cols-[1fr_340px]">
           {/* Left: existing full-day player */}
-          <div className="flex flex-col bg-black">
+          <div className="flex min-h-0 flex-col overflow-y-auto bg-black">
             <FullDayPlayer
               playlist={playlist}
               apiBase={apiBase}
