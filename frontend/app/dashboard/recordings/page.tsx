@@ -222,14 +222,10 @@ function FullDayPlayer({
   }, [chunkIndex, chunks.length, cumulMs]);
 
   const handleVideoError = () => {
+    // Ignore errors while a new chunk is loading; they usually come from the previous revoked blob URL.
+    if (loadState !== "ready") return;
     setLoadState("error");
-    setPlayerMessage(`Can't play chunk ${chunkIndex + 1}. Skipping...`);
-    if (chunkIndex < chunks.length - 1) {
-      setTimeout(() => {
-        setChunkIndex((idx) => idx + 1);
-        setGlobalMs((ms) => ms + 1000);
-      }, 700);
-    }
+    setPlayerMessage(`Can't play chunk ${chunkIndex + 1}. Press Retry or skip.`);
   };
 
   const seekToPercent = useCallback(
@@ -367,16 +363,24 @@ function FullDayPlayer({
                 );
               });
             })()}
-            {/* Recording chunks layer */}
-            {timelineCtx.map((seg, i) => (
-              <div
-                key={i}
-                className={`absolute bottom-0 top-0 cursor-pointer rounded-sm transition-colors ${i === chunkIndex ? "bg-brand" : "bg-brand/40 hover:bg-brand/60"}`}
-                style={{ left: `${seg.left}%`, width: `${Math.max(seg.width, 0.3)}%` }}
-                onClick={() => goToChunk(i)}
-                title={`${formatHour(chunks[i]?.startedAt || "")}`}
-              />
-            ))}
+            {/* Continuous recording bar */}
+            {timelineCtx && (() => {
+              const start = timelineCtx[0].left;
+              const endSeg = timelineCtx[timelineCtx.length - 1];
+              const width = Math.max(0.3, endSeg.left + endSeg.width - start);
+              return (
+                <div
+                  className="absolute bottom-0 top-0 cursor-pointer rounded-sm bg-brand/40 hover:bg-brand/60"
+                  style={{ left: `${start}%`, width: `${width}%` }}
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const pct = (e.clientX - rect.left) / rect.width;
+                    seekToPercent((start + pct * width) / 100 * 100);
+                  }}
+                  title={`Recording ${formatHour(startTime || "")} → ${formatHour(endTime || "")}`}
+                />
+              );
+            })()}
             {/* Playhead */}
             <div
               className="pointer-events-none absolute top-0 h-full w-0.5 bg-white shadow-[0_0_0_1px_#FD815C]"
@@ -421,7 +425,7 @@ function FullDayPlayer({
         )}
         {current ? (
           <div className="pointer-events-none absolute left-3 top-3 rounded-md bg-black/60 px-2.5 py-1 text-[11px] font-semibold text-white">
-            {chunks[0]?.startedAt ? formatHour(current.startedAt) : `Chunk ${chunkIndex + 1}`}
+            {formatHour(new Date(new Date(current.startedAt).getTime() + (globalMs - cumulMs[chunkIndex])).toISOString())}
           </div>
         ) : null}
       </div>
@@ -446,33 +450,30 @@ function FullDayPlayer({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => goToChunk(chunkIndex - 1)}
-              disabled={chunkIndex <= 0}
-              className="rounded-lg border border-[#E1D7CE] px-3 py-1.5 text-[12px] font-semibold text-[#302C28] disabled:opacity-40"
+              onClick={() => {
+                const video = videoRef.current;
+                if (!video) return;
+                if (video.paused) { void video.play().catch(() => {}); } else { video.pause(); }
+              }}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand text-white shadow-sm"
             >
-              <SkipBack className="h-4 w-4" />
+              <PlayIcon className="h-4 w-4" />
             </button>
-            <button
-              type="button"
-              onClick={() => goToChunk(chunkIndex + 1)}
-              disabled={chunkIndex >= chunks.length - 1}
-              className="rounded-lg border border-[#E1D7CE] px-3 py-1.5 text-[12px] font-semibold text-[#302C28] disabled:opacity-40"
-            >
-              <SkipForward className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setReloadNonce((n) => n + 1)}
-              className="rounded-lg border border-[#E1D7CE] px-3 py-1.5 text-[12px] font-semibold text-[#302C28]"
-            >
-              Retry
-            </button>
+            {loadState === "error" ? (
+              <button
+                type="button"
+                onClick={() => setReloadNonce((n) => n + 1)}
+                className="rounded-lg border border-[#E1D7CE] px-3 py-1.5 text-[12px] font-semibold text-[#302C28]"
+              >
+                Retry
+              </button>
+            ) : null}
             <span className="text-[11px] font-medium text-[#8C837B]">
-              {chunks.length} clip{chunks.length === 1 ? "" : "s"} merged
+              {formatDuration(totalMs)} playback
             </span>
           </div>
           <div className="flex items-center gap-1.5 rounded-lg border border-[#E1D7CE] bg-[#F9F6F3] p-1">
-            {[1, 2, 3, 5].map((v) => (
+            {[1, 2, 3, 4, 5].map((v) => (
               <button
                 key={v}
                 type="button"
@@ -1279,7 +1280,7 @@ function RecordingTimelineRow({
               style={{ left: `${(h / 24) * 100}%` }}
             />
           ))}
-          {sessions.map((session) => {
+          {[...sessions].sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime()).map((session, idx, arr) => {
             const start = new Date(session.startedAt);
             const startHour = start.getHours() + start.getMinutes() / 60;
             const widthHours = (session.durationMs || 0) / 3600000;
@@ -1293,6 +1294,8 @@ function RecordingTimelineRow({
                 meta={meta}
                 startHour={startHour}
                 widthHours={Math.max(0.25, widthHours)}
+                isFirst={idx === 0}
+                isLast={idx === arr.length - 1}
                 onPlay={onPlay}
               />
             );
@@ -1320,6 +1323,8 @@ function SessionBlock({
   meta,
   startHour,
   widthHours,
+  isFirst,
+  isLast,
   onPlay,
 }: {
   session: RecordingSession;
@@ -1328,6 +1333,8 @@ function SessionBlock({
   meta: { className: string; label: string; score: number };
   startHour: number;
   widthHours: number;
+  isFirst: boolean;
+  isLast: boolean;
   onPlay: (session: RecordingSession) => void;
 }) {
   const [hovered, setHovered] = useState(false);
@@ -1419,7 +1426,7 @@ function SessionBlock({
         }}
         onClick={() => onPlay(session)}
       >
-        <div className={`h-full w-full rounded-lg ${meta.className}`} />
+        <div className={`h-full w-full ${isFirst ? "rounded-l-md" : ""} ${isLast ? "rounded-r-md" : ""} ${meta.className} ${!isFirst && !isLast ? "" : ""}`} />
       </div>
       {hovered && pointer ? (
         <div
@@ -1496,11 +1503,25 @@ function RecordingSessionModal({
 
   const totalDurationMs = involvedSessions.reduce((sum, s) => sum + (s.durationMs || 0), 0);
   const totalSize = involvedSessions.reduce((sum, s) => sum + (s.totalSize || 0), 0);
-  const markers = playlist.chunks.slice(0, 12).map((chunk, i) => ({
-    label: `Clip ${(chunk as any).chunkIndex ?? i + 1}`,
-    time: new Date((chunk as any).startedAt || chunk.uploadedAt),
-    duration: chunk.durationMs || 0,
-  }));
+  const [topApps, setTopApps] = useState<{ name: string; seconds: number }[]>([]);
+
+  useEffect(() => {
+    if (!authHeaders || !mainSession?.employeeId || !mainSession?.startedAt) return;
+    const date = mainSession.startedAt.slice(0, 10);
+    const start = `${date}T00:00:00Z`;
+    const end = `${date}T23:59:59Z`;
+    fetch(`${apiBase}/api/web/dashboard/activity-timeline?startDate=${encodeURIComponent(start)}&endDate=${encodeURIComponent(end)}`, {
+      headers: authHeaders,
+      credentials: "include",
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data.success) return;
+        const emp = data.data?.employees?.find((e: any) => e.userId === mainSession.employeeId);
+        if (emp?.topApps) setTopApps(emp.topApps.slice(0, 5));
+      })
+      .catch(() => {});
+  }, [apiBase, authHeaders, mainSession]);
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[#0F0D0B]/60 p-3 backdrop-blur-sm">
@@ -1553,8 +1574,8 @@ function RecordingSessionModal({
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-2xl border border-[#E7E0DA] bg-[#FAF8F6] p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#8C837B]">Clips</p>
-                  <p className="mt-2 text-[22px] font-semibold text-[#302C28]">{playlist.chunks.length}</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#8C837B]">FPS</p>
+                  <p className="mt-2 text-[22px] font-semibold text-[#302C28]">{mainSession?.fps ?? "—"}</p>
                 </div>
                 <div className="rounded-2xl border border-[#E7E0DA] bg-[#FAF8F6] p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-[#8C837B]">Resolution</p>
@@ -1565,19 +1586,21 @@ function RecordingSessionModal({
               </div>
             </div>
 
-            <h3 className="mb-3 mt-8 text-[13px] font-semibold uppercase tracking-wider text-[#8C837B]">Event Markers</h3>
-            <div className="space-y-3">
-              {markers.map((m, i) => (
-                <div key={i} className="flex gap-3 rounded-xl border border-[#E7E0DA] bg-white p-3 shadow-sm">
-                  <span className="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-brand" />
-                  <div className="min-w-0">
-                    <p className="text-[12px] font-semibold text-[#302C28]">{m.label}</p>
-                    <p className="text-[11px] font-medium text-[#9A9088]">
-                      {m.time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · {formatDuration(m.duration)}
-                    </p>
+            <h3 className="mb-3 mt-8 text-[13px] font-semibold uppercase tracking-wider text-[#8C837B]">Apps Used Today</h3>
+            <div className="space-y-2">
+              {topApps.length === 0 ? (
+                <p className="rounded-xl border border-[#E7E0DA] bg-[#FAF8F6] p-3 text-[12px] font-medium text-[#8C837B]">No app data available.</p>
+              ) : (
+                topApps.map((app, i) => (
+                  <div key={app.name} className="flex items-center justify-between gap-3 rounded-xl border border-[#E7E0DA] bg-white p-3 shadow-sm">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#FDEBE5] text-[10px] font-bold text-brand">{i + 1}</span>
+                      <span className="truncate text-[13px] font-semibold text-[#302C28]">{app.name}</span>
+                    </div>
+                    <span className="shrink-0 text-[11px] font-medium text-[#8C837B]">{formatDuration(app.seconds * 1000)}</span>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </div>
