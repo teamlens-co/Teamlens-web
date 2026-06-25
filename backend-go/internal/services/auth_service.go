@@ -202,7 +202,7 @@ func (s *AuthService) Me(ctx context.Context, userID, activeOrgID string) (*mode
 
 	// Query all organizations the user belongs to
 	rows, err := s.pool.Query(ctx,
-		`SELECT o.id, o.name, o.slug, om.role
+		`SELECT o.id, o.name, o.slug, o.screenshot_retention_days, o.recording_retention_days, om.role
 		 FROM organization_memberships om
 		 JOIN organizations o ON o.id = om.organization_id
 		 WHERE om.user_id = $1`, userID,
@@ -219,7 +219,7 @@ func (s *AuthService) Me(ctx context.Context, userID, activeOrgID string) (*mode
 	for rows.Next() {
 		var org models.OrgResponse
 		var roleStr string
-		if err := rows.Scan(&org.ID, &org.Name, &org.Slug, &roleStr); err != nil {
+		if err := rows.Scan(&org.ID, &org.Name, &org.Slug, &org.ScreenshotRetentionDays, &org.RecordingRetentionDays, &roleStr); err != nil {
 			return nil, fmt.Errorf("scan membership: %w", err)
 		}
 		user.Organizations = append(user.Organizations, org)

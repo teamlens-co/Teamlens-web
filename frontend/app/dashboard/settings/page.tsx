@@ -41,6 +41,13 @@ export default function SettingsPage() {
   const [settingsSuccess, setSettingsSuccess] = useState(false);
   const [settingsError, setSettingsError] = useState("");
 
+  // Data retention state
+  const [screenshotRetentionDays, setScreenshotRetentionDays] = useState("30");
+  const [recordingRetentionDays, setRecordingRetentionDays] = useState("30");
+  const [loadingRetention, setLoadingRetention] = useState(false);
+  const [retentionSuccess, setRetentionSuccess] = useState(false);
+  const [retentionError, setRetentionError] = useState("");
+
   // Daily Report Time state
   const [dailyReportTime, setDailyReportTime] = useState("18:00");
   const [savingReportTime, setSavingReportTime] = useState(false);
@@ -72,6 +79,16 @@ export default function SettingsPage() {
         }
       })
       .catch((err) => console.error("Failed to load settings", err));
+
+    fetch(`${apiBase}/api/web/organizations/retention`, { headers: authHeaders, credentials: "include" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.data) {
+          setScreenshotRetentionDays(String(data.data.screenshotRetentionDays ?? 30));
+          setRecordingRetentionDays(String(data.data.recordingRetentionDays ?? 30));
+        }
+      })
+      .catch((err) => console.error("Failed to load retention settings", err));
 
     fetchDailyReportTime();
   }, [authHeaders, apiBase, user]);
@@ -231,6 +248,35 @@ export default function SettingsPage() {
       setSettingsError(`Error: ${message}`);
     } finally {
       setLoadingSettings(false);
+    }
+  };
+
+  const handleSaveRetention = async () => {
+    if (!authHeaders) return;
+    setLoadingRetention(true);
+    setRetentionError("");
+    setRetentionSuccess(false);
+    try {
+      const response = await fetch(`${apiBase}/api/web/organizations/retention`, {
+        method: "PUT",
+        headers: authHeaders,
+        credentials: "include",
+        body: JSON.stringify({
+          screenshotRetentionDays: parseInt(screenshotRetentionDays, 10),
+          recordingRetentionDays: parseInt(recordingRetentionDays, 10),
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setRetentionSuccess(true);
+        setTimeout(() => setRetentionSuccess(false), 3000);
+      } else {
+        setRetentionError(data.message || "Failed to save retention settings");
+      }
+    } catch (err: unknown) {
+      setRetentionError(err instanceof Error ? err.message : "Network error occurred.");
+    } finally {
+      setLoadingRetention(false);
     }
   };
 
@@ -557,6 +603,73 @@ export default function SettingsPage() {
           >
             <Save className="w-4 h-4 mr-2" />
             {loadingSettings ? "Saving..." : "Save Settings"}
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-border bg-card shadow-sm">
+        <div className="flex items-center justify-between px-5 py-4">
+          <span className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-100 text-rose-600">
+              <Trash2 className="w-[18px] h-[18px]" />
+            </div>
+            <span>
+              <h2 className="text-[14px] font-semibold text-foreground">Data Retention Policy</h2>
+              <span className="mt-0.5 block text-[12.5px] text-muted-foreground">
+                Automatically delete screenshots and recordings older than the configured number of days.
+              </span>
+            </span>
+          </span>
+        </div>
+        <div className="space-y-5 border-t border-border bg-background/25 p-4">
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-[11.5px] text-muted-foreground">Screenshot retention days</label>
+              <input
+                type="number"
+                min={0}
+                required
+                className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-[12.5px] font-medium text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                value={screenshotRetentionDays}
+                onChange={(e) => setScreenshotRetentionDays(e.target.value)}
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">0 = keep forever.</p>
+            </div>
+            <div>
+              <label className="mb-1 block text-[11.5px] text-muted-foreground">Screen recording retention days</label>
+              <input
+                type="number"
+                min={0}
+                required
+                className="h-9 w-full rounded-md border border-border bg-background px-2.5 text-[12.5px] font-medium text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                value={recordingRetentionDays}
+                onChange={(e) => setRecordingRetentionDays(e.target.value)}
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">0 = keep forever.</p>
+            </div>
+          </div>
+
+          {retentionError && (
+            <div className="flex items-center rounded-xl border border-rose-100 bg-rose-50 p-3 text-[12.5px] font-medium text-rose-600">
+              <AlertCircle className="w-4 h-4 mr-3 flex-shrink-0" />
+              {retentionError}
+            </div>
+          )}
+          {retentionSuccess && (
+            <div className="flex items-center rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-[12.5px] font-medium text-brand">
+              <Check className="w-4 h-4 mr-3 flex-shrink-0" />
+              Retention settings saved successfully!
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={handleSaveRetention}
+            disabled={loadingRetention}
+            className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-[12.5px] font-medium text-primary-foreground shadow-[0_1px_2px_rgba(45,42,38,0.08)] transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Save className="w-4 h-4 mr-2" />
+            {loadingRetention ? "Saving..." : "Save Retention Policy"}
           </button>
         </div>
       </div>

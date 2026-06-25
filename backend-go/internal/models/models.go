@@ -71,9 +71,11 @@ type UserResponse struct {
 }
 
 type OrgResponse struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Slug string `json:"slug"`
+	ID                       string `json:"id"`
+	Name                     string `json:"name"`
+	Slug                     string `json:"slug"`
+	ScreenshotRetentionDays  int    `json:"screenshotRetentionDays"`
+	RecordingRetentionDays   int    `json:"recordingRetentionDays"`
 }
 
 // ─── API Response ──────────────────────────────────────────────────────────
