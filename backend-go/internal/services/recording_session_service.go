@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -12,7 +14,8 @@ import (
 )
 
 type RecordingSessionService struct {
-	pool *pgxpool.Pool
+	pool      *pgxpool.Pool
+	uploadDir string
 }
 
 type StartRecordingSessionPayload struct {
@@ -35,8 +38,8 @@ type SaveRecordingChunkPayload struct {
 	DurationMs int64
 }
 
-func NewRecordingSessionService(pool *pgxpool.Pool) *RecordingSessionService {
-	return &RecordingSessionService{pool: pool}
+func NewRecordingSessionService(pool *pgxpool.Pool, uploadDir string) *RecordingSessionService {
+	return &RecordingSessionService{pool: pool, uploadDir: uploadDir}
 }
 
 func (s *RecordingSessionService) StartSession(ctx context.Context, payload StartRecordingSessionPayload) (*models.RecordingSession, error) {
@@ -253,6 +256,20 @@ func (s *RecordingSessionService) GetSession(ctx context.Context, id, organizati
 	return &sessions[0], nil
 }
 
+func (s *RecordingSessionService) ListExistingChunks(ctx context.Context, sessionID, organizationID string) ([]models.RecordingChunk, error) {
+	chunks, err := s.ListChunks(ctx, sessionID, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	var out []models.RecordingChunk
+	for _, chunk := range chunks {
+		if s.chunkFileExists(chunk.FilePath) {
+			out = append(out, chunk)
+		}
+	}
+	return out, nil
+}
+
 func (s *RecordingSessionService) ListChunks(ctx context.Context, sessionID, organizationID string) ([]models.RecordingChunk, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT rc.id, rc.recording_session_id, rc.chunk_index, rc.file_path, rc.file_size, rc.duration_ms, rc.uploaded_at, rc.created_at
@@ -378,12 +395,29 @@ func (s *RecordingSessionService) attachChunksToSessions(ctx context.Context, se
 		if err := rows.Scan(&chunk.ID, &chunk.RecordingSessionID, &chunk.ChunkIndex, &chunk.FilePath, &chunk.FileSize, &chunk.DurationMs, &chunk.UploadedAt, &chunk.CreatedAt); err != nil {
 			return fmt.Errorf("scan session chunk: %w", err)
 		}
+		// Hide segments whose file does not exist (crashed/upload failed/deleted).
+		if !s.chunkFileExists(chunk.FilePath) {
+			continue
+		}
 		chunk.PlaybackURL = fmt.Sprintf("/api/web/recording-sessions/%s/chunks/%s/file", chunk.RecordingSessionID, chunk.ID)
 		if session := sessionByID[chunk.RecordingSessionID]; session != nil {
 			session.Chunks = append(session.Chunks, chunk)
 		}
 	}
 	return rows.Err()
+}
+
+func (s *RecordingSessionService) chunkFileExists(storedPath string) bool {
+	if strings.TrimSpace(storedPath) == "" {
+		return false
+	}
+	fullPath := filepath.Clean(storedPath)
+	if !filepath.IsAbs(fullPath) {
+		base := filepath.Clean(s.uploadDir)
+		fullPath = filepath.Join(base, fullPath)
+	}
+	info, err := os.Stat(fullPath)
+	return err == nil && !info.IsDir()
 }
 
 func scanRecordingSessions(rows pgx.Rows) ([]models.RecordingSession, error) {

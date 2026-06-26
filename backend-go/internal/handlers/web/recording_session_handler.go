@@ -111,7 +111,7 @@ func (h *RecordingSessionHandler) Playlist(w http.ResponseWriter, r *http.Reques
 		middleware.Error(w, http.StatusForbidden, "Forbidden")
 		return
 	}
-	chunks, err := h.recordingSvc.ListChunks(r.Context(), sessionID, auth.OrganizationID)
+	chunks, err := h.recordingSvc.ListExistingChunks(r.Context(), sessionID, auth.OrganizationID)
 	if err != nil {
 		slog.Error("List recording chunks failed", "error", err)
 		middleware.Error(w, http.StatusInternalServerError, "Unable to fetch recording playlist")

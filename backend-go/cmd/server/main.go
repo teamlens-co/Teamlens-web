@@ -77,7 +77,7 @@ func main() {
 	inviteSvc := services.NewInviteService(pool.Pool, jwtSvc, cfg.InviteTTLHours, cfg.WebAppURL)
 	teamSvc := services.NewTeamService(pool.Pool, dashSvc)
 	recordingSvc := services.NewRecordingService(pool.Pool)
-	recordingSessionSvc := services.NewRecordingSessionService(pool.Pool)
+	recordingSessionSvc := services.NewRecordingSessionService(pool.Pool, cfg.UploadDir)
 	screenshotSvc := services.NewScreenshotService(pool.Pool)
 	usageSvc := services.NewUsageService(pool.Pool)
 	agentAuthSvc := services.NewAgentAuthService(pool.Pool, jwtSvc, cfg)
