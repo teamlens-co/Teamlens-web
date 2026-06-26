@@ -20,8 +20,8 @@ async function resolveExeUrl(): Promise<string | null> {
     const data = await res.json();
     return data?.platforms?.["windows-x86_64"]?.url || null;
   } catch {
-    return null;
-  }
+    return null; 
+  } 
 }
 
 async function resolveMsiUrl(): Promise<string | null> {

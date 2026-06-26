@@ -1,7 +1,5 @@
-use device_query::{DeviceQuery, DeviceState, Keycode};
 use serde::Serialize;
 use std::cell::RefCell;
-use std::collections::HashSet;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
@@ -27,6 +25,8 @@ use windows_sys::Win32::System::Threading::{
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
+    SetWindowsHookExW, UnhookWindowsHookEx, CallNextHookEx,
+    WH_KEYBOARD_LL, WH_MOUSE_LL, MSG, GetMessageW,
 };
 
 #[cfg(target_os = "windows")]
@@ -240,150 +240,197 @@ fn get_mouse_pos_x11_lib() -> Option<(i32, i32)> {
     }
 }
 
+#[cfg(target_os = "windows")]
+static mut KB_HOOK: *mut std::ffi::c_void = std::ptr::null_mut();
+#[cfg(target_os = "windows")]
+static mut MS_HOOK: *mut std::ffi::c_void = std::ptr::null_mut();
+
+#[cfg(target_os = "windows")]
+extern "system" {
+    fn GetModuleHandleW(lpModuleName: *const u16) -> *mut std::ffi::c_void;
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn keyboard_proc(code: i32, wparam: usize, lparam: isize) -> isize {
+    if code >= 0 {
+        // WM_KEYDOWN = 256, WM_SYSKEYDOWN = 260
+        if wparam == 256 || wparam == 260 {
+            if let Some(counter) = INPUT_COUNTER.get() {
+                if let Ok(mut locked) = counter.lock() {
+                    locked.key_presses += 1;
+                }
+            }
+        }
+    }
+    CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam)
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Clone, Copy)]
+#[repr(C)]
+struct POINT {
+    x: i32,
+    y: i32,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Clone, Copy)]
+#[repr(C)]
+struct MSLLHOOKSTRUCT {
+    pt: POINT,
+    mouse_data: u32,
+    flags: u32,
+    time: u32,
+    dw_extra_info: usize,
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn mouse_proc(code: i32, wparam: usize, lparam: isize) -> isize {
+    if code >= 0 {
+        let is_activity = match wparam as u32 {
+            512 => { // WM_MOUSEMOVE = 512
+                let info = *(lparam as *const MSLLHOOKSTRUCT);
+                static mut LAST_X: i32 = -1;
+                static mut LAST_Y: i32 = -1;
+                static mut LAST_MOVE_TIME: u64 = 0;
+                
+                let x = info.pt.x;
+                let y = info.pt.y;
+                
+                if x != LAST_X || y != LAST_Y {
+                    LAST_X = x;
+                    LAST_Y = y;
+                    let now = GetTickCount() as u64;
+                    if now.saturating_sub(LAST_MOVE_TIME) >= 100 {
+                        LAST_MOVE_TIME = now;
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            // WM_LBUTTONDOWN = 513, WM_RBUTTONDOWN = 516, WM_MBUTTONDOWN = 519, WM_MOUSEWHEEL = 522
+            513 | 516 | 519 | 522 => true,
+            _ => false,
+        };
+        if is_activity {
+            if let Some(counter) = INPUT_COUNTER.get() {
+                if let Ok(mut locked) = counter.lock() {
+                    locked.mouse_moves += 1;
+                }
+            }
+        }
+    }
+    CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam)
+}
+
 fn start_global_input_tracker() {
     let already_started = INPUT_TRACKER_STARTED
         .get_or_init(|| std::sync::atomic::AtomicBool::new(false));
     if already_started.swap(true, std::sync::atomic::Ordering::SeqCst) {
-        // Thread already spawned, just make sure it's unpaused.
         let running = INPUT_TRACKER_RUNNING
             .get_or_init(|| Arc::new(std::sync::atomic::AtomicBool::new(true)));
         running.store(true, std::sync::atomic::Ordering::SeqCst);
         return;
     }
 
-    let counter = INPUT_COUNTER
-        .get_or_init(|| Arc::new(Mutex::new(InputCounter::default())))
-        .clone();
     let running = INPUT_TRACKER_RUNNING
         .get_or_init(|| Arc::new(std::sync::atomic::AtomicBool::new(true)))
         .clone();
 
-    let poll_counter = Arc::clone(&counter);
-    let poll_running = Arc::clone(&running);
+    #[cfg(target_os = "windows")]
+    {
+        thread::spawn(move || unsafe {
+            let h_mod = GetModuleHandleW(std::ptr::null());
+            let kb = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_proc), h_mod, 0);
+            let ms = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_proc), h_mod, 0);
 
-    thread::spawn(move || {
-        let device_state = DeviceState::new();
-        let mut last_mouse = device_state.get_mouse().coords;
-        let mut last_keys: HashSet<Keycode> = device_state.get_keys().into_iter().collect();
+            KB_HOOK = kb;
+            MS_HOOK = ms;
 
-        // X11 fallback state (Linux only) — use a persistent display connection.
-        #[cfg(target_os = "linux")]
-        let x11_display = unsafe {
-            let dpy = x11::xlib::XOpenDisplay(std::ptr::null());
-            if dpy.is_null() { None } else { Some(dpy) }
-        };
-        #[cfg(target_os = "linux")]
-        let mut last_x11_pos: Option<(i32, i32)> = {
-            if let Some(dpy) = x11_display {
-                get_mouse_pos_x11_with_display(dpy)
-            } else {
-                get_mouse_pos_shell_xdotool()
-            }
-        };
-
-        loop {
-            if !poll_running.load(std::sync::atomic::Ordering::SeqCst) {
-                // Paused — sleep longer and don't poll input devices.
-                thread::sleep(Duration::from_millis(500));
-                // Reset baseline so we don't get phantom deltas on resume.
-                last_mouse = device_state.get_mouse().coords;
-                last_keys = device_state.get_keys().into_iter().collect();
-                #[cfg(target_os = "linux")]
-                { last_x11_pos = None; }
-                continue;
+            let mut msg: MSG = std::mem::zeroed();
+            while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
+                if !running.load(std::sync::atomic::Ordering::SeqCst) {
+                    break;
+                }
             }
 
-            // Catch panics so a single broken device_query call doesn't kill the thread forever.
-            let poll_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let mouse = device_state.get_mouse().coords;
-                let keys_now_vec = device_state.get_keys();
-                let keys_now: HashSet<Keycode> = keys_now_vec.into_iter().collect();
-                (mouse, keys_now)
-            }));
+            if !KB_HOOK.is_null() {
+                UnhookWindowsHookEx(KB_HOOK);
+                KB_HOOK = std::ptr::null_mut();
+            }
+            if !MS_HOOK.is_null() {
+                UnhookWindowsHookEx(MS_HOOK);
+                MS_HOOK = std::ptr::null_mut();
+            }
+        });
+    }
 
-            match poll_result {
-                Ok((mouse, keys_now)) => {
-                    if let Ok(mut locked) = poll_counter.lock() {
-                        #[allow(unused_mut)]
-                        let mut mouse_moved = mouse != last_mouse;
+    #[cfg(not(target_os = "windows"))]
+    {
+        let counter = INPUT_COUNTER
+            .get_or_init(|| Arc::new(Mutex::new(InputCounter::default())))
+            .clone();
+        let kb_counter = Arc::clone(&counter);
+        let kb_running = Arc::clone(&running);
+        thread::spawn(move || {
+            use std::time::Instant;
 
-                        // If device_query says no-move but X11 says moved, trust X11.
-                        #[cfg(target_os = "linux")]
-                        if !mouse_moved {
-                            let current = x11_display.and_then(|dpy| get_mouse_pos_x11_with_display(dpy))
-                                .or_else(get_mouse_pos_shell_xdotool);
-                            if let Some(xy) = current {
-                                if last_x11_pos.map_or(true, |last| xy != last) {
-                                    mouse_moved = true;
-                                }
-                                last_x11_pos = Some(xy);
-                            }
+            thread_local! {
+                static LAST_MOUSE: RefCell<(f64, f64, Instant)> = RefCell::new((0.0, 0.0, Instant::now()));
+            }
+
+            let cb = move |event: rdev::Event| {
+                if !kb_running.load(std::sync::atomic::Ordering::SeqCst) {
+                    return;
+                }
+                match event.event_type {
+                    rdev::EventType::KeyPress(_) => {
+                        if let Ok(mut locked) = kb_counter.lock() {
+                            locked.key_presses += 1;
                         }
-
-                        if mouse_moved {
+                    }
+                    rdev::EventType::ButtonPress(_) => {
+                        if let Ok(mut locked) = kb_counter.lock() {
                             locked.mouse_moves += 1;
                         }
-
-                        for key in &keys_now {
-                            if !last_keys.contains(key) {
-                                locked.key_presses += 1;
+                    }
+                    rdev::EventType::Wheel { .. } => {
+                        if let Ok(mut locked) = kb_counter.lock() {
+                            locked.mouse_moves += 1;
+                        }
+                    }
+                    rdev::EventType::MouseMove { x, y } => {
+                        let now = Instant::now();
+                        let should_increment = LAST_MOUSE.with(|cell| {
+                            let mut state = cell.borrow_mut();
+                            let (last_x, last_y, last_time) = *state;
+                            if (x - last_x).abs() > 1.0 || (y - last_y).abs() > 1.0 {
+                                if now.duration_since(last_time) >= Duration::from_millis(100) {
+                                    *state = (x, y, now);
+                                    true
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        });
+                        if should_increment {
+                            if let Ok(mut locked) = kb_counter.lock() {
+                                locked.mouse_moves += 1;
                             }
                         }
                     }
-
-                    last_mouse = mouse;
-                    last_keys = keys_now;
+                    _ => {}
                 }
-                Err(_) => {
-                    eprintln!("[InputTracker] Panic while polling input devices; retrying next cycle");
-                }
+            };
+            if let Err(e) = rdev::listen(cb) {
+                eprintln!("[InputTracker] rdev global listener failed: {:?}", e);
             }
-
-            thread::sleep(Duration::from_millis(100));
-        }
-    });
-
-    // Supplement device_query with an event-based keyboard hook (rdev).
-    // device_query polls the current key state every 100ms and frequently
-    // misses quick key presses, so the dashboard shows zero keyboard activity.
-    let kb_counter = Arc::clone(&counter);
-    let kb_running = Arc::clone(&running);
-    thread::spawn(move || {
-        let cb = move |event: rdev::Event| {
-            if !kb_running.load(std::sync::atomic::Ordering::SeqCst) {
-                return;
-            }
-            if let rdev::EventType::KeyPress(_) = event.event_type {
-                if let Ok(mut locked) = kb_counter.lock() {
-                    locked.key_presses += 1;
-                }
-            }
-        };
-        if let Err(e) = rdev::listen(cb) {
-            eprintln!("[InputTracker] rdev keyboard listener failed: {:?}", e);
-        }
-    });
-
-    // Re-open X11 display for subsequent connections
-    #[cfg(target_os = "linux")]
-    fn get_mouse_pos_x11_with_display(display: *mut x11::xlib::Display) -> Option<(i32, i32)> {
-        unsafe {
-            let mut root: x11::xlib::Window = std::mem::zeroed();
-            let mut child: x11::xlib::Window = std::mem::zeroed();
-            let mut root_x: i32 = 0;
-            let mut root_y: i32 = 0;
-            let mut win_x: i32 = 0;
-            let mut win_y: i32 = 0;
-            let mut mask: u32 = 0;
-            let ret = x11::xlib::XQueryPointer(
-                display, x11::xlib::XDefaultRootWindow(display),
-                &mut root, &mut child,
-                &mut root_x, &mut root_y,
-                &mut win_x, &mut win_y,
-                &mut mask,
-            );
-            if ret != 0 { Some((root_x, root_y)) } else { None }
-        }
+        });
     }
 }
 
@@ -391,6 +438,18 @@ fn stop_global_input_tracker() {
     let running = INPUT_TRACKER_RUNNING
         .get_or_init(|| Arc::new(std::sync::atomic::AtomicBool::new(false)));
     running.store(false, std::sync::atomic::Ordering::SeqCst);
+
+    #[cfg(target_os = "windows")]
+    unsafe {
+        if !KB_HOOK.is_null() {
+            UnhookWindowsHookEx(KB_HOOK);
+            KB_HOOK = std::ptr::null_mut();
+        }
+        if !MS_HOOK.is_null() {
+            UnhookWindowsHookEx(MS_HOOK);
+            MS_HOOK = std::ptr::null_mut();
+        }
+    }
 }
 
 #[tauri::command]
