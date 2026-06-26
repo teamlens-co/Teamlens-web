@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -178,7 +179,14 @@ func (s *RecordingSessionService) ListSessions(ctx context.Context, organization
 	}
 	defer rows.Close()
 
-	return scanRecordingSessions(rows)
+	sessions, err := scanRecordingSessions(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachChunksToSessions(ctx, sessions, organizationID); err != nil {
+		return nil, err
+	}
+	return sessions, nil
 }
 
 func (s *RecordingSessionService) ListActiveSessions(ctx context.Context, organizationID string) ([]models.RecordingSession, error) {
@@ -201,7 +209,14 @@ func (s *RecordingSessionService) ListActiveSessions(ctx context.Context, organi
 		return nil, fmt.Errorf("list active recording sessions: %w", err)
 	}
 	defer rows.Close()
-	return scanRecordingSessions(rows)
+	sessions, err := scanRecordingSessions(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachChunksToSessions(ctx, sessions, organizationID); err != nil {
+		return nil, err
+	}
+	return sessions, nil
 }
 
 func (s *RecordingSessionService) GetSession(ctx context.Context, id, organizationID, employeeID string) (*models.RecordingSession, error) {
@@ -326,6 +341,49 @@ func (s *RecordingSessionService) ExpireOldSessions(ctx context.Context, cutoff 
 		return nil, fmt.Errorf("expire old recording sessions: %w", err)
 	}
 	return paths, nil
+}
+
+func (s *RecordingSessionService) attachChunksToSessions(ctx context.Context, sessions []models.RecordingSession, organizationID string) error {
+	if len(sessions) == 0 {
+		return nil
+	}
+
+	sessionByID := make(map[string]*models.RecordingSession, len(sessions))
+	placeholders := make([]string, 0, len(sessions))
+	args := []interface{}{organizationID}
+	for i, session := range sessions {
+		idx := i + 2
+		placeholders = append(placeholders, fmt.Sprintf("$%d", idx))
+		args = append(args, session.ID)
+		sessionByID[session.ID] = &sessions[i]
+	}
+
+	query := fmt.Sprintf(
+		`SELECT rc.id, rc.recording_session_id, rc.chunk_index, rc.file_path, rc.file_size, rc.duration_ms, rc.uploaded_at, rc.created_at
+		 FROM recording_chunks rc
+		 JOIN recording_sessions rs ON rs.id = rc.recording_session_id
+		 WHERE rs.organization_id = $1 AND rc.recording_session_id IN (%s)
+		 ORDER BY rc.recording_session_id ASC, rc.chunk_index ASC`,
+		strings.Join(placeholders, ", "),
+	)
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("fetch chunks for sessions: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var chunk models.RecordingChunk
+		if err := rows.Scan(&chunk.ID, &chunk.RecordingSessionID, &chunk.ChunkIndex, &chunk.FilePath, &chunk.FileSize, &chunk.DurationMs, &chunk.UploadedAt, &chunk.CreatedAt); err != nil {
+			return fmt.Errorf("scan session chunk: %w", err)
+		}
+		chunk.PlaybackURL = fmt.Sprintf("/api/web/recording-sessions/%s/chunks/%s/file", chunk.RecordingSessionID, chunk.ID)
+		if session := sessionByID[chunk.RecordingSessionID]; session != nil {
+			session.Chunks = append(session.Chunks, chunk)
+		}
+	}
+	return rows.Err()
 }
 
 func scanRecordingSessions(rows pgx.Rows) ([]models.RecordingSession, error) {

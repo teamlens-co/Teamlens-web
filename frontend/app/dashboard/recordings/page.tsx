@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Calendar, Clock, Download, HardDrive, Pause, Play, Search,
-  Trash2, User, Video, PlayIcon, ChevronDown, X,
+  Trash2, User, Video, PlayIcon, ChevronDown, X, Maximize, Minimize,
 } from "lucide-react";
 import { useAuth } from "../../../contexts/AuthContext";
 import DashboardDateFilter from "../../../components/DashboardDateFilter";
@@ -35,6 +35,7 @@ type RecordingSession = {
   totalSize: number;
   durationMs: number;
   chunkCount?: number;
+  chunks?: RecordingChunk[];
 };
 
 type RecordingChunk = {
@@ -121,6 +122,7 @@ function FullDayPlayer({
   onClose: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const videoContainerRef = useRef<HTMLDivElement>(null);
   const chunks = playlist.chunks;
 
   const { totalMs, cumulMs } = useMemo(() => {
@@ -141,7 +143,16 @@ function FullDayPlayer({
   const [reloadNonce, setReloadNonce] = useState(0);
   const [globalMs, setGlobalMs] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [activitySegments, setActivitySegments] = useState<{ start: Date; end: Date; kind: "active" | "idle" }[]>([]);
+
+  useEffect(() => {
+    const onFsChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, []);
 
   const current = chunks[chunkIndex];
 
@@ -398,7 +409,7 @@ function FullDayPlayer({
       )}
 
       {/* Video Area */}
-      <div className="relative aspect-video w-full bg-[#171717]">
+      <div ref={videoContainerRef} className="relative aspect-video w-full bg-[#171717]">
         {current && chunkUrl ? (
           <video
             ref={videoRef}
@@ -435,6 +446,22 @@ function FullDayPlayer({
             {formatHour(new Date(new Date(current.startedAt).getTime() + (globalMs - cumulMs[chunkIndex])).toISOString())}
           </div>
         ) : null}
+        <button
+          type="button"
+          onClick={() => {
+            const container = videoContainerRef.current;
+            if (!container) return;
+            if (!document.fullscreenElement) {
+              void container.requestFullscreen?.().catch(() => {});
+            } else {
+              void document.exitFullscreen?.().catch(() => {});
+            }
+          }}
+          className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-black/60 text-white transition hover:bg-black/80"
+          aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+        >
+          {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+        </button>
       </div>
 
       {/* Controls */}
@@ -1283,7 +1310,7 @@ function RecordingTimeline({
   apiBase: string;
   authHeaders: Record<string, string> | null;
   getEmployeeName: (id: string) => string;
-  onPlay: (session: RecordingSession) => void;
+  onPlay: (session: RecordingSession, startPercent?: number) => void;
 }) {
   const rows = useMemo(() => {
     const map = new Map<string, { employee: Employee; sessions: RecordingSession[] }>();
@@ -1333,7 +1360,7 @@ function RecordingTimelineRow({
   sessions: RecordingSession[];
   apiBase: string;
   authHeaders: Record<string, string> | null;
-  onPlay: (session: RecordingSession) => void;
+  onPlay: (session: RecordingSession, startPercent?: number) => void;
 }) {
   const initials = employee.fullName
     .split(" ")
@@ -1367,25 +1394,40 @@ function RecordingTimelineRow({
               style={{ left: `${(h / 24) * 100}%` }}
             />
           ))}
-          {[...sessions].sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime()).map((session, idx, arr) => {
-            const start = new Date(session.startedAt);
-            const startHour = start.getHours() + start.getMinutes() / 60;
-            const widthHours = (session.durationMs || 0) / 3600000;
+          {[...sessions].sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime()).flatMap((session, sessionIdx, sessionArr) => {
+            const sessionStart = new Date(session.startedAt);
+            const baseStartHour = sessionStart.getHours() + sessionStart.getMinutes() / 60;
+            const sessionTotalMs = session.durationMs || 1;
+            const chunks = session.chunks || [];
+            if (chunks.length === 0) return [] as ReactNode[];
             const meta = sessionStatusMeta(session);
-            return (
-              <SessionBlock
-                key={session.id}
-                session={session}
-                apiBase={apiBase}
-                authHeaders={authHeaders}
-                meta={meta}
-                startHour={startHour}
-                widthHours={Math.max(0.25, widthHours)}
-                isFirst={idx === 0}
-                isLast={idx === arr.length - 1}
-                onPlay={onPlay}
-              />
-            );
+            let cumulMs = 0;
+            return chunks
+              .sort((a, b) => a.chunkIndex - b.chunkIndex)
+              .map((chunk, chunkIdx) => {
+                const widthHours = (chunk.durationMs || 0) / 3600000;
+                if (widthHours <= 0) return null;
+                const startHour = baseStartHour + cumulMs / 3600000;
+                const segmentCumulMs = cumulMs;
+                cumulMs += chunk.durationMs || 0;
+                return (
+                  <RecordingSegmentBlock
+                    key={chunk.id}
+                    session={session}
+                    chunk={chunk}
+                    apiBase={apiBase}
+                    authHeaders={authHeaders}
+                    meta={meta}
+                    startHour={startHour}
+                    widthHours={widthHours}
+                    isSessionFirst={sessionIdx === 0 && chunkIdx === 0}
+                    isSessionLast={sessionIdx === sessionArr.length - 1 && chunkIdx === chunks.length - 1}
+                    segmentStartPercent={segmentCumulMs / sessionTotalMs}
+                    onPlay={onPlay}
+                  />
+                );
+              })
+              .filter(Boolean) as ReactNode[];
           })}
           {/* Hour labels */}
           {[0, 3, 6, 9, 12, 15, 18, 21].map((h) => (
@@ -1558,6 +1600,181 @@ function SessionBlock({
             <div className="mt-2 flex items-center justify-between text-[11px] font-medium text-[#8C837B]">
               <span>{meta.label}</span>
               <span>{formatDuration(session.durationMs)}</span>
+            </div>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#E7E0DA]">
+              <div className={`h-full rounded-full ${meta.className}`} style={{ width: `${meta.score}%` }} />
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function RecordingSegmentBlock({
+  session,
+  chunk,
+  apiBase,
+  authHeaders,
+  meta,
+  startHour,
+  widthHours,
+  isSessionFirst,
+  isSessionLast,
+  segmentStartPercent,
+  onPlay,
+}: {
+  session: RecordingSession;
+  chunk: RecordingChunk;
+  apiBase: string;
+  authHeaders: Record<string, string> | null;
+  meta: { className: string; label: string; score: number };
+  startHour: number;
+  widthHours: number;
+  isSessionFirst: boolean;
+  isSessionLast: boolean;
+  segmentStartPercent: number;
+  onPlay: (session: RecordingSession, startPercent?: number) => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null);
+  const [hoverPercent, setHoverPercent] = useState(0);
+  const [preview, setPreview] = useState<{ url: string } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const objectUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!hovered || preview || !authHeaders || !chunk.playbackUrl) return;
+    let cancelled = false;
+    setPreviewLoading(true);
+
+    const load = async () => {
+      try {
+        const blobRes = await fetch(`${apiBase}${chunk.playbackUrl}`, {
+          headers: authHeaders,
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (!blobRes.ok) return;
+        const blob = await blobRes.blob();
+        if (cancelled || !blob.size) return;
+        const url = URL.createObjectURL(blob);
+        objectUrlRef.current = url;
+        setPreview({ url });
+      } catch {
+        // best-effort preview
+      } finally {
+        if (!cancelled) setPreviewLoading(false);
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+      setPreviewLoading(false);
+    };
+  }, [hovered, preview, apiBase, authHeaders, chunk.playbackUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
+    };
+  }, []);
+
+  const left = (startHour / 24) * 100;
+  const width = (widthHours / 24) * 100;
+  const employeeName = session.employeeName || session.employeeEmail || "";
+  const sessionTotalMs = session.durationMs || 1;
+
+  const cardW = 288;
+  const cardH = 380;
+  const viewportW = typeof window !== "undefined" ? window.innerWidth : 1200;
+  const viewportH = typeof window !== "undefined" ? window.innerHeight : 800;
+  let cardLeft = (pointer?.x ?? 0) - cardW / 2;
+  cardLeft = Math.max(12, Math.min(cardLeft, viewportW - cardW - 12));
+  const openBelow = (pointer?.y ?? 0) < viewportH / 2;
+  let cardTop = openBelow
+    ? (pointer?.y ?? 0) + 14
+    : Math.max(12, (pointer?.y ?? 0) - cardH - 14);
+  if (openBelow && cardTop + cardH > viewportH - 12) {
+    cardTop = Math.max(12, viewportH - cardH - 12);
+  }
+
+  const segmentStartOffsetMs = segmentStartPercent * sessionTotalMs;
+  const chunkDurationMs = chunk.durationMs || 1;
+  const clickStartPercent =
+    sessionTotalMs > 0
+      ? Math.min(1, Math.max(0, segmentStartOffsetMs + hoverPercent * chunkDurationMs) / sessionTotalMs)
+      : undefined;
+
+  return (
+    <>
+      <div
+        className="absolute top-1.5 h-9 cursor-pointer shadow-sm transition-all hover:scale-[1.02] hover:shadow-md hover:z-10"
+        style={{ left: `${left}%`, width: `${Math.max(0.3, width)}%` }}
+        onMouseEnter={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+          setPointer({ x: e.clientX, y: rect.top });
+          setHoverPercent(pct);
+          setHovered(true);
+        }}
+        onMouseMove={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+          setPointer({ x: e.clientX, y: rect.top });
+          setHoverPercent(pct);
+        }}
+        onMouseLeave={() => {
+          setHovered(false);
+          setPointer(null);
+        }}
+        onClick={() => onPlay(session, clickStartPercent)}
+      >
+        <div className={`h-full w-full ${isSessionFirst ? "rounded-l-md" : ""} ${isSessionLast ? "rounded-r-md" : ""} ${meta.className}`} />
+      </div>
+      {hovered && pointer ? (
+        <div
+          className="fixed z-[100] max-h-[75vh] w-72 min-w-0 overflow-y-auto overscroll-contain rounded-2xl border border-[#E1D7CE] bg-white p-3 shadow-2xl ring-1 ring-black/5"
+          style={{ left: cardLeft, top: cardTop }}
+        >
+          <div className="aspect-video overflow-hidden rounded-xl bg-[#171717]">
+            {preview?.url ? (
+              <video src={preview.url} muted autoPlay loop playsInline preload="auto" className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center gap-2 text-white/70">
+                {previewLoading ? (
+                  <>
+                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+                    <span className="text-[11px] font-medium">Loading preview…</span>
+                  </>
+                ) : (
+                  <>
+                    <Video className="h-6 w-6" />
+                    <span className="text-[11px] font-medium">Preview unavailable</span>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="mt-3 px-1">
+            <div className="flex items-center gap-2">
+              <span className={`h-2 w-2 rounded-full ${meta.className}`} />
+              <p className="truncate text-[13px] font-semibold text-[#302C28]">{employeeName}</p>
+            </div>
+            <p className="mt-0.5 text-[11px] font-medium text-[#8C837B]">
+              {formatDate(session.startedAt)} · {formatTime(session.startedAt)}
+            </p>
+            <div className="mt-2 flex items-center justify-between text-[11px] font-medium text-[#8C837B]">
+              <span>{meta.label}</span>
+              <span>{formatDuration(chunk.durationMs || 0)}</span>
+            </div>
+            <div className="mt-2 flex items-center justify-between text-[11px] font-medium text-[#8C837B]">
+              <span>Chunk {chunk.chunkIndex + 1}</span>
+              <span>{formatFileSize(chunk.fileSize || 0)}</span>
             </div>
             <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#E7E0DA]">
               <div className={`h-full rounded-full ${meta.className}`} style={{ width: `${meta.score}%` }} />
