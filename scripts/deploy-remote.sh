@@ -15,10 +15,10 @@ git pull origin main
 echo "=== Rebuilding Go backend ==="
 cd backend-go
 docker build -t teamlens-api-go:latest .
-docker rm -f backend-go teamlens-api-go-test 2>/dev/null || true
-docker run -d --name backend-go --restart unless-stopped \
+docker rm -f teamlens-api-go teamlens-api-go-test 2>/dev/null || true
+docker run -d --name teamlens-api-go --restart unless-stopped \
   --network teamlens-web-server_default \
-  -p 8081:5000 \
+  -p 5002:5000 \
   -v teamlens_uploads:/app/uploads \
   -e DATABASE_URL="postgresql://teamlens:root@teamlens-postgres-v2:5432/teamlens?sslmode=disable" \
   -e JWT_SECRET="teamlens_jwt_secret_key_2025" \
