@@ -101,15 +101,19 @@ func (s *AuthService) SignupManager(ctx context.Context, input struct {
 			Role:           models.RoleManager,
 			OrganizationID: orgID,
 			Organization: &models.OrgResponse{
-				ID:   orgID,
-				Name: strings.TrimSpace(input.OrganizationName),
-				Slug: slug,
+				ID:                      orgID,
+				Name:                    strings.TrimSpace(input.OrganizationName),
+				Slug:                    slug,
+				ScreenshotRetentionDays: 30,
+				RecordingRetentionDays:  30,
 			},
 		},
 		Organization: models.OrgResponse{
-			ID:   orgID,
-			Name: strings.TrimSpace(input.OrganizationName),
-			Slug: slug,
+			ID:                      orgID,
+			Name:                    strings.TrimSpace(input.OrganizationName),
+			Slug:                    slug,
+			ScreenshotRetentionDays: 30,
+			RecordingRetentionDays:  30,
 		},
 	}, nil
 }
@@ -127,18 +131,20 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*model
 		OrganizationID string
 		OrgName        string
 		OrgSlug        string
+		ScreenshotRetentionDays int
+		RecordingRetentionDays  int
 	}
 
 	err := s.pool.QueryRow(ctx,
 		`SELECT u.id, u.full_name, u.email, u.password_hash, u.role, u.status, u.organization_id,
-		        o.name, o.slug
+		        o.name, o.slug, o.screenshot_retention_days, o.recording_retention_days
 		 FROM users u
 		 JOIN organizations o ON o.id = u.organization_id
 		 WHERE u.email = $1`, email,
 	).Scan(
 		&user.ID, &user.FullName, &user.Email, &user.PasswordHash,
 		&user.Role, &user.Status, &user.OrganizationID,
-		&user.OrgName, &user.OrgSlug,
+		&user.OrgName, &user.OrgSlug, &user.ScreenshotRetentionDays, &user.RecordingRetentionDays,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -169,15 +175,19 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*model
 			Role:           models.AuthRole(user.Role),
 			OrganizationID: user.OrganizationID,
 			Organization: &models.OrgResponse{
-				ID:   user.OrganizationID,
-				Name: user.OrgName,
-				Slug: user.OrgSlug,
+				ID:                      user.OrganizationID,
+				Name:                    user.OrgName,
+				Slug:                    user.OrgSlug,
+				ScreenshotRetentionDays: user.ScreenshotRetentionDays,
+				RecordingRetentionDays:  user.RecordingRetentionDays,
 			},
 		},
 		Organization: models.OrgResponse{
-			ID:   user.OrganizationID,
-			Name: user.OrgName,
-			Slug: user.OrgSlug,
+			ID:                      user.OrganizationID,
+			Name:                    user.OrgName,
+			Slug:                    user.OrgSlug,
+			ScreenshotRetentionDays: user.ScreenshotRetentionDays,
+			RecordingRetentionDays:  user.RecordingRetentionDays,
 		},
 	}, nil
 }
