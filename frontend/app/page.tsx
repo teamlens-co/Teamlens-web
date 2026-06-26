@@ -711,6 +711,8 @@ export default function Home() {
           isOpen={isDownloadModalOpen}
           onClose={() => setIsDownloadModalOpen(false)}
           windowsDownloadUrl={agentDownloadHref}
+          linuxAppImageUrl="/download/agent?type=linux-appimage"
+          linuxDebUrl="/download/agent?type=linux-deb"
         />
       </main>
     </div>

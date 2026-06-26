@@ -9,6 +9,8 @@ interface AgentDownloadModalProps {
   onClose: () => void;
   windowsDownloadUrl: string;
   windowsMsiDownloadUrl?: string;
+  linuxAppImageUrl?: string;
+  linuxDebUrl?: string;
 }
 
 export default function AgentDownloadModal({
@@ -16,10 +18,18 @@ export default function AgentDownloadModal({
   onClose,
   windowsDownloadUrl,
   windowsMsiDownloadUrl,
+  linuxAppImageUrl,
+  linuxDebUrl,
 }: AgentDownloadModalProps) {
   const msiDownloadUrl =
     windowsMsiDownloadUrl ||
     `${windowsDownloadUrl}${windowsDownloadUrl.includes("?") ? "&" : "?"}type=msi`;
+  const appImageDownloadUrl =
+    linuxAppImageUrl ||
+    `/download/agent?type=linux-appimage`;
+  const debDownloadUrl =
+    linuxDebUrl ||
+    `/download/agent?type=linux-deb`;
   // Prevent background scrolling when modal is open
   useEffect(() => {
     if (isOpen) {
@@ -155,28 +165,61 @@ export default function AgentDownloadModal({
                 </div>
               </div>
 
-              {/* LINUX (Coming Soon) */}
-              <div className="flex items-center gap-5 p-5 bg-[#FCFAF8]/40 dark:bg-white/2 border border-[#E8E4DF]/60 dark:border-[#5C5854]/10 rounded-3xl opacity-50 relative overflow-hidden select-none">
-                <div className="w-12 h-12 rounded-2xl bg-[#8C8780]/10 text-[#8C8780] flex items-center justify-center shrink-0">
-                  <Cpu size={22} />
+              {/* LINUX AppImage (Active) */}
+              <a
+                href={appImageDownloadUrl}
+                onClick={onClose}
+                download
+                className="flex items-center gap-5 p-5 bg-[#FCFAF8] hover:bg-[#FEF0ED]/30 dark:bg-white/5 dark:hover:bg-[#E85A3C]/10 border border-[#E8E4DF] dark:border-[#5C5854]/20 hover:border-[#E85A3C]/30 rounded-3xl transition-all group cursor-pointer"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-[#E85A3C]/10 dark:bg-[#E85A3C]/20 text-[#E85A3C] flex items-center justify-center shrink-0">
+                  <Cpu size={22} className="group-hover:scale-110 transition-transform" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold text-[15px] text-[#8C8780] dark:text-slate-400">
-                      Download for Linux
+                    <span className="font-semibold text-[15px] text-[#2D2A26] dark:text-white">
+                      Download for Linux (.AppImage)
                     </span>
-                    <span className="px-2 py-0.5 bg-[#8C8780]/10 text-[#8C8780] text-[9px] font-bold rounded-md uppercase tracking-wide">
-                      Soon
+                    <span className="px-2 py-0.5 bg-[#E85A3C]/10 text-[#E85A3C] text-[9px] font-bold rounded-md font-mono">
+                      Latest
                     </span>
                   </div>
-                  <p className="text-[12px] text-[#8C8780]/80 mt-0.5">
-                    Debian / AppImage standard distribution
+                  <p className="text-[12px] text-[#8C8780] mt-0.5 truncate">
+                    Portable AppImage for most x86_64 Linux desktop distros
                   </p>
                 </div>
-                <div className="text-[11px] font-semibold text-[#8C8780] uppercase tracking-wider font-mono">
-                  coming soon
+                <div className="w-10 h-10 rounded-full bg-white dark:bg-white/5 border border-[#E8E4DF] dark:border-[#5C5854]/20 flex items-center justify-center text-[#8C8780] dark:text-slate-300 group-hover:bg-[#E85A3C] group-hover:text-white group-hover:border-[#E85A3C] transition-all">
+                  <Download size={16} />
                 </div>
-              </div>
+              </a>
+
+              {/* LINUX DEB (Active) */}
+              <a
+                href={debDownloadUrl}
+                onClick={onClose}
+                download
+                className="flex items-center gap-5 p-5 bg-[#FCFAF8] hover:bg-[#FEF0ED]/30 dark:bg-white/5 dark:hover:bg-[#E85A3C]/10 border border-[#E8E4DF] dark:border-[#5C5854]/20 hover:border-[#E85A3C]/30 rounded-3xl transition-all group cursor-pointer"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-[#E85A3C]/10 dark:bg-[#E85A3C]/20 text-[#E85A3C] flex items-center justify-center shrink-0">
+                  <Cpu size={22} className="group-hover:scale-110 transition-transform" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-[15px] text-[#2D2A26] dark:text-white">
+                      Download for Linux (.deb)
+                    </span>
+                    <span className="px-2 py-0.5 bg-[#E85A3C]/10 text-[#E85A3C] text-[9px] font-bold rounded-md font-mono">
+                      Latest
+                    </span>
+                  </div>
+                  <p className="text-[12px] text-[#8C8780] mt-0.5 truncate">
+                    Debian / Ubuntu installer package
+                  </p>
+                </div>
+                <div className="w-10 h-10 rounded-full bg-white dark:bg-white/5 border border-[#E8E4DF] dark:border-[#5C5854]/20 flex items-center justify-center text-[#8C8780] dark:text-slate-300 group-hover:bg-[#E85A3C] group-hover:text-white group-hover:border-[#E85A3C] transition-all">
+                  <Download size={16} />
+                </div>
+              </a>
             </div>
 
             {/* Footer trust badge */}
