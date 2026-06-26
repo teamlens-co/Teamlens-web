@@ -77,10 +77,11 @@ func main() {
 	inviteSvc := services.NewInviteService(pool.Pool, jwtSvc, cfg.InviteTTLHours, cfg.WebAppURL)
 	teamSvc := services.NewTeamService(pool.Pool, dashSvc)
 	recordingSvc := services.NewRecordingService(pool.Pool)
-	recordingSessionSvc := services.NewRecordingSessionService(pool.Pool)
+	recordingSessionSvc := services.NewRecordingSessionService(pool.Pool, cfg.UploadDir)
 	screenshotSvc := services.NewScreenshotService(pool.Pool)
 	usageSvc := services.NewUsageService(pool.Pool)
 	agentAuthSvc := services.NewAgentAuthService(pool.Pool, jwtSvc, cfg)
+	retentionSvc := services.NewRetentionService(pool.Pool, cfg.UploadDir)
 
 	// ─── Handlers ───────────────────────────────────────────────────────────
 
@@ -91,7 +92,7 @@ func main() {
 	webTeamHandler := handlersweb.NewTeamHandler(teamSvc)
 	webRecHandler := handlersweb.NewRecordingHandler(recordingSvc, cfg.UploadDir)
 	webRecordingSessionHandler := handlersweb.NewRecordingSessionHandler(recordingSessionSvc, cfg.UploadDir)
-	webSettingsHandler := handlersweb.NewSettingsHandler(pool.Pool, locationSvc, activitySvc, authSvc)
+	webSettingsHandler := handlersweb.NewSettingsHandler(pool.Pool, locationSvc, activitySvc, authSvc, retentionSvc)
 	webSuperAdminHandler := handlersweb.NewSuperAdminHandler(pool.Pool)
 	webLeadHandler := handlersweb.NewLeadHandler(pool.Pool)
 
@@ -248,6 +249,12 @@ func main() {
 		r.Put("/settings", webSettingsHandler.UpdateSettings)
 		r.Patch("/settings", webSettingsHandler.UpdateSettings)
 
+		// Data retention settings (manager only)
+		r.Get("/organizations/retention", webSettingsHandler.GetRetention)
+		r.Put("/organizations/retention", webSettingsHandler.UpdateRetention)
+		r.Patch("/organizations/retention", webSettingsHandler.UpdateRetention)
+		r.Post("/admin/run-retention-cleanup", webSettingsHandler.TriggerRetentionCleanup)
+
 		// Attendance
 		r.Get("/dashboard/attendance", webDashHandler.GetAttendance)
 		r.Get("/dashboard/activity-timeline", webDashHandler.GetActivityTimeline)
@@ -349,6 +356,9 @@ func main() {
 			slog.Error("Server forced to shutdown", "error", err)
 		}
 	}()
+
+	// Start periodic data-retention cleanup (runs once now, then daily).
+	retentionSvc.StartCleanupScheduler()
 
 	slog.Info("TeamLens API server starting", "addr", addr)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

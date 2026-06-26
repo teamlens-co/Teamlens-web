@@ -53,6 +53,8 @@ model Organization {
   employeeLimit                Int                      @default(10) @map("employee_limit")
   billingCycle                 String                   @default("MONTHLY") @map("billing_cycle")
   renewalDate                  DateTime?                @map("renewal_date")
+  screenshotRetentionDays      Int                      @default(30) @map("screenshot_retention_days")
+  recordingRetentionDays       Int                      @default(30) @map("recording_retention_days")
   agentTokens                  AgentToken[]
   invites                      InviteToken[]
   users                        User[]

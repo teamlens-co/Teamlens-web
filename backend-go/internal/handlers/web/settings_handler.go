@@ -15,18 +15,20 @@ import (
 )
 
 type SettingsHandler struct {
-	pool        *pgxpool.Pool
-	locationSvc *services.LocationService
-	activitySvc *services.ActivityService
-	authSvc     *services.AuthService
+	pool          *pgxpool.Pool
+	locationSvc   *services.LocationService
+	activitySvc   *services.ActivityService
+	authSvc       *services.AuthService
+	retentionSvc  *services.RetentionService
 }
 
-func NewSettingsHandler(pool *pgxpool.Pool, locSvc *services.LocationService, actSvc *services.ActivityService, authSvc *services.AuthService) *SettingsHandler {
+func NewSettingsHandler(pool *pgxpool.Pool, locSvc *services.LocationService, actSvc *services.ActivityService, authSvc *services.AuthService, retSvc *services.RetentionService) *SettingsHandler {
 	return &SettingsHandler{
-		pool:        pool,
-		locationSvc: locSvc,
-		activitySvc: actSvc,
-		authSvc:     authSvc,
+		pool:          pool,
+		locationSvc:   locSvc,
+		activitySvc:   actSvc,
+		authSvc:       authSvc,
+		retentionSvc:  retSvc,
 	}
 }
 
@@ -341,4 +343,88 @@ func (h *SettingsHandler) ReviewManualTimeRequest(w http.ResponseWriter, r *http
 	}
 
 	middleware.Success(w, http.StatusOK, map[string]string{"status": status, "id": requestID})
+}
+
+// ─── Retention Settings ────────────────────────────────────────────────────
+
+type retentionResponse struct {
+	ScreenshotRetentionDays int `json:"screenshotRetentionDays"`
+	RecordingRetentionDays  int `json:"recordingRetentionDays"`
+}
+
+type retentionUpdateRequest struct {
+	ScreenshotRetentionDays *int `json:"screenshotRetentionDays"`
+	RecordingRetentionDays  *int `json:"recordingRetentionDays"`
+}
+
+func (h *SettingsHandler) GetRetention(w http.ResponseWriter, r *http.Request) {
+	auth := middleware.GetAuthContext(r.Context())
+	if auth == nil || auth.OrganizationID == "" {
+		middleware.Error(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+
+	screenshotDays, recordingDays, err := h.retentionSvc.GetRetention(r.Context(), auth.OrganizationID)
+	if err != nil {
+		slog.Error("GetRetention failed", "error", err)
+		middleware.Error(w, http.StatusInternalServerError, "Unable to load retention settings")
+		return
+	}
+
+	middleware.Success(w, http.StatusOK, retentionResponse{
+		ScreenshotRetentionDays: screenshotDays,
+		RecordingRetentionDays:  recordingDays,
+	})
+}
+
+func (h *SettingsHandler) UpdateRetention(w http.ResponseWriter, r *http.Request) {
+	auth := middleware.GetAuthContext(r.Context())
+	if auth == nil || auth.OrganizationID == "" {
+		middleware.Error(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+
+	// Only managers and superadmins can change retention.
+	if auth.Role != models.RoleManager && auth.Role != models.RoleSuperAdmin {
+		middleware.Error(w, http.StatusForbidden, "Only managers can change retention settings")
+		return
+	}
+
+	var input retentionUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		middleware.Error(w, http.StatusBadRequest, "Invalid JSON")
+		return
+	}
+
+	if input.ScreenshotRetentionDays == nil || input.RecordingRetentionDays == nil {
+		middleware.Error(w, http.StatusBadRequest, "Both retention values are required")
+		return
+	}
+
+	if err := h.retentionSvc.UpdateRetention(r.Context(), auth.OrganizationID, *input.ScreenshotRetentionDays, *input.RecordingRetentionDays); err != nil {
+		slog.Error("UpdateRetention failed", "error", err)
+		middleware.Error(w, http.StatusInternalServerError, "Unable to update retention settings")
+		return
+	}
+
+	middleware.Success(w, http.StatusOK, retentionResponse{
+		ScreenshotRetentionDays: *input.ScreenshotRetentionDays,
+		RecordingRetentionDays:  *input.RecordingRetentionDays,
+	})
+}
+
+func (h *SettingsHandler) TriggerRetentionCleanup(w http.ResponseWriter, r *http.Request) {
+	auth := middleware.GetAuthContext(r.Context())
+	if auth == nil || auth.Role != models.RoleSuperAdmin {
+		middleware.Error(w, http.StatusForbidden, "Superadmin only")
+		return
+	}
+
+	if err := h.retentionSvc.CleanupNow(r.Context()); err != nil {
+		slog.Error("Manual retention cleanup failed", "error", err)
+		middleware.Error(w, http.StatusInternalServerError, "Cleanup failed")
+		return
+	}
+
+	middleware.Success(w, http.StatusOK, map[string]string{"status": "cleanup_triggered"})
 }

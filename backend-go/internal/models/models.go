@@ -71,9 +71,11 @@ type UserResponse struct {
 }
 
 type OrgResponse struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Slug string `json:"slug"`
+	ID                       string `json:"id"`
+	Name                     string `json:"name"`
+	Slug                     string `json:"slug"`
+	ScreenshotRetentionDays  int    `json:"screenshotRetentionDays"`
+	RecordingRetentionDays   int    `json:"recordingRetentionDays"`
 }
 
 // ─── API Response ──────────────────────────────────────────────────────────
@@ -316,6 +318,18 @@ type RecordingSession struct {
 	EmployeeName   string                 `json:"employeeName,omitempty"`
 	EmployeeEmail  string                 `json:"employeeEmail,omitempty"`
 	ChunkCount     int                    `json:"chunkCount,omitempty"`
+	Chunks         []RecordingChunk       `json:"chunks,omitempty"`
+}
+
+// RecordingSegment represents a single actual recorded interval within a session.
+type RecordingSegment struct {
+	SessionID   string    `json:"sessionId"`
+	ChunkID     string    `json:"chunkId"`
+	ChunkIndex  int       `json:"chunkIndex"`
+	StartedAt   time.Time `json:"startedAt"`
+	DurationMs  int64     `json:"durationMs"`
+	FileSize    int64     `json:"fileSize"`
+	PlaybackURL string    `json:"playbackUrl,omitempty"`
 }
 
 type RecordingChunk struct {
