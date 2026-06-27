@@ -59,16 +59,11 @@ const getRuntimeApiBases = () => {
 
   const params = new URLSearchParams(window.location.search);
   const queryBase = params.get("mobileApiBase");
-  const protocol = window.location.protocol;
-  const hostname = window.location.hostname;
-  const isLocalHost = ["localhost", "127.0.0.1"].includes(hostname);
 
-  return uniqueBases([
-    queryBase,
-    isLocalHost ? envBase : undefined,
-    isLocalHost ? undefined : `${protocol}//${hostname}`,
-    envBase,
-  ]);
+  // Prefer the configured API origin so that cross-origin cookies always match
+  // the domain used by the API. Fallback to the current origin only when no
+  // env base is configured.
+  return uniqueBases([queryBase, envBase, window.location.origin]);
 };
 
 const getRuntimeWsBases = () => {
@@ -85,9 +80,9 @@ const getRuntimeWsBases = () => {
 
   return uniqueBases([
     queryBase,
-    isLocalHost ? envBase : undefined,
-    isLocalHost ? undefined : `${protocol}//${hostname}`,
     envBase,
+    isLocalHost ? "ws://localhost:4000" : undefined,
+    window.location.origin.replace(/^http/, "ws"),
   ]);
 };
 
