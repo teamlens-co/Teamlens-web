@@ -87,7 +87,7 @@ const getRuntimeWsBases = () => {
 };
 
 const getInitialDateRange = (): DateRange => {
-  const fallback = getPresetRange("Today");
+  const fallback = getPresetRange("Last 7 Days");
   if (typeof window === "undefined") {
     return fallback;
   }

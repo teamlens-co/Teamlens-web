@@ -738,8 +738,7 @@ export default function RecordingsPage() {
   // Filter sessions: exclude "No data" + date range + employee filter + search
   const filteredSessions = useMemo(() => {
     const query = searchQuery.toLowerCase();
-    const filtered = sessions.filter((s) => getSessionHealth(s).label !== "No data");
-    return filtered.filter((session) => {
+    return sessions.filter((session) => {
       const name = (session.employeeName || session.employeeEmail || getEmployeeName(session.employeeId)).toLowerCase();
       const matchesSearch = !query || name.includes(query) || formatDate(session.startedAt).toLowerCase().includes(query);
       return matchesSearch && isWithinDateRange(session.startedAt);
