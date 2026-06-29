@@ -40,7 +40,7 @@ type ActivityCalculationInput struct {
 	SampleWindowSeconds  int
 }
 
-const defaultIdleThresholdSeconds = 120
+const defaultIdleThresholdSeconds = 50
 const defaultSampleWindowSeconds = 10
 
 // CalculateActivitySegments computes active/idle time from activity samples.
