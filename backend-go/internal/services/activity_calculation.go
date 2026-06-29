@@ -40,10 +40,17 @@ type ActivityCalculationInput struct {
 	SampleWindowSeconds  int
 }
 
-const defaultIdleThresholdSeconds = 180
+const defaultIdleThresholdSeconds = 120
 const defaultSampleWindowSeconds = 10
 
-// CalculateActivitySegments computes active/idle time from activity samples
+// CalculateActivitySegments computes active/idle time from activity samples.
+//
+// Each active sample represents activity over the previous SampleWindow.
+// Active samples are grouped into clusters: a gap of <= IdleThreshold between
+// the end of one activity window and the start of the next keeps the user
+// marked active across the gap. This matches how most productivity trackers
+// (e.g. Insightful) report active time instead of adding a long idle tail to
+// every single interaction.
 func CalculateActivitySegments(input ActivityCalculationInput) ActivityCalculationResult {
 	if input.SessionEnd <= input.SessionStart {
 		return ActivityCalculationResult{}
@@ -62,6 +69,7 @@ func CalculateActivitySegments(input ActivityCalculationInput) ActivityCalculati
 	type interaction struct {
 		timestampMs int64
 		startMs     int64
+		endMs       int64
 		mouseMoves  int32
 		keyPresses  int32
 	}
@@ -77,6 +85,7 @@ func CalculateActivitySegments(input ActivityCalculationInput) ActivityCalculati
 		interactions = append(interactions, interaction{
 			timestampMs: ts,
 			startMs:     clamp(ts-int64(sampleWindowMs), input.SessionStart, input.SessionEnd),
+			endMs:       ts,
 			mouseMoves:  mouseMoves,
 			keyPresses:  keyPresses,
 		})
@@ -88,19 +97,19 @@ func CalculateActivitySegments(input ActivityCalculationInput) ActivityCalculati
 
 	var segments []ActivitySegment
 	cursorMs := input.SessionStart
-	var activeStartMs, activeUntilMs *int64
+	var activeStartMs, activeEndMs *int64
 	var activeMouseMoves, activeKeyPresses int
 	var totalMouseMoves, totalKeyPresses int64
 
 	closeActiveWindow := func() {
-		if activeStartMs == nil || activeUntilMs == nil {
+		if activeStartMs == nil || activeEndMs == nil {
 			return
 		}
-		activeEndMs := clamp(*activeUntilMs, input.SessionStart, input.SessionEnd)
-		addSegment(&segments, *activeStartMs, activeEndMs, "active", activeMouseMoves, activeKeyPresses)
-		cursorMs = max64(cursorMs, activeEndMs)
+		end := clamp(*activeEndMs, input.SessionStart, input.SessionEnd)
+		addSegment(&segments, *activeStartMs, end, "active", activeMouseMoves, activeKeyPresses)
+		cursorMs = max64(cursorMs, end)
 		activeStartMs = nil
-		activeUntilMs = nil
+		activeEndMs = nil
 		activeMouseMoves = 0
 		activeKeyPresses = 0
 	}
@@ -109,22 +118,21 @@ func CalculateActivitySegments(input ActivityCalculationInput) ActivityCalculati
 		totalMouseMoves += int64(inter.mouseMoves)
 		totalKeyPresses += int64(inter.keyPresses)
 
-		if activeUntilMs == nil || inter.startMs > *activeUntilMs {
+		if activeEndMs == nil || inter.startMs > *activeEndMs+int64(idleThresholdMs) {
 			closeActiveWindow()
 			addSegment(&segments, cursorMs, inter.startMs, "idle", 0, 0)
 			cursorMs = inter.startMs
 			start := inter.startMs
-			until := inter.timestampMs + int64(idleThresholdMs)
+			end := inter.endMs
 			activeStartMs = &start
-			activeUntilMs = &until
+			activeEndMs = &end
 			activeMouseMoves = int(inter.mouseMoves)
 			activeKeyPresses = int(inter.keyPresses)
 			continue
 		}
 
-		extendedUntil := inter.timestampMs + int64(idleThresholdMs)
-		if extendedUntil > *activeUntilMs {
-			activeUntilMs = &extendedUntil
+		if inter.endMs > *activeEndMs {
+			activeEndMs = &inter.endMs
 		}
 		activeMouseMoves += int(inter.mouseMoves)
 		activeKeyPresses += int(inter.keyPresses)
