@@ -216,15 +216,19 @@ export default function LiveStreamPage() {
     return () => window.clearInterval(timer);
   }, [apiBase, authHeaders, dateRange]);
 
+  const sortByOnline = (a: LiveEmployee, b: LiveEmployee) => {
+    if (a.online === b.online) return a.name.localeCompare(b.name);
+    return a.online ? -1 : 1;
+  };
+
   const filteredCards = useMemo(() => {
-    return employees.filter((employee) => {
-      const matchesTeam = !teamFilter || employee.teamName === teamFilter;
-      return matchesTeam;
-    });
+    return employees
+      .filter((employee) => !teamFilter || employee.teamName === teamFilter)
+      .sort(sortByOnline);
   }, [employees, teamFilter]);
 
   const filteredList = useMemo(() => {
-    return employees;
+    return employees.slice().sort(sortByOnline);
   }, [employees]);
 
   const onlineCount = employees.filter((employee) => employee.online).length;
