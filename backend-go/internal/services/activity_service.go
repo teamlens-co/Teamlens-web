@@ -311,8 +311,10 @@ func (s *ActivityService) GetActivityTimeline(ctx context.Context, organizationI
 		return nil, fmt.Errorf("iterate activity timeline users: %w", err)
 	}
 
+	thresholds, _ := GetOrganizationActivityThresholds(ctx, s.pool, organizationID)
+
 	for i := range employees {
-		if err := s.fillTimelineEmployee(ctx, &employees[i], start, end); err != nil {
+		if err := s.fillTimelineEmployee(ctx, &employees[i], start, end, thresholds); err != nil {
 			return nil, err
 		}
 	}
@@ -324,7 +326,7 @@ func (s *ActivityService) GetActivityTimeline(ctx context.Context, organizationI
 	}, nil
 }
 
-func (s *ActivityService) fillTimelineEmployee(ctx context.Context, employee *ActivityTimelineEmployee, start, end time.Time) error {
+func (s *ActivityService) fillTimelineEmployee(ctx context.Context, employee *ActivityTimelineEmployee, start, end time.Time, thresholds ActivityThresholds) error {
 	sessionRows, err := s.pool.Query(ctx,
 		`SELECT id, clock_in_at, clock_out_at, location_type
 		 FROM work_sessions
@@ -447,10 +449,12 @@ func (s *ActivityService) fillTimelineEmployee(ctx context.Context, employee *Ac
 		}
 
 		calc := CalculateActivitySegments(ActivityCalculationInput{
-			SessionStart:         sessionStartMs,
-			SessionEnd:           sessionEndMs,
-			Samples:              logsBySession[session.id],
-			IdleThresholdSeconds: idleThresholdSeconds,
+			SessionStart:             sessionStartMs,
+			SessionEnd:               sessionEndMs,
+			Samples:                  logsBySession[session.id],
+			IdleThresholdSeconds:     idleThresholdSeconds,
+			MinMouseMovesPerWindow:   thresholds.MinMouseMovesPerWindow,
+			MinKeyPressesPerWindow:   thresholds.MinKeyPressesPerWindow,
 		})
 		employee.WorkSeconds += calc.WorkSeconds
 		employee.ActiveSeconds += calc.ActiveSeconds

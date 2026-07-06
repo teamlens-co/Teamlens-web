@@ -166,8 +166,13 @@ func (s *DashboardService) GetAttendance(ctx context.Context, organizationID, vi
 	}
 	overview.Stats.Employees = len(users)
 
+	var thresholds ActivityThresholds
+	if organizationID != "" && organizationID != "combined" {
+		thresholds, _ = GetOrganizationActivityThresholds(ctx, s.pool, organizationID)
+	}
+
 	for _, user := range users {
-		employee, timesheets, err := s.buildAttendanceEmployee(ctx, user.id, user.name, user.email, days, threshold, rangeStart, rangeEnd)
+		employee, timesheets, err := s.buildAttendanceEmployee(ctx, user.id, user.name, user.email, days, threshold, rangeStart, rangeEnd, thresholds)
 		if err != nil {
 			return nil, err
 		}
@@ -183,7 +188,7 @@ func (s *DashboardService) GetAttendance(ctx context.Context, organizationID, vi
 	return overview, nil
 }
 
-func (s *DashboardService) buildAttendanceEmployee(ctx context.Context, userID, name, email string, days []time.Time, thresholdMinutes int, start, end time.Time) (AttendanceEmployee, []TimesheetEntry, error) {
+func (s *DashboardService) buildAttendanceEmployee(ctx context.Context, userID, name, email string, days []time.Time, thresholdMinutes int, start, end time.Time, thresholds ActivityThresholds) (AttendanceEmployee, []TimesheetEntry, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT ws.id, ws.clock_in_at, ws.clock_out_at, ws.location_type,
 		        COALESCE((
@@ -393,11 +398,13 @@ func (s *DashboardService) buildAttendanceEmployee(ctx context.Context, userID, 
 			activeSeconds = int64(workEnd.Sub(workStart).Seconds())
 		} else {
 			calc := CalculateActivitySegments(ActivityCalculationInput{
-				SessionStart:         workStart.UnixMilli(),
-				SessionEnd:           workEnd.UnixMilli(),
-				Samples:              logsBySession[session.id],
-				IdleThresholdSeconds: defaultIdleThresholdSeconds,
-				SampleWindowSeconds:  defaultSampleWindowSeconds,
+				SessionStart:             workStart.UnixMilli(),
+				SessionEnd:               workEnd.UnixMilli(),
+				Samples:                  logsBySession[session.id],
+				IdleThresholdSeconds:     defaultIdleThresholdSeconds,
+				SampleWindowSeconds:      defaultSampleWindowSeconds,
+				MinMouseMovesPerWindow:   thresholds.MinMouseMovesPerWindow,
+				MinKeyPressesPerWindow:   thresholds.MinKeyPressesPerWindow,
 			})
 			activeSeconds = calc.ActiveSeconds
 		}
@@ -529,6 +536,10 @@ func (s *DashboardService) computeAnalytics(ctx context.Context, userID string, 
 		})
 	}
 
+	var orgID string
+	_ = s.pool.QueryRow(ctx, `SELECT organization_id FROM users WHERE id = $1`, userID).Scan(&orgID)
+	thresholds, _ := GetOrganizationActivityThresholds(ctx, s.pool, orgID)
+
 	rangeStartMs := start.UnixMilli()
 	rangeEndMs := end.UnixMilli()
 	now := time.Now().UnixMilli()
@@ -608,10 +619,12 @@ func (s *DashboardService) computeAnalytics(ctx context.Context, userID string, 
 			totalWorkMs += workMs
 			snaps := snapshotsBySession[row.id]
 			calc := CalculateActivitySegments(ActivityCalculationInput{
-				SessionStart:         sessionStart,
-				SessionEnd:           sessionEnd,
-				Samples:              snaps,
-				IdleThresholdSeconds: idleThresholdSeconds,
+				SessionStart:             sessionStart,
+				SessionEnd:               sessionEnd,
+				Samples:                  snaps,
+				IdleThresholdSeconds:     idleThresholdSeconds,
+				MinMouseMovesPerWindow:   thresholds.MinMouseMovesPerWindow,
+				MinKeyPressesPerWindow:   thresholds.MinKeyPressesPerWindow,
 			})
 			totalActiveSeconds += calc.ActiveSeconds
 			totalIdleSeconds += calc.IdleSeconds
@@ -730,6 +743,10 @@ func (s *DashboardService) GetCalendarHeatmap(ctx context.Context, userID string
 		})
 	}
 
+	var orgID string
+	_ = s.pool.QueryRow(ctx, `SELECT organization_id FROM users WHERE id = $1`, userID).Scan(&orgID)
+	thresholds, _ := GetOrganizationActivityThresholds(ctx, s.pool, orgID)
+
 	// Aggregate by calendar day
 	type dayAccum struct {
 		workMs    int64
@@ -801,10 +818,12 @@ func (s *DashboardService) GetCalendarHeatmap(ctx context.Context, userID string
 				acc.workMs += sliceEnd - sliceStart
 				snaps := snapshotsBySession[row.id]
 				calc := CalculateActivitySegments(ActivityCalculationInput{
-					SessionStart:         sliceStart,
-					SessionEnd:           sliceEnd,
-					Samples:              snaps,
-					IdleThresholdSeconds: idleThresholdSeconds,
+					SessionStart:             sliceStart,
+					SessionEnd:               sliceEnd,
+					Samples:                  snaps,
+					IdleThresholdSeconds:     idleThresholdSeconds,
+					MinMouseMovesPerWindow:   thresholds.MinMouseMovesPerWindow,
+					MinKeyPressesPerWindow:   thresholds.MinKeyPressesPerWindow,
 				})
 				acc.activeSec += calc.ActiveSeconds
 			}

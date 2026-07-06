@@ -55,6 +55,8 @@ model Organization {
   renewalDate                  DateTime?                @map("renewal_date")
   screenshotRetentionDays      Int                      @default(30) @map("screenshot_retention_days")
   recordingRetentionDays       Int                      @default(30) @map("recording_retention_days")
+  minMouseMovesPerActiveWindow Int                      @default(0) @map("min_mouse_moves_per_active_window")
+  minKeyPressesPerActiveWindow Int                      @default(0) @map("min_key_presses_per_active_window")
   agentTokens                  AgentToken[]
   invites                      InviteToken[]
   users                        User[]

@@ -71,11 +71,13 @@ type UserResponse struct {
 }
 
 type OrgResponse struct {
-	ID                       string `json:"id"`
-	Name                     string `json:"name"`
-	Slug                     string `json:"slug"`
-	ScreenshotRetentionDays  int    `json:"screenshotRetentionDays"`
-	RecordingRetentionDays   int    `json:"recordingRetentionDays"`
+	ID                           string `json:"id"`
+	Name                         string `json:"name"`
+	Slug                         string `json:"slug"`
+	ScreenshotRetentionDays      int    `json:"screenshotRetentionDays"`
+	RecordingRetentionDays       int    `json:"recordingRetentionDays"`
+	MinMouseMovesPerActiveWindow int    `json:"minMouseMovesPerActiveWindow"`
+	MinKeyPressesPerActiveWindow int    `json:"minKeyPressesPerActiveWindow"`
 }
 
 // ─── API Response ──────────────────────────────────────────────────────────

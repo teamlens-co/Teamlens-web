@@ -1,9 +1,12 @@
 package services
 
 import (
+	"context"
 	"math"
 	"sort"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // ActivitySample represents a single activity data point
@@ -33,11 +36,13 @@ type ActivityCalculationResult struct {
 }
 
 type ActivityCalculationInput struct {
-	SessionStart         int64
-	SessionEnd           int64
-	Samples              []ActivitySample
-	IdleThresholdSeconds int
-	SampleWindowSeconds  int
+	SessionStart             int64
+	SessionEnd               int64
+	Samples                  []ActivitySample
+	IdleThresholdSeconds     int
+	SampleWindowSeconds      int
+	MinMouseMovesPerWindow   int
+	MinKeyPressesPerWindow   int
 }
 
 const defaultIdleThresholdSeconds = 30
@@ -65,6 +70,9 @@ func CalculateActivitySegments(input ActivityCalculationInput) ActivityCalculati
 		sampleWindowMs = input.SampleWindowSeconds * 1000
 	}
 
+	minMM := int32(math.Max(0, float64(input.MinMouseMovesPerWindow)))
+	minKP := int32(math.Max(0, float64(input.MinKeyPressesPerWindow)))
+
 	// Filter and sort interactions
 	type interaction struct {
 		timestampMs int64
@@ -79,6 +87,11 @@ func CalculateActivitySegments(input ActivityCalculationInput) ActivityCalculati
 		mouseMoves := int32(math.Max(0, float64(s.MouseMoves)))
 		keyPresses := int32(math.Max(0, float64(s.KeyPresses)))
 		if !(mouseMoves > 0 || keyPresses > 0) {
+			continue
+		}
+		mouseOk := mouseMoves > 0 && mouseMoves >= minMM
+		keyOk := keyPresses > 0 && keyPresses >= minKP
+		if !mouseOk && !keyOk {
 			continue
 		}
 		ts := clamp(s.Timestamp, input.SessionStart, input.SessionEnd)
@@ -219,4 +232,38 @@ func min64(a, b int64) int64 {
 		return a
 	}
 	return b
+}
+
+// ActivityThresholds holds the organization-level minimum-input settings for
+// marking a sample window as "active".
+type ActivityThresholds struct {
+	MinMouseMovesPerWindow int
+	MinKeyPressesPerWindow int
+}
+
+// GetOrganizationActivityThresholds reads the active-window thresholds for an
+// organization. Defaults to (0, 0) when the row can't be read, preserving the
+// legacy behavior where any input makes a sample active.
+func GetOrganizationActivityThresholds(ctx context.Context, pool *pgxpool.Pool, organizationID string) (ActivityThresholds, error) {
+	var t ActivityThresholds
+	if organizationID == "" || organizationID == "combined" {
+		return t, nil
+	}
+	err := pool.QueryRow(ctx,
+		`SELECT COALESCE(min_mouse_moves_per_active_window, 0),
+		        COALESCE(min_key_presses_per_active_window, 0)
+		 FROM organizations
+		 WHERE id = $1`,
+		organizationID,
+	).Scan(&t.MinMouseMovesPerWindow, &t.MinKeyPressesPerWindow)
+	if err != nil {
+		return t, err
+	}
+	if t.MinMouseMovesPerWindow < 0 {
+		t.MinMouseMovesPerWindow = 0
+	}
+	if t.MinKeyPressesPerWindow < 0 {
+		t.MinKeyPressesPerWindow = 0
+	}
+	return t, nil
 }
