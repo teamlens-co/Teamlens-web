@@ -82,6 +82,7 @@ func main() {
 	usageSvc := services.NewUsageService(pool.Pool)
 	agentAuthSvc := services.NewAgentAuthService(pool.Pool, jwtSvc, cfg)
 	retentionSvc := services.NewRetentionService(pool.Pool, cfg.UploadDir)
+	trackingSvc := services.NewTrackingService(pool.Pool, locationSvc)
 
 	// ─── Handlers ───────────────────────────────────────────────────────────
 
@@ -95,18 +96,20 @@ func main() {
 	webSettingsHandler := handlersweb.NewSettingsHandler(pool.Pool, locationSvc, activitySvc, authSvc, retentionSvc)
 	webSuperAdminHandler := handlersweb.NewSuperAdminHandler(pool.Pool)
 	webLeadHandler := handlersweb.NewLeadHandler(pool.Pool)
+	webTrackingHandler := handlersweb.NewTrackingHandler(trackingSvc)
 
 	agentAuthHandler := handlersagent.NewAuthHandler(agentAuthSvc)
 	agentActivityHandler := handlersagent.NewActivityHandler(activitySvc)
 	agentScreenshotHandler := handlersagent.NewScreenshotHandler(screenshotSvc, cfg.UploadDir)
 	agentRecordingSessionHandler := handlersagent.NewRecordingSessionHandler(recordingSessionSvc, cfg.UploadDir, cfg.RecordingEnabled)
 	agentUsageHandler := handlersagent.NewUsageHandler(usageSvc)
+	agentTrackingHandler := handlersagent.NewTrackingHandler(trackingSvc)
 
 	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())
 	defer cleanupCancel()
 	cron.NewRecordingCleanupJob(recordingSessionSvc, cfg.RecordingRetentionHours).Start(cleanupCtx)
 
-	mobileHandler := handlersmobile.NewHandler()
+	mobileHandler := handlersmobile.NewHandler(activitySvc, locationSvc, trackingSvc)
 
 	// ─── Router ─────────────────────────────────────────────────────────────
 
@@ -181,6 +184,15 @@ func main() {
 		r.Get("/locations", webLocHandler.ListOfficeLocations)                  // Frontend alias
 		r.Delete("/locations/{locationId}", webLocHandler.DeleteOfficeLocation) // Frontend alias
 		r.Get("/locations/search", webLocHandler.SearchLocations)
+
+		// Field tracking (geofenced clock-in, travel and steps)
+		r.Get("/tracking/live", webTrackingHandler.GetLive)
+		r.Get("/tracking/summary", webTrackingHandler.GetSummary)
+		r.Get("/tracking/sessions", webTrackingHandler.ListSessions)
+		r.Get("/tracking/sessions/{sessionId}", webTrackingHandler.GetSessionTrack)
+		r.Get("/tracking/settings", webTrackingHandler.GetSettings)
+		r.Put("/tracking/settings", webTrackingHandler.UpdateSettings)
+		r.Patch("/tracking/settings", webTrackingHandler.UpdateSettings)
 
 		// Dashboard
 		r.Get("/analytics", webDashHandler.GetAnalytics)
@@ -299,6 +311,9 @@ func main() {
 		r.Post("/activity", agentActivityHandler.PostActivity)
 		r.Get("/analytics", agentActivityHandler.GetAnalytics)
 
+		r.Post("/location/pings", agentTrackingHandler.PostPings)
+		r.Get("/tracking/settings", agentTrackingHandler.GetSettings)
+
 		r.Post("/screenshots", agentScreenshotHandler.Upload)
 		r.Get("/screenshots", agentScreenshotHandler.List)
 		r.Get("/screenshots/{screenshotId}", agentScreenshotHandler.Get)
@@ -329,6 +344,27 @@ func main() {
 
 	mobiler := chi.NewRouter()
 	mobiler.Get("/health", mobileHandler.Health)
+
+	// The phone app authenticates with the same agent tokens as the desktop agent
+	// and reuses its clocking endpoints, so there is one implementation of the
+	// clock-in rules rather than two that can drift apart.
+	mobiler.Post("/auth/login", agentAuthHandler.Login)
+
+	mobiler.Group(func(r chi.Router) {
+		r.Use(middleware.AuthMiddleware(jwtSvc, pool.Pool))
+
+		r.Get("/bootstrap", mobileHandler.Bootstrap)
+		r.Get("/auth/me", agentAuthHandler.Me)
+
+		r.Post("/sessions/clock-in", agentActivityHandler.ClockIn)
+		r.Post("/sessions/clock-out", agentActivityHandler.ClockOut)
+		r.Get("/sessions/active", agentActivityHandler.GetActiveSession)
+
+		r.Post("/location/pings", agentTrackingHandler.PostPings)
+		r.Get("/tracking/settings", agentTrackingHandler.GetSettings)
+		r.Get("/tracking/sessions/{sessionId}", webTrackingHandler.GetSessionTrack)
+	})
+
 	r.Mount("/api/mobile", mobiler)
 
 	// ─── Start Server ───────────────────────────────────────────────────────

@@ -288,7 +288,10 @@ CREATE TABLE public.organizations (
     slug text NOT NULL,
     created_at timestamp(3) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp(3) without time zone NOT NULL,
-    productivity_threshold_minutes integer DEFAULT 180 NOT NULL
+    productivity_threshold_minutes integer DEFAULT 180 NOT NULL,
+    geofence_policy text DEFAULT 'off'::text NOT NULL,
+    location_ping_interval_seconds integer DEFAULT 120 NOT NULL,
+    track_location_while_clocked_in boolean DEFAULT false NOT NULL
 );
 
 
@@ -430,8 +433,73 @@ CREATE TABLE public.work_sessions (
     location_type text,
     is_recording boolean DEFAULT false NOT NULL,
     recording_started_at timestamp with time zone,
-    recording_stopped_at timestamp with time zone
+    recording_stopped_at timestamp with time zone,
+    distance_meters double precision DEFAULT 0 NOT NULL,
+    step_count integer DEFAULT 0 NOT NULL,
+    geofence_status text,
+    office_location_id text,
+    last_latitude double precision,
+    last_longitude double precision,
+    last_location_at timestamp with time zone
 );
+
+
+--
+-- Name: location_pings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.location_pings (
+    id bigint NOT NULL,
+    session_id text NOT NULL,
+    user_id text NOT NULL,
+    organization_id text NOT NULL,
+    captured_at timestamp with time zone NOT NULL,
+    latitude double precision NOT NULL,
+    longitude double precision NOT NULL,
+    accuracy_meters double precision,
+    altitude_meters double precision,
+    speed_mps double precision,
+    heading_degrees double precision,
+    source text DEFAULT 'gps'::text NOT NULL,
+    battery_level integer,
+    is_moving boolean,
+    step_count integer,
+    segment_meters double precision DEFAULT 0 NOT NULL,
+    geofence_status text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: location_pings_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.location_pings_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.location_pings_id_seq OWNED BY public.location_pings.id;
+
+ALTER TABLE ONLY public.location_pings
+    ALTER COLUMN id SET DEFAULT nextval('public.location_pings_id_seq'::regclass);
+
+ALTER TABLE ONLY public.location_pings
+    ADD CONSTRAINT location_pings_pkey PRIMARY KEY (id);
+
+CREATE UNIQUE INDEX location_pings_session_captured_key
+    ON public.location_pings USING btree (session_id, captured_at);
+
+CREATE INDEX location_pings_session_captured_idx
+    ON public.location_pings USING btree (session_id, captured_at);
+
+CREATE INDEX location_pings_user_captured_idx
+    ON public.location_pings USING btree (user_id, captured_at);
+
+CREATE INDEX location_pings_org_captured_idx
+    ON public.location_pings USING btree (organization_id, captured_at);
 
 
 --

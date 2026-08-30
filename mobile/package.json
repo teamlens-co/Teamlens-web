@@ -1,0 +1,31 @@
+{
+  "name": "teamlens-mobile",
+  "version": "0.1.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.1.2",
+    "expo": "~53.0.0",
+    "expo-application": "~6.1.4",
+    "expo-battery": "~9.1.4",
+    "expo-constants": "~17.1.6",
+    "expo-location": "~18.1.5",
+    "expo-secure-store": "~14.2.3",
+    "expo-sensors": "~14.1.4",
+    "expo-status-bar": "~2.2.3",
+    "expo-task-manager": "~13.1.5",
+    "react": "19.0.0",
+    "react-native": "0.79.6",
+    "react-native-safe-area-context": "5.4.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.0.10",
+    "typescript": "~5.8.3"
+  },
+  "private": true
+}

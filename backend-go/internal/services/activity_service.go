@@ -93,6 +93,39 @@ func (s *ActivityService) GetActiveSession(ctx context.Context, userID string) (
 	return record, nil
 }
 
+// GeofenceViolationError is returned when an org enforces geofenced clock-in and
+// the employee is not inside any office radius. It carries the nearest office so
+// the client can tell them how far off they are.
+type GeofenceViolationError struct {
+	Match  models.GeofenceMatch
+	Reason string
+}
+
+func (e *GeofenceViolationError) Error() string {
+	if e.Reason != "" {
+		return e.Reason
+	}
+	if e.Match.OfficeLabel != nil {
+		return fmt.Sprintf("You are %.0f m from %s. Clock in within %d m of an office location.",
+			e.Match.DistanceMeters, *e.Match.OfficeLabel, e.Match.RadiusMeters)
+	}
+	return "You are outside every allowed clock-in location."
+}
+
+// geofencePolicy reads the org's enforcement mode, defaulting to off so a
+// missing or unrecognised value never locks anyone out.
+func (s *ActivityService) geofencePolicy(ctx context.Context, organizationID string) models.GeofencePolicy {
+	var raw string
+	err := s.pool.QueryRow(ctx,
+		`SELECT geofence_policy FROM organizations WHERE id = $1`,
+		organizationID,
+	).Scan(&raw)
+	if err != nil {
+		return models.GeofenceOff
+	}
+	return normalizeGeofencePolicy(raw)
+}
+
 func (s *ActivityService) ClockIn(ctx context.Context, payload *models.ClockInPayload, organizationID string) (*models.WorkSessionRecord, error) {
 	existing, err := s.GetActiveSession(ctx, payload.UserID)
 	if err != nil {
@@ -124,20 +157,56 @@ func (s *ActivityService) ClockIn(ctx context.Context, payload *models.ClockInPa
 
 	id := RandomToken(16)
 
-	// Determine location type
+	hasCoords := payload.Latitude != nil && payload.Longitude != nil
+	policy := models.GeofenceOff
+	if organizationID != "" {
+		policy = s.geofencePolicy(ctx, organizationID)
+	}
+
+	// Determine location type and evaluate the geofence
 	var locationType *string
-	if organizationID != "" && payload.Latitude != nil && payload.Longitude != nil {
-		lt := s.locationService.DetermineLocationType(ctx, organizationID, *payload.Latitude, *payload.Longitude,
-			nil, payload.AccuracyMeters)
-		if lt != nil {
-			locationType = lt
+	var geofenceStatus *string
+	var officeLocationID *string
+	var match models.GeofenceMatch
+
+	if organizationID != "" && hasCoords {
+		offices, err := s.locationService.ListOfficeLocations(ctx, organizationID)
+		if err != nil {
+			return nil, fmt.Errorf("clock in: load office locations: %w", err)
+		}
+
+		match = MatchGeofence(offices, *payload.Latitude, *payload.Longitude)
+		geofenceStatus = GeofenceStatus(match)
+
+		lt := "remote"
+		if match.Inside {
+			lt = "office"
+			officeLocationID = match.OfficeID
+		}
+		locationType = &lt
+	}
+
+	if policy == models.GeofenceBlock {
+		if !hasCoords {
+			// Without coordinates the rule is unenforceable, and letting the
+			// request through would make it trivial to bypass.
+			return nil, &GeofenceViolationError{
+				Reason: "Location is required to clock in. Enable location access and try again.",
+			}
+		}
+		if match.HasOfficeSetup && !match.Inside {
+			return nil, &GeofenceViolationError{Match: match}
 		}
 	}
 
 	_, err = s.pool.Exec(ctx,
-		`INSERT INTO work_sessions (id, user_id, clock_in_at, latitude, longitude, location_type, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
+		`INSERT INTO work_sessions (id, user_id, clock_in_at, latitude, longitude, location_type,
+		                            geofence_status, office_location_id,
+		                            last_latitude, last_longitude, last_location_at,
+		                            created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $4, $5, $9, NOW(), NOW())`,
 		id, payload.UserID, startedAt, payload.Latitude, payload.Longitude, locationType,
+		geofenceStatus, officeLocationID, nullableTime(startedAt, hasCoords),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("clock in: %w", err)
@@ -151,7 +220,18 @@ func (s *ActivityService) ClockIn(ctx context.Context, payload *models.ClockInPa
 	if locationType != nil {
 		record.LocationType = locationType
 	}
+	record.Latitude = payload.Latitude
+	record.Longitude = payload.Longitude
 	return record, nil
+}
+
+// nullableTime returns t only when the flag holds, so last_location_at stays
+// NULL for sessions that started without coordinates.
+func nullableTime(t time.Time, ok bool) *time.Time {
+	if !ok {
+		return nil
+	}
+	return &t
 }
 
 func (s *ActivityService) closeStaleSession(ctx context.Context, sessionID, userID string) error {
@@ -169,12 +249,21 @@ func (s *ActivityService) closeStaleSession(ctx context.Context, sessionID, user
 	return err
 }
 
-func (s *ActivityService) ClockOut(ctx context.Context, payload *models.ClockOutPayload) (*models.WorkSessionRecord, error) {
+func (s *ActivityService) ClockOut(ctx context.Context, payload *models.ClockOutPayload, organizationID string) (*models.WorkSessionRecord, error) {
 	endedAt := time.Now().UTC()
 	if payload.Timestamp != nil {
 		if t, err := time.Parse(time.RFC3339, *payload.Timestamp); err == nil {
 			endedAt = t.UTC()
 		}
+	}
+
+	// Label the clock-out point the same way clock-in is labelled, so a manager
+	// can see whether someone finished on site or in the field.
+	var clockOutType *string
+	if organizationID != "" && payload.Latitude != nil && payload.Longitude != nil {
+		clockOutType = s.locationService.DetermineLocationType(
+			ctx, organizationID, *payload.Latitude, *payload.Longitude, nil, nil,
+		)
 	}
 
 	var row struct {
@@ -185,10 +274,15 @@ func (s *ActivityService) ClockOut(ctx context.Context, payload *models.ClockOut
 	if payload.SessionID != nil && *payload.SessionID != "" {
 		err := s.pool.QueryRow(ctx,
 			`UPDATE work_sessions
-			 SET clock_out_at = $1, updated_at = NOW()
+			 SET clock_out_at = $1,
+			     clock_out_latitude = $4,
+			     clock_out_longitude = $5,
+			     clock_out_location_type = $6,
+			     updated_at = NOW()
 			 WHERE id = $2 AND user_id = $3 AND clock_out_at IS NULL
 			 RETURNING id, clock_in_at`,
 			endedAt, *payload.SessionID, payload.UserID,
+			payload.Latitude, payload.Longitude, clockOutType,
 		).Scan(&row.id, &row.clockInAt)
 		if err != nil {
 			return nil, nil
@@ -196,7 +290,11 @@ func (s *ActivityService) ClockOut(ctx context.Context, payload *models.ClockOut
 	} else {
 		err := s.pool.QueryRow(ctx,
 			`UPDATE work_sessions
-			 SET clock_out_at = $1, updated_at = NOW()
+			 SET clock_out_at = $1,
+			     clock_out_latitude = $3,
+			     clock_out_longitude = $4,
+			     clock_out_location_type = $5,
+			     updated_at = NOW()
 			 WHERE id = (
 			   SELECT id FROM work_sessions
 			   WHERE user_id = $2 AND clock_out_at IS NULL
@@ -204,6 +302,7 @@ func (s *ActivityService) ClockOut(ctx context.Context, payload *models.ClockOut
 			 )
 			 RETURNING id, clock_in_at`,
 			endedAt, payload.UserID,
+			payload.Latitude, payload.Longitude, clockOutType,
 		).Scan(&row.id, &row.clockInAt)
 		if err != nil {
 			return nil, nil
@@ -449,12 +548,12 @@ func (s *ActivityService) fillTimelineEmployee(ctx context.Context, employee *Ac
 		}
 
 		calc := CalculateActivitySegments(ActivityCalculationInput{
-			SessionStart:             sessionStartMs,
-			SessionEnd:               sessionEndMs,
-			Samples:                  logsBySession[session.id],
-			IdleThresholdSeconds:     idleThresholdSeconds,
-			MinMouseMovesPerWindow:   thresholds.MinMouseMovesPerWindow,
-			MinKeyPressesPerWindow:   thresholds.MinKeyPressesPerWindow,
+			SessionStart:           sessionStartMs,
+			SessionEnd:             sessionEndMs,
+			Samples:                logsBySession[session.id],
+			IdleThresholdSeconds:   idleThresholdSeconds,
+			MinMouseMovesPerWindow: thresholds.MinMouseMovesPerWindow,
+			MinKeyPressesPerWindow: thresholds.MinKeyPressesPerWindow,
 		})
 		employee.WorkSeconds += calc.WorkSeconds
 		employee.ActiveSeconds += calc.ActiveSeconds
