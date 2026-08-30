@@ -26,6 +26,7 @@ import {
   Building2,
   Plus,
   Loader2,
+  MapPin,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "../../contexts/AuthContext";
 import TeamLensLogo from "../../components/TeamLensLogo";
@@ -44,6 +45,7 @@ const sidebarGroups = [
       { name: "Screenshots", href: "/dashboard/screenshots", icon: Camera },
       { name: "Activities", href: "/dashboard/activities", icon: BarChart2 },
       { name: "Time & Attendance", href: "/dashboard/attendance", icon: Clock3 },
+      { name: "Field Tracking", href: "/dashboard/field-tracking", icon: MapPin },
       { name: "Manual Time", href: "/dashboard/manual-time", icon: Timer },
     ],
   },
