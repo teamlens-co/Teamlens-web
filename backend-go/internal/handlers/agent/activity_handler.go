@@ -2,6 +2,7 @@ package agent
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -69,6 +70,13 @@ func (h *ActivityHandler) ClockIn(w http.ResponseWriter, r *http.Request) {
 
 	session, err := h.activitySvc.ClockIn(r.Context(), payload, auth.OrganizationID)
 	if err != nil {
+		var geofenceErr *services.GeofenceViolationError
+		if errors.As(err, &geofenceErr) {
+			// The client shows the distance and nearest office, so the employee
+			// knows how far they have to move rather than just being refused.
+			middleware.ErrorWithIssues(w, http.StatusForbidden, geofenceErr.Error(), geofenceErr.Match)
+			return
+		}
 		slog.Error("Clock in failed", "error", err)
 		middleware.Error(w, http.StatusInternalServerError, "Unable to clock in")
 		return
@@ -85,8 +93,10 @@ func (h *ActivityHandler) ClockOut(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Timestamp *string `json:"timestamp,omitempty"`
-		SessionID *string `json:"sessionId,omitempty"`
+		Timestamp *string  `json:"timestamp,omitempty"`
+		SessionID *string  `json:"sessionId,omitempty"`
+		Latitude  *float64 `json:"latitude,omitempty"`
+		Longitude *float64 `json:"longitude,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		middleware.Error(w, http.StatusBadRequest, "Invalid request body")
@@ -97,9 +107,11 @@ func (h *ActivityHandler) ClockOut(w http.ResponseWriter, r *http.Request) {
 		UserID:    auth.UserID,
 		Timestamp: input.Timestamp,
 		SessionID: input.SessionID,
+		Latitude:  input.Latitude,
+		Longitude: input.Longitude,
 	}
 
-	session, err := h.activitySvc.ClockOut(r.Context(), payload)
+	session, err := h.activitySvc.ClockOut(r.Context(), payload, auth.OrganizationID)
 	if err != nil {
 		slog.Error("Clock out failed", "error", err)
 		middleware.Error(w, http.StatusInternalServerError, "Unable to clock out")

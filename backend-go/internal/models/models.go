@@ -130,6 +130,9 @@ type ClockOutPayload struct {
 	UserID    string  `json:"userID"`
 	SessionID *string `json:"sessionId,omitempty"`
 	Timestamp *string `json:"timestamp,omitempty"`
+	// Where the shift ended, so a completed shift shows both endpoints on the map.
+	Latitude  *float64 `json:"latitude,omitempty"`
+	Longitude *float64 `json:"longitude,omitempty"`
 }
 
 // ─── Activity ──────────────────────────────────────────────────────────────
@@ -222,6 +225,180 @@ type UpsertOfficeLocationInput struct {
 	Latitude     float64 `json:"latitude" validate:"required,min=-90,max=90"`
 	Longitude    float64 `json:"longitude" validate:"required,min=-180,max=180"`
 	RadiusMeters int     `json:"radiusMeters" validate:"required,min=1,max=100000"`
+}
+
+// ─── Field tracking ────────────────────────────────────────────────────────
+
+// GeofencePolicy controls what happens when someone clocks in away from every
+// office geofence.
+type GeofencePolicy string
+
+const (
+	GeofenceOff   GeofencePolicy = "off"
+	GeofenceWarn  GeofencePolicy = "warn"
+	GeofenceBlock GeofencePolicy = "block"
+)
+
+// GeofenceMatch is the outcome of testing a coordinate against an org's offices.
+type GeofenceMatch struct {
+	Inside         bool    `json:"inside"`
+	OfficeID       *string `json:"officeId,omitempty"`
+	OfficeLabel    *string `json:"officeLabel,omitempty"`
+	DistanceMeters float64 `json:"distanceMeters"`
+	RadiusMeters   int     `json:"radiusMeters"`
+	HasOfficeSetup bool    `json:"hasOfficeSetup"`
+}
+
+// TrackingSettings is the org-level field-tracking configuration.
+type TrackingSettings struct {
+	GeofencePolicy              GeofencePolicy `json:"geofencePolicy"`
+	LocationPingIntervalSeconds int            `json:"locationPingIntervalSeconds"`
+	TrackLocationWhileClockedIn bool           `json:"trackLocationWhileClockedIn"`
+}
+
+// UpdateTrackingSettingsInput is the manager-facing settings payload.
+type UpdateTrackingSettingsInput struct {
+	GeofencePolicy              *string `json:"geofencePolicy,omitempty"`
+	LocationPingIntervalSeconds *int    `json:"locationPingIntervalSeconds,omitempty"`
+	TrackLocationWhileClockedIn *bool   `json:"trackLocationWhileClockedIn,omitempty"`
+}
+
+// LocationPingInput is a single breadcrumb reported by a client.
+type LocationPingInput struct {
+	CapturedAt     string   `json:"capturedAt"`
+	Latitude       float64  `json:"latitude"`
+	Longitude      float64  `json:"longitude"`
+	AccuracyMeters *float64 `json:"accuracyMeters,omitempty"`
+	AltitudeMeters *float64 `json:"altitudeMeters,omitempty"`
+	SpeedMps       *float64 `json:"speedMps,omitempty"`
+	HeadingDegrees *float64 `json:"headingDegrees,omitempty"`
+	Source         *string  `json:"source,omitempty"`
+	BatteryLevel   *int     `json:"batteryLevel,omitempty"`
+	IsMoving       *bool    `json:"isMoving,omitempty"`
+	// StepCount is cumulative steps since clock-in, as reported by the device
+	// pedometer. Clients that cannot count steps omit it.
+	StepCount *int `json:"stepCount,omitempty"`
+}
+
+// LocationPingBatch is what a client POSTs; batching lets the app buffer
+// breadcrumbs while offline and flush them when connectivity returns.
+type LocationPingBatch struct {
+	SessionID *string             `json:"sessionId,omitempty"`
+	Pings     []LocationPingInput `json:"pings"`
+}
+
+// LocationPingResult reports what the server did with a batch.
+type LocationPingResult struct {
+	SessionID      string  `json:"sessionId"`
+	Accepted       int     `json:"accepted"`
+	Rejected       int     `json:"rejected"`
+	Duplicates     int     `json:"duplicates"`
+	DistanceMeters float64 `json:"distanceMeters"`
+	StepCount      int     `json:"stepCount"`
+	GeofenceStatus *string `json:"geofenceStatus,omitempty"`
+	NextPingAfterS int     `json:"nextPingAfterSeconds"`
+}
+
+// TrackPoint is one breadcrumb as served to the dashboard.
+type TrackPoint struct {
+	CapturedAt     string   `json:"capturedAt"`
+	Latitude       float64  `json:"latitude"`
+	Longitude      float64  `json:"longitude"`
+	AccuracyMeters *float64 `json:"accuracyMeters,omitempty"`
+	SpeedMps       *float64 `json:"speedMps,omitempty"`
+	Source         string   `json:"source"`
+	BatteryLevel   *int     `json:"batteryLevel,omitempty"`
+	SegmentMeters  float64  `json:"segmentMeters"`
+	GeofenceStatus *string  `json:"geofenceStatus,omitempty"`
+}
+
+// TrackStop is a dwell period detected from the breadcrumb trail.
+type TrackStop struct {
+	StartedAt       string  `json:"startedAt"`
+	EndedAt         string  `json:"endedAt"`
+	DurationSeconds int64   `json:"durationSeconds"`
+	Latitude        float64 `json:"latitude"`
+	Longitude       float64 `json:"longitude"`
+	PointCount      int     `json:"pointCount"`
+	OfficeLabel     *string `json:"officeLabel,omitempty"`
+}
+
+// SessionTrack is the full movement story of one work session.
+type SessionTrack struct {
+	SessionID      string  `json:"sessionId"`
+	UserID         string  `json:"userId"`
+	FullName       string  `json:"fullName"`
+	ClockInAt      string  `json:"clockInAt"`
+	ClockOutAt     *string `json:"clockOutAt,omitempty"`
+	LocationType   *string `json:"locationType,omitempty"`
+	GeofenceStatus *string `json:"geofenceStatus,omitempty"`
+	DistanceMeters float64 `json:"distanceMeters"`
+	StepCount      int     `json:"stepCount"`
+	MovingSeconds  int64   `json:"movingSeconds"`
+	StoppedSeconds int64   `json:"stoppedSeconds"`
+	// Clock-in and clock-out coordinates are carried separately from the
+	// breadcrumb trail so the map can pin where the shift actually started and
+	// ended, even when tracking recorded nothing in between.
+	ClockInLat  *float64         `json:"clockInLatitude,omitempty"`
+	ClockInLng  *float64         `json:"clockInLongitude,omitempty"`
+	ClockOutLat *float64         `json:"clockOutLatitude,omitempty"`
+	ClockOutLng *float64         `json:"clockOutLongitude,omitempty"`
+	Offices     []OfficeLocation `json:"offices"`
+	Points      []TrackPoint     `json:"points"`
+	Stops       []TrackStop      `json:"stops"`
+}
+
+// LiveEmployeeLocation is one row of the manager live map.
+type LiveEmployeeLocation struct {
+	UserID         string   `json:"userId"`
+	FullName       string   `json:"fullName"`
+	Email          string   `json:"email"`
+	SessionID      string   `json:"sessionId"`
+	ClockInAt      string   `json:"clockInAt"`
+	Latitude       *float64 `json:"latitude,omitempty"`
+	Longitude      *float64 `json:"longitude,omitempty"`
+	LastLocationAt *string  `json:"lastLocationAt,omitempty"`
+	StaleSeconds   *int64   `json:"staleSeconds,omitempty"`
+	DistanceMeters float64  `json:"distanceMeters"`
+	StepCount      int      `json:"stepCount"`
+	LocationType   *string  `json:"locationType,omitempty"`
+	GeofenceStatus *string  `json:"geofenceStatus,omitempty"`
+	BatteryLevel   *int     `json:"batteryLevel,omitempty"`
+}
+
+// TrackedSessionRow is one shift in the history list: enough to pick it from a
+// list and see where it started and ended without loading the whole trail.
+type TrackedSessionRow struct {
+	SessionID       string   `json:"sessionId"`
+	UserID          string   `json:"userId"`
+	FullName        string   `json:"fullName"`
+	Email           string   `json:"email"`
+	ClockInAt       string   `json:"clockInAt"`
+	ClockOutAt      *string  `json:"clockOutAt,omitempty"`
+	IsActive        bool     `json:"isActive"`
+	DurationSeconds int64    `json:"durationSeconds"`
+	DistanceMeters  float64  `json:"distanceMeters"`
+	StepCount       int      `json:"stepCount"`
+	PointCount      int      `json:"pointCount"`
+	LocationType    *string  `json:"locationType,omitempty"`
+	GeofenceStatus  *string  `json:"geofenceStatus,omitempty"`
+	ClockInLat      *float64 `json:"clockInLatitude,omitempty"`
+	ClockInLng      *float64 `json:"clockInLongitude,omitempty"`
+	ClockOutLat     *float64 `json:"clockOutLatitude,omitempty"`
+	ClockOutLng     *float64 `json:"clockOutLongitude,omitempty"`
+}
+
+// FieldSummaryRow aggregates one employee's travel over a date range.
+type FieldSummaryRow struct {
+	UserID          string  `json:"userId"`
+	FullName        string  `json:"fullName"`
+	Email           string  `json:"email"`
+	SessionCount    int     `json:"sessionCount"`
+	DistanceMeters  float64 `json:"distanceMeters"`
+	StepCount       int     `json:"stepCount"`
+	StopCount       int     `json:"stopCount"`
+	TrackedSeconds  int64   `json:"trackedSeconds"`
+	OutsideGeofence int     `json:"outsideGeofenceSessions"`
 }
 
 // ─── Invite ────────────────────────────────────────────────────────────────

@@ -72,6 +72,60 @@ func (s *LocationService) DetermineLocationType(ctx context.Context, organizatio
 	return &r
 }
 
+// MatchGeofence tests a coordinate against a set of office geofences and returns
+// the best match: any office the coordinate falls inside, otherwise the nearest
+// one. When offices is empty, HasOfficeSetup is false and callers must not treat
+// the result as a violation.
+func MatchGeofence(offices []models.OfficeLocation, latitude, longitude float64) models.GeofenceMatch {
+	match := models.GeofenceMatch{DistanceMeters: -1}
+
+	for _, office := range offices {
+		match.HasOfficeSetup = true
+
+		dist := haversineMeters(latitude, longitude, office.Latitude, office.Longitude)
+		inside := dist <= float64(office.RadiusMeters)
+
+		// An office we are inside of always beats one we are outside of. Between
+		// two of the same kind, the nearer one wins, so the UI can say something
+		// like "820 m from Main Office".
+		nearer := match.DistanceMeters < 0 || dist < match.DistanceMeters
+		if (inside && !match.Inside) || (inside == match.Inside && nearer) {
+			id, label := office.ID, office.Label
+			match.Inside = inside
+			match.OfficeID = &id
+			match.OfficeLabel = &label
+			match.DistanceMeters = dist
+			match.RadiusMeters = office.RadiusMeters
+		}
+	}
+
+	return match
+}
+
+// EvaluateGeofence loads the org's offices and matches a single coordinate
+// against them. Callers checking many coordinates should load the offices once
+// with ListOfficeLocations and call MatchGeofence directly.
+func (s *LocationService) EvaluateGeofence(ctx context.Context, organizationID string, latitude, longitude float64) models.GeofenceMatch {
+	offices, err := s.ListOfficeLocations(ctx, organizationID)
+	if err != nil {
+		return models.GeofenceMatch{DistanceMeters: -1}
+	}
+	return MatchGeofence(offices, latitude, longitude)
+}
+
+// GeofenceStatus maps a geofence match to the string persisted on sessions and
+// pings. Orgs with no offices configured get no status at all.
+func GeofenceStatus(match models.GeofenceMatch) *string {
+	if !match.HasOfficeSetup {
+		return nil
+	}
+	status := "outside"
+	if match.Inside {
+		status = "inside"
+	}
+	return &status
+}
+
 func (s *LocationService) ComputeDailyLocationStatus(locationTypes []*string) *string {
 	hasOffice := false
 	hasRemote := false
