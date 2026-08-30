@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "TeamLens",
+    "slug": "teamlens-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "co.teamlens.mobile",
+      "infoPlist": {
+        "UIBackgroundModes": ["location", "fetch"],
+        "NSLocationWhenInUseUsageDescription": "TeamLens records your location when you clock in, so your workplace can confirm attendance at the right site.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "TeamLens records your route only while you are clocked in, so travel and visits are logged for your timesheet. Tracking stops the moment you clock out.",
+        "NSMotionUsageDescription": "TeamLens counts your steps while you are clocked in, so field work is reflected in your activity summary."
+      }
+    },
+    "android": {
+      "package": "co.teamlens.mobile",
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "ACTIVITY_RECOGNITION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "TeamLens records your route only while you are clocked in.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
+      "expo-secure-store",
+      "expo-sensors"
+    ],
+    "extra": {
+      "apiUrl": null
+    }
+  }
+}
