@@ -22,7 +22,7 @@ manual time requests, and live screen sessions.
 - `backend-ws/`: Socket.IO service for live screen WebRTC signaling and auth validation.
 - `frontend/`: Next.js dashboard app.
 - `agent/`: Tauri desktop app, React frontend plus Rust native commands.
-- `mobile/`: Expo React Native app.
+- `mobile/`: Expo React Native app for field staff (geofenced clock-in, route/step tracking).
 - `nginx/`: local gateway config for routing frontend, API, and WebSocket traffic.
 - `schema.sql` and `backend-ws/prisma/`: database schema and Prisma migrations used by the WS service.
 - `docker-compose.yml`: local multi-service stack.
@@ -203,14 +203,19 @@ Agent conventions:
 
 ## Mobile App
 
+Field tracking (geofenced clock-in, distance, steps, stops) is documented in
+`docs/field-tracking.md`. Read it before changing anything under
+`mobile/src/tracking/` or `backend-go/internal/services/tracking_service.go`.
+
 Important files:
 
-- `mobile/App.js`: app root.
-- `mobile/src/navigation/AppNavigator.tsx`: authenticated navigation and tabs.
+- `mobile/App.tsx`: app root.
+- `mobile/src/tracking/tracker.ts`: background location task and upload queue.
+- `mobile/src/tracking/pedometer.ts`: step counting across iOS/Android.
 - `mobile/src/contexts/AuthContext.tsx`: mobile auth state.
 - `mobile/src/services/api.ts`: mobile API client.
+- `mobile/src/services/storage.ts`: token storage and the offline ping queue.
 - `mobile/src/screens/`: mobile screens.
-- `mobile/src/components/IosKit.tsx`: reusable mobile UI primitives/icons.
 - `mobile/src/theme.ts`: mobile theme tokens.
 
 Run locally:
@@ -220,6 +225,9 @@ cd mobile
 npm install
 npm start
 ```
+
+Background location does not work in Expo Go; use `npx expo run:android` /
+`run:ios` or an EAS development build. See `mobile/README.md`.
 
 Mobile API configuration:
 
